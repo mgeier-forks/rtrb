@@ -351,12 +351,37 @@ impl<T> Producer<T> {
 
 impl<T> Producer<T>
 where
-    T: Copy + Default,
+    T: Default,
 {
     /// Returns mutable slices for `n` slots and advances the write position when done.
     ///
     /// If not enough slots are available for writing, an error is returned.
-    pub fn push_slices(&mut self, _n: usize) -> Result<PushSlices<'_, T>, SlicesError> {
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (mut p, mut c) = RingBuffer::new(3).split();
+    ///
+    /// assert!(p.push(10).is_ok());
+    /// assert_eq!(c.pop(), Ok(10));
+    ///
+    /// if let Ok(slices) = p.push_slices(3) {
+    ///     assert_eq!(slices.first.len(), 2);
+    ///     slices.first[0] = 20;
+    ///     slices.first[1] = 30;
+    ///     assert_eq!(slices.second.len(), 1);
+    ///     slices.second[0] = 40;
+    /// } else {
+    ///     unreachable!();
+    /// }
+    ///
+    /// assert_eq!(c.pop(), Ok(20));
+    /// assert_eq!(c.pop(), Ok(30));
+    /// assert_eq!(c.pop(), Ok(40));
+    /// ```
+    pub fn push_slices(&mut self, n: usize) -> Result<PushSlices<'_, T>, SlicesError> {
         let tail = self.tail.get();
 
         // Check if the queue has *possibly* not enough slots.
@@ -368,28 +393,27 @@ where
             // ... and check if there *really* are not enough slots.
             let slots = self.rb.capacity - self.rb.distance(head, tail);
             if slots < n {
-                return SlicesError::TooFewSlots(slots);
+                return Err(SlicesError::TooFewSlots(slots));
             }
         }
 
-
-
-
-        let head = self.get_head(n).map_err(SlicesError::TooFewSlots)?;
-        let head_to_end = if head < self.rb.capacity {
-            self.rb.capacity - head
+        let tail = if tail < self.rb.capacity {
+            tail
         } else {
-            2 * self.rb.capacity - head
+            tail - self.rb.capacity
         };
+        let end = self.rb.capacity.min(tail + n);
+        for i in self.initialized.max(tail).min(end)..end {
+            unsafe { self.rb.buffer.add(i).write(Default::default()) };
+        }
+        self.initialized = end;
 
-
-
-
-
-        // TODO: create default for all uninitialized, forget
-
-        self.initialized
-        todo!();
+        let first_len = n.min(self.rb.capacity - tail);
+        Ok(PushSlices {
+            first: unsafe { std::slice::from_raw_parts_mut(self.rb.buffer.add(tail), first_len) },
+            second: unsafe { std::slice::from_raw_parts_mut(self.rb.buffer, n - first_len) },
+            producer: self,
+        })
     }
 }
 
