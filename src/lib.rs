@@ -198,6 +198,7 @@ impl<T> RingBuffer<T> {
 }
 
 impl<T> Drop for RingBuffer<T> {
+    /// Drops all non-empty slots.
     fn drop(&mut self) {
         let mut head = self.head.load(Ordering::Relaxed);
         let tail = self.tail.load(Ordering::Relaxed);
@@ -282,6 +283,16 @@ impl<T> Producer<T> {
     ///
     /// To check for a single available slot,
     /// using [`Producer::is_full()`] is often quicker.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (p, c) = RingBuffer::<f32>::new(1024).split();
+    ///
+    /// assert_eq!(p.slots(), 1024);
+    /// ```
     pub fn slots(&self) -> usize {
         let head = self.rb.head.load(Ordering::Acquire);
         self.head.set(head);
@@ -289,6 +300,16 @@ impl<T> Producer<T> {
     }
 
     /// Returns `true` if there are no slots available for writing.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (p, c) = RingBuffer::<f32>::new(1).split();
+    ///
+    /// assert!(!p.is_full());
+    /// ```
     pub fn is_full(&self) -> bool {
         self.get_tail1().is_none()
     }
@@ -354,7 +375,7 @@ where
     ///
     /// If not enough slots are available for writing, an error is returned.
     pub fn push_slices(&mut self, _n: usize) -> Result<PushSlices<'_, T>, SlicesError> {
-        unimplemented!();
+        todo!();
     }
 }
 
@@ -497,7 +518,7 @@ impl<T> Consumer<T> {
     /// use rtrb::RingBuffer;
     ///
     /// static mut DROPS: i32 = 0;
-    ///
+    /// fn dropped(n: i32) -> bool { unsafe { DROPS == n } }
     /// #[derive(Debug)]
     /// struct Thing;
     /// impl Drop for Thing {
@@ -510,29 +531,29 @@ impl<T> Consumer<T> {
     ///     assert!(p.push(Thing).is_ok()); // 1
     ///     assert!(p.push(Thing).is_ok()); // 2
     ///     if let Ok(thing) = c.pop() {
-    ///         // "thing" has been *moved* out of the queue
-    ///         assert_eq!(unsafe { DROPS }, 0);
+    ///         // "thing" has been *moved* out of the queue but not yet dropped
+    ///         assert!(dropped(0));
     ///     } else {
     ///         unreachable!();
     ///     }
     ///     // First Thing has been dropped when "thing" went out of scope:
-    ///     assert_eq!(unsafe { DROPS }, 1);
+    ///     assert!(dropped(1));
     ///     assert!(p.push(Thing).is_ok()); // 3
     ///
     ///     if let Ok(slices) = c.pop_slices(2) {
     ///         assert_eq!(slices.first.len(), 1);
     ///         assert_eq!(slices.second.len(), 1);
     ///         // The requested two Things haven't been dropped yet:
-    ///         assert_eq!(unsafe { DROPS }, 1);
+    ///         assert!(dropped(1));
     ///     } else {
     ///         unreachable!();
     ///     }
     ///     // Two Things have been dropped when "slices" went out of scope:
-    ///     assert_eq!(unsafe { DROPS }, 3);
+    ///     assert!(dropped(3));
     ///     assert!(p.push(Thing).is_ok()); // 4
     /// }
     /// // Last Thing has been dropped when ring buffer went out of scope:
-    /// assert_eq!(unsafe { DROPS }, 4);
+    /// assert!(dropped(4));
     /// ```
     pub fn pop_slices(&mut self, n: usize) -> Result<PopSlices<'_, T>, SlicesError> {
         let (first, second) = self.slices(n)?;
@@ -582,6 +603,16 @@ impl<T> Consumer<T> {
     ///
     /// To check for a single available slot,
     /// using [`Consumer::is_empty()`] is often quicker.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (p, c) = RingBuffer::<f32>::new(1024).split();
+    ///
+    /// assert_eq!(c.slots(), 0);
+    /// ```
     pub fn slots(&self) -> usize {
         let tail = self.rb.tail.load(Ordering::Acquire);
         self.tail.set(tail);
@@ -589,6 +620,16 @@ impl<T> Consumer<T> {
     }
 
     /// Returns `true` if there are no slots available for reading.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (p, c) = RingBuffer::<f32>::new(1).split();
+    ///
+    /// assert!(c.is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.get_head1().is_none()
     }
@@ -723,6 +764,7 @@ pub struct PopSlices<'a, T> {
 }
 
 impl<'a, T> Drop for PushSlices<'a, T> {
+    /// Makes the requested slots available for reading.
     fn drop(&mut self) {
         let tail = self.producer.rb.increment(
             self.producer.tail.get(),
@@ -734,6 +776,8 @@ impl<'a, T> Drop for PushSlices<'a, T> {
 }
 
 impl<'a, T> Drop for PopSlices<'a, T> {
+    /// Drops all requested slots and advances the read position,
+    /// making the space available for writing again.
     fn drop(&mut self) {
         // Safety: the exclusive reference taken by pop_slices()
         //         makes sure nobody else has access to the buffer.
