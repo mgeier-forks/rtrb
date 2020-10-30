@@ -152,6 +152,7 @@ impl<T> RingBuffer<T> {
     /// Returns a pointer to the slot at position `pos`.
     ///
     /// The position must be in range `0 .. 2 * capacity`.
+    #[inline]
     unsafe fn slot(&self, pos: usize) -> *mut T {
         if pos < self.capacity {
             self.buffer.add(pos)
@@ -163,6 +164,7 @@ impl<T> RingBuffer<T> {
     /// Increments a position by going `n` slots forward.
     ///
     /// The position must be in range `0 .. 2 * capacity`.
+    #[inline]
     fn increment(&self, pos: usize, n: usize) -> usize {
         let threshold = 2 * self.capacity - n;
         if pos < threshold {
@@ -172,9 +174,24 @@ impl<T> RingBuffer<T> {
         }
     }
 
+    /// Increments a position by going one slot forward.
+    ///
+    /// This is more efficient than self.increment(..., 1).
+    ///
+    /// The position must be in range `0 .. 2 * capacity`.
+    #[inline]
+    fn increment1(&self, pos: usize) -> usize {
+        if pos < 2 * self.capacity - 1 {
+            pos + 1
+        } else {
+            0
+        }
+    }
+
     /// Returns the distance between two positions.
     ///
     /// Positions must be in range `0 .. 2 * capacity`.
+    #[inline]
     fn distance(&self, a: usize, b: usize) -> usize {
         if a <= b {
             b - a
@@ -252,15 +269,42 @@ impl<T> Producer<T> {
     /// assert_eq!(p.push(20), Err(PushError::Full(20)));
     /// ```
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
-        if let Ok(tail) = self.get_tail(1) {
-            unsafe {
-                self.rb.slot(tail).write(value);
+
+        ///// get_tail()
+
+        let head = self.head.get();
+        let tail = self.tail.get();
+
+        if self.rb.distance(head, tail) == self.rb.capacity {
+            // Refresh the head ...
+            let head = self.rb.head.load(Ordering::Acquire);
+            self.head.set(head);
+
+            // ... and check if there *really* are not enough slots.
+            if self.rb.distance(head, tail) == self.rb.capacity {
+
+                /////
+
+                return Err(PushError::Full(value));
+
+                /////
+
             }
-            self.advance_tail(tail, 1);
-            Ok(())
-        } else {
-            Err(PushError::Full(value))
         }
+
+        unsafe {
+            self.rb.slot(tail).write(value);
+        }
+
+        ///// advance_tail()
+
+        let tail = self.rb.increment1(tail);
+        self.rb.tail.store(tail, Ordering::Release);
+        self.tail.set(tail);
+
+        /////
+
+        Ok(())
     }
 
     /// Returns the number of slots available for writing.
@@ -392,13 +436,42 @@ impl<T> Consumer<T> {
     /// assert_eq!(c.pop().ok(), Some(20));
     /// ```
     pub fn pop(&mut self) -> Result<T, PopError> {
-        if let Ok(head) = self.get_head(1) {
-            let value = unsafe { self.rb.slot(head).read() };
-            self.advance_head(head, 1);
-            Ok(value)
-        } else {
-            Err(PopError::Empty)
+
+        ///// get_head()
+
+        let head = self.head.get();
+        let tail = self.tail.get();
+
+        if head == tail {
+            // Refresh the tail ...
+            let tail = self.rb.tail.load(Ordering::Acquire);
+            self.tail.set(tail);
+
+            // ... and check if there *really* are not enough slots.
+            if head == tail {
+
+                /////
+
+                return Err(PopError::Empty);
+
+                /////
+
+            }
         }
+
+        /////
+
+        let value = unsafe { self.rb.slot(head).read() };
+
+        ///// advance_head()
+
+        let head = self.rb.increment1(head);
+        self.rb.head.store(head, Ordering::Release);
+        self.head.set(head);
+
+        /////
+
+        Ok(value)
     }
 
     /// Attempts to read an element from the queue without removing it.
