@@ -406,39 +406,32 @@ impl<T> Consumer<T> {
     /// assert_eq!(c.pop().ok(), Some(20));
     /// ```
     pub fn pop(&mut self) -> Result<T, PopError> {
-        ///// get_head()
 
-        let head = self.head.get();
-        let tail = self.tail.get();
+        /*
+        if let Ok(head) = self.get_head(1) {
+            let value = unsafe { self.rb.slot(head).read() };
 
-        if head == tail {
-            // Refresh the tail ...
-            let tail = self.rb.tail.load(Ordering::Acquire);
-            self.tail.set(tail);
-
-            // ... and check if there *really* are not enough slots.
-            if head == tail {
-                /////
-
-                return Err(PopError::Empty);
-
-                /////
-            }
+            //let head = self.rb.increment(head, 1);
+            let head = self.rb.increment1(head);
+            self.rb.head.store(head, Ordering::Release);
+            self.head.set(head);
+            Ok(value)
+        } else {
+            Err(PopError::Empty)
         }
+        */
 
-        /////
+        if let Some(head) = self.get_head1() {
+            let value = unsafe { self.rb.slot(head).read() };
 
-        let value = unsafe { self.rb.slot(head).read() };
-
-        ///// advance_head()
-
-        let head = self.rb.increment1(head);
-        self.rb.head.store(head, Ordering::Release);
-        self.head.set(head);
-
-        /////
-
-        Ok(value)
+            //let head = self.rb.increment(head, 1);
+            let head = self.rb.increment1(head);
+            self.rb.head.store(head, Ordering::Release);
+            self.head.set(head);
+            Ok(value)
+        } else {
+            Err(PopError::Empty)
+        }
     }
 
     /// Attempts to read an element from the queue without removing it.
@@ -586,6 +579,7 @@ impl<T> Consumer<T> {
     }
 
     /// Returns head position on success, available slots on error.
+    //#[inline]
     fn get_head(&self, n: usize) -> Result<usize, usize> {
         let head = self.head.get();
         let tail = self.tail.get();
@@ -603,6 +597,25 @@ impl<T> Consumer<T> {
             }
         }
         Ok(head)
+    }
+
+    //#[inline]
+    fn get_head1(&self) -> Option<usize> {
+        let head = self.head.get();
+        let tail = self.tail.get();
+
+        // Check if the queue is *possibly* empty.
+        if head == tail {
+            // Refresh the tail ...
+            let tail = self.rb.tail.load(Ordering::Acquire);
+            self.tail.set(tail);
+
+            // ... and check if it's *really* empty.
+            if head == tail {
+                return None;
+            }
+        }
+        Some(head)
     }
 
     fn advance_head(&self, head: usize, n: usize) {
