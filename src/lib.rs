@@ -152,7 +152,6 @@ impl<T> RingBuffer<T> {
     /// Returns a pointer to the slot at position `pos`.
     ///
     /// The position must be in range `0 .. 2 * capacity`.
-    #[inline]
     unsafe fn slot(&self, pos: usize) -> *mut T {
         if pos < self.capacity {
             self.buffer.add(pos)
@@ -164,7 +163,6 @@ impl<T> RingBuffer<T> {
     /// Increments a position by going `n` slots forward.
     ///
     /// The position must be in range `0 .. 2 * capacity`.
-    #[inline]
     fn increment(&self, pos: usize, n: usize) -> usize {
         let threshold = 2 * self.capacity - n;
         if pos < threshold {
@@ -179,7 +177,6 @@ impl<T> RingBuffer<T> {
     /// This is more efficient than self.increment(..., 1).
     ///
     /// The position must be in range `0 .. 2 * capacity`.
-    #[inline]
     fn increment1(&self, pos: usize) -> usize {
         if pos < 2 * self.capacity - 1 {
             pos + 1
@@ -191,7 +188,6 @@ impl<T> RingBuffer<T> {
     /// Returns the distance between two positions.
     ///
     /// Positions must be in range `0 .. 2 * capacity`.
-    #[inline]
     fn distance(&self, a: usize, b: usize) -> usize {
         if a <= b {
             b - a
@@ -269,7 +265,7 @@ impl<T> Producer<T> {
     /// assert_eq!(p.push(20), Err(PushError::Full(20)));
     /// ```
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
-        if let Ok(tail) = self.get_tail(1) {
+        if let Some(tail) = self.get_tail1() {
             unsafe {
                 self.rb.slot(tail).write(value);
             }
@@ -312,8 +308,7 @@ impl<T> Producer<T> {
     }
 
     /// Returns tail position on success, available slots on error.
-    #[inline]
-    fn get_tail(&self, n: usize) -> Result<usize, usize> {
+    fn _get_tail(&self, n: usize) -> Result<usize, usize> {
         let head = self.head.get();
         let tail = self.tail.get();
 
@@ -330,6 +325,24 @@ impl<T> Producer<T> {
             }
         }
         Ok(tail)
+    }
+
+    fn get_tail1(&self) -> Option<usize> {
+        let head = self.head.get();
+        let tail = self.tail.get();
+
+        // Check if the queue is *possibly* full.
+        if self.rb.distance(head, tail) == self.rb.capacity {
+            // Refresh the head ...
+            let head = self.rb.head.load(Ordering::Acquire);
+            self.head.set(head);
+
+            // ... and check if it's *really* full.
+            if self.rb.distance(head, tail) == self.rb.capacity {
+                return None;
+            }
+        }
+        Some(tail)
     }
 }
 
@@ -406,25 +419,8 @@ impl<T> Consumer<T> {
     /// assert_eq!(c.pop().ok(), Some(20));
     /// ```
     pub fn pop(&mut self) -> Result<T, PopError> {
-
-        /*
-        if let Ok(head) = self.get_head(1) {
-            let value = unsafe { self.rb.slot(head).read() };
-
-            //let head = self.rb.increment(head, 1);
-            let head = self.rb.increment1(head);
-            self.rb.head.store(head, Ordering::Release);
-            self.head.set(head);
-            Ok(value)
-        } else {
-            Err(PopError::Empty)
-        }
-        */
-
         if let Some(head) = self.get_head1() {
             let value = unsafe { self.rb.slot(head).read() };
-
-            //let head = self.rb.increment(head, 1);
             let head = self.rb.increment1(head);
             self.rb.head.store(head, Ordering::Release);
             self.head.set(head);
@@ -451,7 +447,7 @@ impl<T> Consumer<T> {
     /// assert_eq!(c.peek(), Ok(&10));
     /// ```
     pub fn peek(&self) -> Result<&T, PeekError> {
-        if let Ok(head) = self.get_head(1) {
+        if let Some(head) = self.get_head1() {
             Ok(unsafe { &*self.rb.slot(head) })
         } else {
             Err(PeekError::Empty)
@@ -579,7 +575,6 @@ impl<T> Consumer<T> {
     }
 
     /// Returns head position on success, available slots on error.
-    //#[inline]
     fn get_head(&self, n: usize) -> Result<usize, usize> {
         let head = self.head.get();
         let tail = self.tail.get();
@@ -599,7 +594,6 @@ impl<T> Consumer<T> {
         Ok(head)
     }
 
-    //#[inline]
     fn get_head1(&self) -> Option<usize> {
         let head = self.head.get();
         let tail = self.tail.get();
