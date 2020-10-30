@@ -126,6 +126,7 @@ impl<T> RingBuffer<T> {
             rb: rb.clone(),
             head: Cell::new(0),
             tail: Cell::new(0),
+            initialized: 0,
         };
         let c = Consumer {
             rb,
@@ -246,6 +247,8 @@ pub struct Producer<T> {
     ///
     /// This value is always in sync with `rb.tail`.
     tail: Cell<usize>,
+
+    initialized: usize,
 }
 
 unsafe impl<T: Send> Send for Producer<T> {}
@@ -328,26 +331,6 @@ impl<T> Producer<T> {
         self.rb.capacity
     }
 
-    /// Returns tail position on success, available slots on error.
-    fn _get_tail(&self, n: usize) -> Result<usize, usize> {
-        let head = self.head.get();
-        let tail = self.tail.get();
-
-        // Check if the queue has *possibly* not enough slots.
-        if self.rb.capacity - self.rb.distance(head, tail) < n {
-            // Refresh the head ...
-            let head = self.rb.head.load(Ordering::Acquire);
-            self.head.set(head);
-
-            // ... and check if there *really* are not enough slots.
-            let slots = self.rb.capacity - self.rb.distance(head, tail);
-            if slots < n {
-                return Err(slots);
-            }
-        }
-        Ok(tail)
-    }
-
     fn get_tail1(&self) -> Option<usize> {
         let tail = self.tail.get();
 
@@ -374,6 +357,38 @@ where
     ///
     /// If not enough slots are available for writing, an error is returned.
     pub fn push_slices(&mut self, _n: usize) -> Result<PushSlices<'_, T>, SlicesError> {
+        let tail = self.tail.get();
+
+        // Check if the queue has *possibly* not enough slots.
+        if self.rb.capacity - self.rb.distance(self.head.get(), tail) < n {
+            // Refresh the head ...
+            let head = self.rb.head.load(Ordering::Acquire);
+            self.head.set(head);
+
+            // ... and check if there *really* are not enough slots.
+            let slots = self.rb.capacity - self.rb.distance(head, tail);
+            if slots < n {
+                return SlicesError::TooFewSlots(slots);
+            }
+        }
+
+
+
+
+        let head = self.get_head(n).map_err(SlicesError::TooFewSlots)?;
+        let head_to_end = if head < self.rb.capacity {
+            self.rb.capacity - head
+        } else {
+            2 * self.rb.capacity - head
+        };
+
+
+
+
+
+        // TODO: create default for all uninitialized, forget
+
+        self.initialized
         todo!();
     }
 }
