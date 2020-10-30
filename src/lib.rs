@@ -279,18 +279,18 @@ impl<T> Producer<T> {
     }
 
     /// Returns the number of slots available for writing.
+    ///
+    /// To check for a single available slot,
+    /// using [`Producer::is_full()`] is often quicker.
     pub fn slots(&self) -> usize {
-        unimplemented!();
-    }
-
-    /// Returns `true` if the given number of slots is available for writing.
-    fn _has_slots(&self, _n: usize) -> bool {
-        unimplemented!();
+        let head = self.rb.head.load(Ordering::Acquire);
+        self.head.set(head);
+        self.rb.capacity - self.rb.distance(head, self.tail.get())
     }
 
     /// Returns `true` if there are no slots available for writing.
     pub fn is_full(&self) -> bool {
-        !self._has_slots(1)
+        self.get_tail1().is_none()
     }
 
     /// Returns the capacity of the queue.
@@ -454,54 +454,6 @@ impl<T> Consumer<T> {
         }
     }
 
-    /// Returns the number of slots available for reading.
-    pub fn slots(&self) -> usize {
-        unimplemented!();
-    }
-
-    /// Returns `true` if the given number of slots is available for reading.
-    fn _has_slots(&self, n: usize) -> bool {
-        self.get_head(n).is_ok()
-    }
-
-    /// Returns `true` if there are no slots available for reading.
-    pub fn is_empty(&self) -> bool {
-        !self._has_slots(1)
-    }
-
-    /// Returns slices for `n` slots.
-    ///
-    /// This does *not* advance the read position.
-    ///
-    /// If not enough slots are available for reading, an error is returned.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rtrb::{RingBuffer, SlicesError};
-    ///
-    /// let (mut p, c) = RingBuffer::new(2).split();
-    ///
-    /// assert_eq!(p.push(10), Ok(()));
-    /// assert_eq!(c.peek_slices(2).unwrap_err(), SlicesError::TooFewSlots(1));
-    /// assert_eq!(p.push(20), Ok(()));
-    ///
-    /// if let Ok(slices) = c.peek_slices(2) {
-    ///     assert_eq!(slices.first, &[10, 20]);
-    ///     assert_eq!(slices.second, &[]);
-    ///
-    ///     let mut v = Vec::<i32>::new();
-    ///     v.extend(slices); // slices implements IntoIterator!
-    ///     assert_eq!(v, [10, 20]);
-    /// } else {
-    ///     unreachable!();
-    /// }
-    /// ```
-    pub fn peek_slices(&self, n: usize) -> Result<PeekSlices<'_, T>, SlicesError> {
-        let (first, second) = self.slices(n)?;
-        Ok(PeekSlices { first, second })
-    }
-
     /// Returns slices for `n` slots, drops their contents when done
     /// and advances the read position.
     ///
@@ -539,7 +491,7 @@ impl<T> Consumer<T> {
     /// };
     /// ```
     ///
-    /// Items are dropped as soon as the [`PopSlices`] goes out of scope:
+    /// Items are dropped as soon as [`PopSlices`] goes out of scope:
     ///
     /// ```
     /// use rtrb::RingBuffer;
@@ -589,6 +541,56 @@ impl<T> Consumer<T> {
             second,
             consumer: self,
         })
+    }
+
+    /// Returns slices for `n` slots.
+    ///
+    /// This does *not* advance the read position.
+    ///
+    /// If not enough slots are available for reading, an error is returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::{RingBuffer, SlicesError};
+    ///
+    /// let (mut p, c) = RingBuffer::new(2).split();
+    ///
+    /// assert_eq!(p.push(10), Ok(()));
+    /// assert_eq!(c.peek_slices(2).unwrap_err(), SlicesError::TooFewSlots(1));
+    /// assert_eq!(p.push(20), Ok(()));
+    ///
+    /// if let Ok(slices) = c.peek_slices(2) {
+    ///     assert_eq!(slices.first, &[10, 20]);
+    ///     assert_eq!(slices.second, &[]);
+    ///
+    ///     let mut v = Vec::<i32>::new();
+    ///     v.extend(slices); // slices implements IntoIterator!
+    ///     assert_eq!(v, [10, 20]);
+    /// } else {
+    ///     unreachable!();
+    /// }
+    /// // The two elements have *not* been removed:
+    /// assert_eq!(c.slots(), 2);
+    /// ```
+    pub fn peek_slices(&self, n: usize) -> Result<PeekSlices<'_, T>, SlicesError> {
+        let (first, second) = self.slices(n)?;
+        Ok(PeekSlices { first, second })
+    }
+
+    /// Returns the number of slots available for reading.
+    ///
+    /// To check for a single available slot,
+    /// using [`Consumer::is_empty()`] is often quicker.
+    pub fn slots(&self) -> usize {
+        let tail = self.rb.tail.load(Ordering::Acquire);
+        self.tail.set(tail);
+        self.rb.distance(self.head.get(), tail)
+    }
+
+    /// Returns `true` if there are no slots available for reading.
+    pub fn is_empty(&self) -> bool {
+        self.get_head1().is_none()
     }
 
     /// Returns the capacity of the queue.
