@@ -269,42 +269,17 @@ impl<T> Producer<T> {
     /// assert_eq!(p.push(20), Err(PushError::Full(20)));
     /// ```
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
-
-        ///// get_tail()
-
-        let head = self.head.get();
-        let tail = self.tail.get();
-
-        if self.rb.distance(head, tail) == self.rb.capacity {
-            // Refresh the head ...
-            let head = self.rb.head.load(Ordering::Acquire);
-            self.head.set(head);
-
-            // ... and check if there *really* are not enough slots.
-            if self.rb.distance(head, tail) == self.rb.capacity {
-
-                /////
-
-                return Err(PushError::Full(value));
-
-                /////
-
+        if let Ok(tail) = self.get_tail(1) {
+            unsafe {
+                self.rb.slot(tail).write(value);
             }
+            let tail = self.rb.increment1(tail);
+            self.rb.tail.store(tail, Ordering::Release);
+            self.tail.set(tail);
+            Ok(())
+        } else {
+            Err(PushError::Full(value))
         }
-
-        unsafe {
-            self.rb.slot(tail).write(value);
-        }
-
-        ///// advance_tail()
-
-        let tail = self.rb.increment1(tail);
-        self.rb.tail.store(tail, Ordering::Release);
-        self.tail.set(tail);
-
-        /////
-
-        Ok(())
     }
 
     /// Returns the number of slots available for writing.
@@ -337,6 +312,7 @@ impl<T> Producer<T> {
     }
 
     /// Returns tail position on success, available slots on error.
+    #[inline]
     fn get_tail(&self, n: usize) -> Result<usize, usize> {
         let head = self.head.get();
         let tail = self.tail.get();
@@ -354,12 +330,6 @@ impl<T> Producer<T> {
             }
         }
         Ok(tail)
-    }
-
-    fn advance_tail(&mut self, tail: usize, n: usize) {
-        let tail = self.rb.increment(tail, n);
-        self.rb.tail.store(tail, Ordering::Release);
-        self.tail.set(tail);
     }
 }
 
@@ -436,7 +406,6 @@ impl<T> Consumer<T> {
     /// assert_eq!(c.pop().ok(), Some(20));
     /// ```
     pub fn pop(&mut self) -> Result<T, PopError> {
-
         ///// get_head()
 
         let head = self.head.get();
@@ -449,13 +418,11 @@ impl<T> Consumer<T> {
 
             // ... and check if there *really* are not enough slots.
             if head == tail {
-
                 /////
 
                 return Err(PopError::Empty);
 
                 /////
-
             }
         }
 
@@ -787,7 +754,12 @@ pub struct PopSlices<'a, T> {
 
 impl<'a, T> Drop for PushSlices<'a, T> {
     fn drop(&mut self) {
-        todo!()
+        let tail = self.producer.rb.increment(
+            self.producer.tail.get(),
+            self.first.len() + self.second.len(),
+        );
+        self.producer.rb.tail.store(tail, Ordering::Release);
+        self.producer.tail.set(tail);
     }
 }
 
