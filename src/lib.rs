@@ -349,11 +349,10 @@ impl<T> Producer<T> {
     }
 
     fn get_tail1(&self) -> Option<usize> {
-        let head = self.head.get();
         let tail = self.tail.get();
 
         // Check if the queue is *possibly* full.
-        if self.rb.distance(head, tail) == self.rb.capacity {
+        if self.rb.distance(self.head.get(), tail) == self.rb.capacity {
             // Refresh the head ...
             let head = self.rb.head.load(Ordering::Acquire);
             self.head.set(head);
@@ -651,10 +650,9 @@ impl<T> Consumer<T> {
     /// Returns head position on success, available slots on error.
     fn get_head(&self, n: usize) -> Result<usize, usize> {
         let head = self.head.get();
-        let tail = self.tail.get();
 
         // Check if the queue has *possibly* not enough slots.
-        if self.rb.distance(head, tail) < n {
+        if self.rb.distance(head, self.tail.get()) < n {
             // Refresh the tail ...
             let tail = self.rb.tail.load(Ordering::Acquire);
             self.tail.set(tail);
@@ -670,10 +668,9 @@ impl<T> Consumer<T> {
 
     fn get_head1(&self) -> Option<usize> {
         let head = self.head.get();
-        let tail = self.tail.get();
 
         // Check if the queue is *possibly* empty.
-        if head == tail {
+        if head == self.tail.get() {
             // Refresh the tail ...
             let tail = self.rb.tail.load(Ordering::Acquire);
             self.tail.set(tail);
