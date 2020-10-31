@@ -734,12 +734,12 @@ impl<T> Consumer<T> {
             }
         }
 
-        let head_to_end = if head < self.rb.capacity {
-            self.rb.capacity - head
+        let head = if head < self.rb.capacity {
+            head
         } else {
-            2 * self.rb.capacity - head
+            head - self.rb.capacity
         };
-        let first_len = head_to_end.min(n);
+        let first_len = n.min(self.rb.capacity - head);
         Ok((
             unsafe { std::slice::from_raw_parts(self.rb.slot(head), first_len) },
             unsafe { std::slice::from_raw_parts(self.rb.buffer, n - first_len) },
