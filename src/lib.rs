@@ -331,7 +331,11 @@ impl<T> Producer<T> {
         self.rb.capacity
     }
 
+    /// Get the tail position for writing the next slot, if available.
     fn next_tail(&self) -> Option<usize> {
+        // This is a strict subset of the functionality implemented in push_slices().
+        // For performance, this special case is immplemented separately.
+
         let tail = self.tail.get();
 
         // Check if the queue is *possibly* full.
@@ -686,7 +690,11 @@ impl<T> Consumer<T> {
         self.rb.capacity
     }
 
+    /// Get the head position for reading the next slot, if available.
     fn next_head(&self) -> Option<usize> {
+        // This is a strict subset of the functionality implemented in pop_slices()/peek_slices().
+        // For performance, this special case is immplemented separately.
+
         let head = self.head.get();
 
         // Check if the queue is *possibly* empty.
@@ -709,6 +717,7 @@ impl<T> Consumer<T> {
         self.head.set(head);
     }
 
+    /// Get slices holding `n` slots.
     fn slices(&self, n: usize) -> Result<(&[T], &[T]), SlicesError> {
         let head = self.head.get();
 
