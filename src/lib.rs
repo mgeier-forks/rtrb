@@ -150,15 +150,20 @@ impl<T> RingBuffer<T> {
         self.capacity
     }
 
+    /// Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
+    fn collapse_position(&self, pos: usize) -> usize {
+        if pos < self.capacity {
+            pos
+        } else {
+            pos - self.capacity
+        }
+    }
+
     /// Returns a pointer to the slot at position `pos`.
     ///
     /// The position must be in range `0 .. 2 * capacity`.
     unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
-        if pos < self.capacity {
-            self.buffer.add(pos)
-        } else {
-            self.buffer.add(pos - self.capacity)
-        }
+        self.buffer.add(self.collapse_position(pos))
     }
 
     /// Increments a position by going `n` slots forward.
@@ -401,11 +406,8 @@ where
             }
         }
 
-        let tail = if tail < self.rb.capacity {
-            tail
-        } else {
-            tail - self.rb.capacity
-        };
+        let tail = self.rb.collapse_position(tail);
+
         let end = self.rb.capacity.min(tail + n);
         for i in self.initialized.max(tail).min(end)..end {
             unsafe { self.rb.buffer.add(i).write(Default::default()) };
@@ -734,11 +736,7 @@ impl<T> Consumer<T> {
             }
         }
 
-        let head = if head < self.rb.capacity {
-            head
-        } else {
-            head - self.rb.capacity
-        };
+        let head = self.rb.collapse_position(head);
         let first_len = n.min(self.rb.capacity - head);
         Ok((
             unsafe { std::slice::from_raw_parts(self.rb.slot_ptr(head), first_len) },
