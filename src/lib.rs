@@ -739,7 +739,7 @@ impl<T> Consumer<T> {
         let head = self.rb.collapse_position(head);
         let first_len = n.min(self.rb.capacity - head);
         Ok((
-            unsafe { std::slice::from_raw_parts(self.rb.slot_ptr(head), first_len) },
+            unsafe { std::slice::from_raw_parts(self.rb.buffer.add(head), first_len) },
             unsafe { std::slice::from_raw_parts(self.rb.buffer, n - first_len) },
         ))
     }
