@@ -686,25 +686,6 @@ impl<T> Consumer<T> {
         self.rb.capacity
     }
 
-    /// Returns head position on success, available slots on error.
-    fn get_head(&self, n: usize) -> Result<usize, usize> {
-        let head = self.head.get();
-
-        // Check if the queue has *possibly* not enough slots.
-        if self.rb.distance(head, self.tail.get()) < n {
-            // Refresh the tail ...
-            let tail = self.rb.tail.load(Ordering::Acquire);
-            self.tail.set(tail);
-
-            // ... and check if there *really* are not enough slots.
-            let slots = self.rb.distance(head, tail);
-            if slots < n {
-                return Err(slots);
-            }
-        }
-        Ok(head)
-    }
-
     fn get_head1(&self) -> Option<usize> {
         let head = self.head.get();
 
@@ -729,7 +710,21 @@ impl<T> Consumer<T> {
     }
 
     fn slices(&self, n: usize) -> Result<(&[T], &[T]), SlicesError> {
-        let head = self.get_head(n).map_err(SlicesError::TooFewSlots)?;
+        let head = self.head.get();
+
+        // Check if the queue has *possibly* not enough slots.
+        if self.rb.distance(head, self.tail.get()) < n {
+            // Refresh the tail ...
+            let tail = self.rb.tail.load(Ordering::Acquire);
+            self.tail.set(tail);
+
+            // ... and check if there *really* are not enough slots.
+            let slots = self.rb.distance(head, tail);
+            if slots < n {
+                return Err(SlicesError::TooFewSlots(slots));
+            }
+        }
+
         let head_to_end = if head < self.rb.capacity {
             self.rb.capacity - head
         } else {
@@ -737,7 +732,6 @@ impl<T> Consumer<T> {
         };
         let first_len = head_to_end.min(n);
         Ok((
-            // Safety: get_head() guarantees valid head position
             unsafe { std::slice::from_raw_parts(self.rb.slot(head), first_len) },
             unsafe { std::slice::from_raw_parts(self.rb.buffer, n - first_len) },
         ))
