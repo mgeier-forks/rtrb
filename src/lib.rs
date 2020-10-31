@@ -153,7 +153,7 @@ impl<T> RingBuffer<T> {
     /// Returns a pointer to the slot at position `pos`.
     ///
     /// The position must be in range `0 .. 2 * capacity`.
-    unsafe fn slot(&self, pos: usize) -> *mut T {
+    unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
         if pos < self.capacity {
             self.buffer.add(pos)
         } else {
@@ -207,7 +207,7 @@ impl<T> Drop for RingBuffer<T> {
         // Loop over all slots that hold a value and drop them.
         while head != tail {
             unsafe {
-                self.slot(head).drop_in_place();
+                self.slot_ptr(head).drop_in_place();
             }
             head = self.increment(head, 1);
         }
@@ -271,7 +271,7 @@ impl<T> Producer<T> {
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
         if let Some(tail) = self.next_tail() {
             unsafe {
-                self.rb.slot(tail).write(value);
+                self.rb.slot_ptr(tail).write(value);
             }
             let tail = self.rb.increment1(tail);
             self.rb.tail.store(tail, Ordering::Release);
@@ -483,7 +483,7 @@ impl<T> Consumer<T> {
     /// ```
     pub fn pop(&mut self) -> Result<T, PopError> {
         if let Some(head) = self.next_head() {
-            let value = unsafe { self.rb.slot(head).read() };
+            let value = unsafe { self.rb.slot_ptr(head).read() };
             let head = self.rb.increment1(head);
             self.rb.head.store(head, Ordering::Release);
             self.head.set(head);
@@ -511,7 +511,7 @@ impl<T> Consumer<T> {
     /// ```
     pub fn peek(&self) -> Result<&T, PeekError> {
         if let Some(head) = self.next_head() {
-            Ok(unsafe { &*self.rb.slot(head) })
+            Ok(unsafe { &*self.rb.slot_ptr(head) })
         } else {
             Err(PeekError::Empty)
         }
@@ -741,7 +741,7 @@ impl<T> Consumer<T> {
         };
         let first_len = n.min(self.rb.capacity - head);
         Ok((
-            unsafe { std::slice::from_raw_parts(self.rb.slot(head), first_len) },
+            unsafe { std::slice::from_raw_parts(self.rb.slot_ptr(head), first_len) },
             unsafe { std::slice::from_raw_parts(self.rb.buffer, n - first_len) },
         ))
     }
@@ -822,7 +822,7 @@ impl<'a, T> Drop for PopSlices<'a, T> {
         //         makes sure nobody else has access to the buffer.
         let head = self.consumer.head.get();
         // Safety: head has not yet been incremented
-        let ptr = unsafe { self.consumer.rb.slot(head) };
+        let ptr = unsafe { self.consumer.rb.slot_ptr(head) };
         for i in 0..self.first.len() {
             unsafe {
                 ptr.add(i).drop_in_place();
