@@ -332,10 +332,10 @@ impl<T> Producer<T> {
     }
 
     /// Get the tail position for writing the next slot, if available.
+    ///
+    /// This is a strict subset of the functionality implemented in push_slices().
+    /// For performance, this special case is immplemented separately.
     fn next_tail(&self) -> Option<usize> {
-        // This is a strict subset of the functionality implemented in push_slices().
-        // For performance, this special case is immplemented separately.
-
         let tail = self.tail.get();
 
         // Check if the queue is *possibly* full.
@@ -691,10 +691,10 @@ impl<T> Consumer<T> {
     }
 
     /// Get the head position for reading the next slot, if available.
+    ///
+    /// This is a strict subset of the functionality implemented in pop_slices()/peek_slices().
+    /// For performance, this special case is immplemented separately.
     fn next_head(&self) -> Option<usize> {
-        // This is a strict subset of the functionality implemented in pop_slices()/peek_slices().
-        // For performance, this special case is immplemented separately.
-
         let head = self.head.get();
 
         // Check if the queue is *possibly* empty.
