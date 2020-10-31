@@ -269,7 +269,7 @@ impl<T> Producer<T> {
     /// assert_eq!(p.push(20), Err(PushError::Full(20)));
     /// ```
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
-        if let Some(tail) = self.get_tail1() {
+        if let Some(tail) = self.next_tail() {
             unsafe {
                 self.rb.slot(tail).write(value);
             }
@@ -314,7 +314,7 @@ impl<T> Producer<T> {
     /// assert!(!p.is_full());
     /// ```
     pub fn is_full(&self) -> bool {
-        self.get_tail1().is_none()
+        self.next_tail().is_none()
     }
 
     /// Returns the capacity of the queue.
@@ -331,7 +331,7 @@ impl<T> Producer<T> {
         self.rb.capacity
     }
 
-    fn get_tail1(&self) -> Option<usize> {
+    fn next_tail(&self) -> Option<usize> {
         let tail = self.tail.get();
 
         // Check if the queue is *possibly* full.
@@ -478,7 +478,7 @@ impl<T> Consumer<T> {
     /// assert_eq!(c.pop().ok(), Some(20));
     /// ```
     pub fn pop(&mut self) -> Result<T, PopError> {
-        if let Some(head) = self.get_head1() {
+        if let Some(head) = self.next_head() {
             let value = unsafe { self.rb.slot(head).read() };
             let head = self.rb.increment1(head);
             self.rb.head.store(head, Ordering::Release);
@@ -506,7 +506,7 @@ impl<T> Consumer<T> {
     /// assert_eq!(c.peek(), Ok(&10));
     /// ```
     pub fn peek(&self) -> Result<&T, PeekError> {
-        if let Some(head) = self.get_head1() {
+        if let Some(head) = self.next_head() {
             Ok(unsafe { &*self.rb.slot(head) })
         } else {
             Err(PeekError::Empty)
@@ -669,7 +669,7 @@ impl<T> Consumer<T> {
     /// assert!(c.is_empty());
     /// ```
     pub fn is_empty(&self) -> bool {
-        self.get_head1().is_none()
+        self.next_head().is_none()
     }
 
     /// Returns the capacity of the queue.
@@ -686,7 +686,7 @@ impl<T> Consumer<T> {
         self.rb.capacity
     }
 
-    fn get_head1(&self) -> Option<usize> {
+    fn next_head(&self) -> Option<usize> {
         let head = self.head.get();
 
         // Check if the queue is *possibly* empty.
