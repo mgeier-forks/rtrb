@@ -21,8 +21,11 @@ pub fn slices(criterion: &mut criterion::Criterion) {
         let (mut p, mut c) = RingBuffer::<u8>::new(1).split();
         let mut i = 0;
         b.iter(|| {
-            if let Ok(slices) = p.push_slices(1) {
-                slices.first[0] = black_box(i);
+            if let Ok(n) = p.push_slices(1, |first, _second| {
+                first[0] = black_box(i);
+                1
+            }) {
+                debug_assert_eq!(n, 1);
             } else {
                 unreachable!();
             }

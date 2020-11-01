@@ -376,12 +376,15 @@ where
     /// assert!(p.push(10).is_ok());
     /// assert_eq!(c.pop(), Ok(10));
     ///
-    /// if let Ok(slices) = p.push_slices(3) {
-    ///     assert_eq!(slices.first.len(), 2);
-    ///     slices.first[0] = 20;
-    ///     slices.first[1] = 30;
-    ///     assert_eq!(slices.second.len(), 1);
-    ///     slices.second[0] = 40;
+    /// if let Ok(n) = p.push_slices(3, |first, second| {
+    ///     assert_eq!(first.len(), 2);
+    ///     first[0] = 20;
+    ///     first[1] = 30;
+    ///     assert_eq!(second.len(), 1);
+    ///     second[0] = 40;
+    ///     3
+    /// }) {
+    ///     assert_eq!(n, 3);
     /// } else {
     ///     unreachable!();
     /// }
@@ -390,7 +393,10 @@ where
     /// assert_eq!(c.pop(), Ok(30));
     /// assert_eq!(c.pop(), Ok(40));
     /// ```
-    pub fn push_slices(&mut self, n: usize) -> Result<PushSlices<'_, T>, SlicesError> {
+    pub fn push_slices<F>(&mut self, n: usize, f: F) -> Result<usize, SlicesError>
+    where
+        F: FnOnce(&mut [T], &mut [T]) -> usize,
+    {
         let tail = self.tail.get();
 
         // Check if the queue has *possibly* not enough slots.
@@ -406,20 +412,27 @@ where
             }
         }
 
-        let tail = self.rb.collapse_position(tail);
+        let collapsed_tail = self.rb.collapse_position(tail);
 
-        let end = self.rb.capacity.min(tail + n);
-        for i in self.initialized.max(tail).min(end)..end {
+        let end = self.rb.capacity.min(collapsed_tail + n);
+        for i in self.initialized.max(collapsed_tail).min(end)..end {
             unsafe { self.rb.buffer.add(i).write(Default::default()) };
         }
         self.initialized = end;
 
-        let first_len = n.min(self.rb.capacity - tail);
-        Ok(PushSlices {
-            first: unsafe { std::slice::from_raw_parts_mut(self.rb.buffer.add(tail), first_len) },
-            second: unsafe { std::slice::from_raw_parts_mut(self.rb.buffer, n - first_len) },
-            producer: self,
-        })
+        let first_len = n.min(self.rb.capacity - collapsed_tail);
+        let first = unsafe {
+            std::slice::from_raw_parts_mut(self.rb.buffer.add(collapsed_tail), first_len)
+        };
+        let second = unsafe { std::slice::from_raw_parts_mut(self.rb.buffer, n - first_len) };
+
+        let advance = f(first, second);
+
+        let tail = self.rb.increment(tail, advance);
+        self.rb.tail.store(tail, Ordering::Release);
+        self.tail.set(tail);
+
+        Ok(advance)
     }
 }
 
@@ -744,23 +757,6 @@ impl<T> Consumer<T> {
     }
 }
 
-/// Contains two mutable slices from the ring buffer.
-/// When this structure is dropped (falls out of scope), the slots are made available for reading.
-///
-/// This is returned from [`Producer::push_slices()`].
-#[derive(Debug)]
-pub struct PushSlices<'a, T> {
-    /// First part of the requested slots.
-    ///
-    /// Can only be empty if `0` slots have been requested.
-    pub first: &'a mut [T],
-    /// Second part of the requested slots.
-    ///
-    /// If `first` contains all requested slots, this is empty.
-    pub second: &'a mut [T],
-    producer: &'a Producer<T>,
-}
-
 /// Contains two slices from the ring buffer.
 ///
 /// This is returned from [`Consumer::peek_slices()`].
@@ -791,18 +787,6 @@ pub struct PopSlices<'a, T> {
     /// If `first` contains all requested slots, this is empty.
     pub second: &'a [T],
     consumer: &'a Consumer<T>,
-}
-
-impl<'a, T> Drop for PushSlices<'a, T> {
-    /// Makes the requested slots available for reading.
-    fn drop(&mut self) {
-        let tail = self.producer.rb.increment(
-            self.producer.tail.get(),
-            self.first.len() + self.second.len(),
-        );
-        self.producer.rb.tail.store(tail, Ordering::Release);
-        self.producer.tail.set(tail);
-    }
 }
 
 impl<'a, T> Drop for PopSlices<'a, T> {
