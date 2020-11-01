@@ -1,4 +1,4 @@
-//! A realtime-safe single-producer single-consumer ring buffer.
+//! A realtime-safe single-producer single-consumer (SPSC) ring buffer.
 //!
 //! Reading from and writing into the ring buffer is lock-free and wait-free.
 //! All reading and writing functions return immediately.
