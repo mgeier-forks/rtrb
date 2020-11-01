@@ -538,8 +538,6 @@ impl<T> Consumer<T> {
     /// if let Ok(slices) = c.pop_slices(2) {
     ///     assert_eq!(slices.first, &[10, 20]);
     ///     assert_eq!(slices.second, &[]);
-    ///     // slices implements IntoIterator:
-    ///     assert_eq!(slices.into_iter().collect::<Vec<_>>(), [&10, &20]);
     /// } else {
     ///     unreachable!();
     /// }
@@ -551,6 +549,11 @@ impl<T> Consumer<T> {
     /// if let Ok(slices) = c.pop_slices(2) {
     ///     assert_eq!(slices.first, &[30]);
     ///     assert_eq!(slices.second, &[40]);
+    ///     
+    ///     let mut v = Vec::<i32>::new();
+    ///     // Iterate over both slices:
+    ///     v.extend(slices.first.iter().chain(slices.second));
+    ///     assert_eq!(v, [30, 40]);
     /// } else {
     ///     unreachable!();
     /// };
@@ -628,10 +631,6 @@ impl<T> Consumer<T> {
     /// if let Ok(slices) = c.peek_slices(2) {
     ///     assert_eq!(slices.first, &[10, 20]);
     ///     assert_eq!(slices.second, &[]);
-    ///
-    ///     let mut v = Vec::<i32>::new();
-    ///     v.extend(slices); // slices implements IntoIterator!
-    ///     assert_eq!(v, [10, 20]);
     /// } else {
     ///     unreachable!();
     /// }
@@ -765,9 +764,6 @@ pub struct PushSlices<'a, T> {
 /// Contains two slices from the ring buffer.
 ///
 /// This is returned from [`Consumer::peek_slices()`].
-///
-/// It implements [`IntoIterator`] by chaining the two slices together,
-/// and it can therefore, for example, be iterated with a `for` loop.
 #[derive(Debug)]
 pub struct PeekSlices<'a, T> {
     /// First part of the requested slots.
@@ -784,9 +780,6 @@ pub struct PeekSlices<'a, T> {
 /// the contents of the slices will be dropped and the read position will be advanced.
 ///
 /// This is returned from [`Consumer::pop_slices()`].
-///
-/// It implements [`IntoIterator`] by chaining the two slices together,
-/// and it can therefore, for example, be iterated with a `for` loop.
 #[derive(Debug)]
 pub struct PopSlices<'a, T> {
     /// First part of the requested slots.
@@ -834,22 +827,6 @@ impl<'a, T> Drop for PopSlices<'a, T> {
         }
         self.consumer
             .advance_head(head, self.first.len() + self.second.len());
-    }
-}
-
-impl<'a, T> IntoIterator for PeekSlices<'a, T> {
-    type Item = &'a T;
-    type IntoIter = std::iter::Chain<std::slice::Iter<'a, T>, std::slice::Iter<'a, T>>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.first.iter().chain(self.second)
-    }
-}
-
-impl<'a, T> IntoIterator for PopSlices<'a, T> {
-    type Item = &'a T;
-    type IntoIter = std::iter::Chain<std::slice::Iter<'a, T>, std::slice::Iter<'a, T>>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.first.iter().chain(self.second)
     }
 }
 
