@@ -11,7 +11,7 @@ use criterion::{AxisScale, PlotConfiguration};
 
 use rtrb::RingBuffer;
 
-fn add_function<F, M>(group: &mut criterion::BenchmarkGroup<M>, id: impl Into<String>, mut f: F)
+pub fn add_function<F, M>(group: &mut criterion::BenchmarkGroup<M>, id: impl Into<String>, mut f: F)
 where
     F: FnMut(u8) -> u8,
     M: criterion::measurement::Measurement,
@@ -25,7 +25,7 @@ where
     });
 }
 
-pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
+fn criterion_benchmark(criterion: &mut criterion::Criterion) {
     let mut group = criterion.benchmark_group("single-thread-single-byte");
     group.throughput(criterion::Throughput::Bytes(1));
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));

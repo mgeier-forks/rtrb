@@ -11,9 +11,10 @@ use criterion::{AxisScale, PlotConfiguration};
 
 use rtrb::{CopyToUninit, RingBuffer};
 
-const CHUNK_SIZE: usize = 4096;
+pub const CHUNKS: usize = 1000;
+pub const CHUNK_SIZE: usize = 4096;
 
-fn add_function<F, M>(group: &mut criterion::BenchmarkGroup<M>, id: impl Into<String>, mut f: F)
+pub fn add_function<F, M>(group: &mut criterion::BenchmarkGroup<M>, id: impl Into<String>, mut f: F)
 where
     F: FnMut(&[u8]) -> [u8; CHUNK_SIZE],
     M: criterion::measurement::Measurement,
@@ -31,12 +32,12 @@ where
     });
 }
 
-pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
+fn criterion_benchmark(criterion: &mut criterion::Criterion) {
     let mut group = criterion.benchmark_group("single-thread-with-chunks");
     group.throughput(criterion::Throughput::Bytes(CHUNK_SIZE as u64));
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
-    let (mut p, mut c) = RingBuffer::<u8>::with_chunks(1000, CHUNK_SIZE).split();
+    let (mut p, mut c) = RingBuffer::<u8>::with_chunks(CHUNKS, CHUNK_SIZE).split();
 
     add_function(&mut group, "1-pop", |data| {
         let mut result = [0; CHUNK_SIZE];
