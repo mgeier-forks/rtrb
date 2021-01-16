@@ -1098,8 +1098,8 @@ impl<T> WriteChunkUninit<'_, T> {
     pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
         unsafe {
             (
-                std::slice::from_raw_parts_mut(self.first_ptr as *mut _, self.first_len),
-                std::slice::from_raw_parts_mut(self.second_ptr as *mut _, self.second_len),
+                std::slice::from_raw_parts_mut(self.first_ptr.cast(), self.first_len),
+                std::slice::from_raw_parts_mut(self.second_ptr.cast(), self.second_len),
             )
         }
     }
@@ -1169,7 +1169,7 @@ impl<'a, T> Iterator for WriteChunkUninit<'a, T> {
             return None;
         };
         self.iterated += 1;
-        Some(unsafe { &mut *(ptr as *mut _) })
+        Some(unsafe { &mut *ptr.cast() })
     }
 }
 
@@ -1201,7 +1201,7 @@ impl<T: Copy> CopyToUninit<T> for [T] {
             dst.len(),
             "source slice length does not match destination slice length"
         );
-        let dst_ptr = dst.as_mut_ptr() as *mut _;
+        let dst_ptr = dst.as_mut_ptr().cast();
         unsafe { self.as_ptr().copy_to_nonoverlapping(dst_ptr, self.len()) };
     }
 }
