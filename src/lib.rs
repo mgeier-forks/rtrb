@@ -1185,17 +1185,24 @@ impl<'a, T> Iterator for WriteChunkUninit<'a, T> {
 /// use rtrb::CopyToUninit;
 /// ```
 pub trait CopyToUninit<T: Copy> {
-    /// Copies contents to a possibly uninitialized slice.
-    fn copy_to_uninit(&self, dst: &mut [MaybeUninit<T>]);
+
+    /// Destination type.
+    type Dst: ?Sized;
+
+    /// Copies contents to a possibly uninitialized destination.
+    fn copy_to_uninit(&self, dst: &mut Self::Dst);
 }
 
 impl<T: Copy> CopyToUninit<T> for [T] {
+
+    type Dst = [MaybeUninit<T>];
+
     /// Copies contents to a possibly uninitialized slice.
     ///
     /// # Panics
     ///
     /// This function will panic if the two slices have different lengths.
-    fn copy_to_uninit(&self, dst: &mut [MaybeUninit<T>]) {
+    fn copy_to_uninit(&self, dst: &mut Self::Dst) {
         assert_eq!(
             self.len(),
             dst.len(),
