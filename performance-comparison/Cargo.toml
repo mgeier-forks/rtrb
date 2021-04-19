@@ -1,0 +1,21 @@
+[package]
+name = "ringbuffer-performance-comparison"
+version = "0.0.0"
+edition = "2018"
+
+publish = false
+
+[dependencies]
+npnc = "0.2"
+ringbuf = "0.2"
+rtrb = { path = ".." }
+
+[dev-dependencies]
+criterion = "0.3"
+
+[lib]
+bench = false # Don't disturb criterion command line parsing
+
+[[bench]]
+name = "two_threads"
+harness = false
