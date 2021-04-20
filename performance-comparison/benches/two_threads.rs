@@ -10,6 +10,17 @@ fn criterion_benchmark(criterion: &mut criterion::Criterion) {
 
     add_function(
         &mut group,
+        "-crossbeam-queue",
+        |capacity| {
+            let q = std::sync::Arc::new(crossbeam_queue::ArrayQueue::new(capacity));
+            (q.clone(), q)
+        },
+        |q, i| q.push(i).is_ok(),
+        |q| q.pop(),
+    );
+
+    add_function(
+        &mut group,
         "-npnc",
         |capacity| npnc::bounded::spsc::channel(capacity.next_power_of_two()),
         |p, i| p.produce(i).is_ok(),
