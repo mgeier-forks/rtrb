@@ -10,6 +10,17 @@ fn criterion_benchmark(criterion: &mut criterion::Criterion) {
 
     add_function(
         &mut group,
+        "-concurrent-queue",
+        |capacity| {
+            let q = std::sync::Arc::new(concurrent_queue::ConcurrentQueue::bounded(capacity));
+            (q.clone(), q)
+        },
+        |q, i| q.push(i).is_ok(),
+        |q| q.pop().ok(),
+    );
+
+    add_function(
+        &mut group,
         "-crossbeam-queue",
         |capacity| {
             let q = std::sync::Arc::new(crossbeam_queue::ArrayQueue::new(capacity));

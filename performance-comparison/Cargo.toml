@@ -6,6 +6,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
+concurrent-queue = "1.2"
 crossbeam-queue = "0.3"
 npnc = "0.2"
 ringbuf = "0.2"
