@@ -9,6 +9,7 @@ publish = false
 npnc = "0.2"
 ringbuf = "0.2"
 rtrb = { path = ".." }
+spsc-bounded-queue = "0.0.1"
 
 [dev-dependencies]
 criterion = "0.3"
