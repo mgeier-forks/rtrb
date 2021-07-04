@@ -8,7 +8,8 @@
 //! # Examples
 //!
 //! Producing and consuming multiple items at once with
-//! [`Producer::write_chunk()`] and [`Consumer::read_chunk()`], respectively.
+//! [`Producer::write_chunk()`]/[`Producer::write_chunk_uninit()`]
+//! and [`Consumer::read_chunk()`], respectively.
 //! This example uses a single thread for simplicity, but in a real application,
 //! `producer` and `consumer` would of course live on different threads:
 //!
@@ -17,13 +18,9 @@
 //!
 //! let (mut producer, mut consumer) = RingBuffer::new(5);
 //!
-//! if let Ok(mut chunk) = producer.write_chunk(4) {
-//!     // NB: Don't use `chunk` as the first iterator in zip() if the other one might be shorter!
-//!     for (src, dst) in vec![10, 11, 12].into_iter().zip(&mut chunk) {
-//!         *dst = src;
-//!     }
-//!     // Don't forget to make the written slots available for reading!
-//!     chunk.commit_iterated();
+//! let mut iter = vec![10, 11, 12].into_iter();
+//! if let Ok(chunk) = producer.write_chunk_uninit(4) {
+//!     chunk.populate(&mut iter);
 //!     // Note that we requested 4 slots but we've only written 3!
 //! } else {
 //!     unreachable!();
@@ -32,11 +29,8 @@
 //! assert_eq!(producer.slots(), 2);
 //! assert_eq!(consumer.slots(), 3);
 //!
-//! if let Ok(mut chunk) = consumer.read_chunk(2) {
-//!     // NB: Even though we are just reading, `chunk` needs to be mutable for iteration!
-//!     assert_eq!((&mut chunk).collect::<Vec<_>>(), [&10, &11]);
-//!     chunk.commit_iterated(); // Mark the slots as "consumed"
-//!     // chunk.commit_all() would also work here.
+//! if let Ok(chunk) = consumer.read_chunk(2) {
+//!     assert_eq!(chunk.into_iter().collect::<Vec<_>>(), [10, 11]);
 //! } else {
 //!     unreachable!();
 //! }
@@ -146,17 +140,14 @@
 //!         (_, None) => queue.slots(),
 //!         (_, Some(n)) => n,
 //!     };
-//!     let mut chunk = match queue.write_chunk(n) {
+//!     let chunk = match queue.write_chunk_uninit(n) {
 //!         Ok(chunk) => chunk,
 //!         // As above, this is an optional optimization:
 //!         Err(TooFewSlots(0)) => return 0,
 //!         // As above, this will always succeed:
-//!         Err(TooFewSlots(n)) => queue.write_chunk(n).unwrap(),
+//!         Err(TooFewSlots(n)) => queue.write_chunk_uninit(n).unwrap(),
 //!     };
-//!     for (source, target) in iter.zip(&mut chunk) {
-//!         *target = source;
-//!     }
-//!     chunk.commit_iterated()
+//!     chunk.populate(iter)
 //! }
 //! ```
 
@@ -181,8 +172,8 @@ impl<T> Producer<T> {
     ///
     /// The provided slots are *not* automatically made available
     /// to be read by the [`Consumer`].
-    /// This has to be explicitly done by calling [`WriteChunk::commit()`],
-    /// [`WriteChunk::commit_iterated()`] or [`WriteChunk::commit_all()`].
+    /// This has to be explicitly done by calling [`WriteChunk::commit()`]
+    /// or [`WriteChunk::commit_all()`].
     /// If items are written but *not* committed afterwards,
     /// they will *not* become available for reading and
     /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
@@ -210,9 +201,8 @@ impl<T> Producer<T> {
     ///
     /// The provided slots are *not* automatically made available
     /// to be read by the [`Consumer`].
-    /// This has to be explicitly done by calling [`WriteChunkUninit::commit()`],
-    /// [`WriteChunkUninit::commit_iterated()`] or
-    /// [`WriteChunkUninit::commit_all()`].
+    /// This has to be explicitly done by calling [`WriteChunkUninit::commit()`]
+    /// or [`WriteChunkUninit::commit_all()`].
     /// If items are written but *not* committed afterwards,
     /// they will *not* become available for reading and
     /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
@@ -247,7 +237,6 @@ impl<T> Producer<T> {
             second_ptr: self.buffer.data_ptr,
             second_len: n - first_len,
             producer: self,
-            iterated: 0,
         })
     }
 }
@@ -263,8 +252,8 @@ impl<T> Consumer<T> {
     ///
     /// The provided slots are *not* automatically made available
     /// to be written again by the [`Producer`].
-    /// This has to be explicitly done by calling [`ReadChunk::commit()`],
-    /// [`ReadChunk::commit_iterated()`] or [`ReadChunk::commit_all()`].
+    /// This has to be explicitly done by calling [`ReadChunk::commit()`]
+    /// or [`ReadChunk::commit_all()`].
     /// Note that this runs the destructor of the committed items (if `T` implements [`Drop`]).
     /// You can "peek" at the contained values by simply
     /// not calling any of the "commit" methods.
@@ -341,7 +330,6 @@ impl<T> Consumer<T> {
             second_ptr: self.buffer.data_ptr,
             second_len: n - first_len,
             consumer: self,
-            iterated: 0,
         })
     }
 }
@@ -363,8 +351,7 @@ impl<T> Consumer<T> {
 /// After writing, the provided slots are *not* automatically made available
 /// to be read by the [`Consumer`].
 /// If desired, this has to be explicitly done by calling
-/// [`commit()`](WriteChunk::commit),
-/// [`commit_iterated()`](WriteChunk::commit_iterated) or
+/// [`commit()`](WriteChunk::commit) or
 /// [`commit_all()`](WriteChunk::commit_all).
 /// If items are written but *not* committed afterwards,
 /// they will *not* become available for reading and
@@ -422,12 +409,6 @@ where
         unsafe { self.0.commit(n) }
     }
 
-    /// Returns the number of iterated slots and makes them available for reading.
-    pub fn commit_iterated(self) -> usize {
-        // Safety: All slots have been initialized in From::from() and there are no destructors.
-        unsafe { self.0.commit_iterated() }
-    }
-
     /// Makes the whole chunk available for reading.
     pub fn commit_all(self) {
         // Safety: All slots have been initialized in From::from().
@@ -442,20 +423,6 @@ where
     /// Returns `true` if the chunk contains no slots.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
-    }
-}
-
-impl<'a, T> Iterator for WriteChunk<'a, T>
-where
-    T: Default,
-{
-    type Item = &'a mut T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|item| {
-            // Safety: All slots have been initialized in From::from().
-            unsafe { &mut *item.as_mut_ptr() }
-        })
     }
 }
 
@@ -476,8 +443,7 @@ where
 /// After writing, the provided slots are *not* automatically made available
 /// to be read by the [`Consumer`].
 /// If desired, this has to be explicitly done by calling
-/// [`commit()`](WriteChunkUninit::commit),
-/// [`commit_iterated()`](WriteChunkUninit::commit_iterated) or
+/// [`commit()`](WriteChunkUninit::commit) or
 /// [`commit_all()`](WriteChunkUninit::commit_all).
 /// If items are written but *not* committed afterwards,
 /// they will *not* become available for reading and
@@ -489,7 +455,6 @@ pub struct WriteChunkUninit<'a, T> {
     second_ptr: *mut T,
     second_len: usize,
     producer: &'a Producer<T>,
-    iterated: usize,
 }
 
 impl<T> WriteChunkUninit<'_, T> {
@@ -523,16 +488,6 @@ impl<T> WriteChunkUninit<'_, T> {
         self.commit_unchecked(n);
     }
 
-    /// Returns the number of iterated slots and makes them available for reading.
-    ///
-    /// # Safety
-    ///
-    /// The user must make sure that all iterated elements have been initialized.
-    pub unsafe fn commit_iterated(self) -> usize {
-        let slots = self.iterated;
-        self.commit_unchecked(slots)
-    }
-
     /// Makes the whole chunk available for reading.
     ///
     /// # Safety
@@ -550,6 +505,70 @@ impl<T> WriteChunkUninit<'_, T> {
         n
     }
 
+    /// Fill chunk with items taken from an iterator.
+    ///
+    /// # Examples
+    ///
+    /// If the iterator contains too few items, only a part of the chunk is committed:
+    ///
+    /// ```
+    /// use rtrb::{RingBuffer, PopError};
+    ///
+    /// let (mut p, mut c) = RingBuffer::new(3);
+    ///
+    /// let mut it = vec![10, 20].into_iter();
+    /// if let Ok(chunk) = p.write_chunk_uninit(3) {
+    ///     assert_eq!(chunk.populate(&mut it), 2);
+    /// } else {
+    ///     unreachable!();
+    /// }
+    /// assert_eq!(p.slots(), 1);
+    /// assert_eq!(c.pop(), Ok(10));
+    /// assert_eq!(c.pop(), Ok(20));
+    /// assert_eq!(c.pop(), Err(PopError::Empty));
+    /// ```
+    ///
+    /// If the chunk size is too small, some items may remain in the iterator:
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (mut p, mut c) = RingBuffer::new(3);
+    ///
+    /// let mut it = vec![10, 20, 30].into_iter();
+    /// if let Ok(chunk) = p.write_chunk_uninit(2) {
+    ///     assert_eq!(chunk.populate(&mut it), 2);
+    /// } else {
+    ///     unreachable!();
+    /// }
+    /// assert_eq!(c.pop(), Ok(10));
+    /// assert_eq!(c.pop(), Ok(20));
+    /// assert_eq!(it.next(), Some(30));
+    /// ```
+    pub fn populate<I>(self, iter: &mut I) -> usize
+    where
+        I: Iterator<Item = T>,
+    {
+        let mut iterated = 0;
+        'outer: for &(ptr, len) in &[
+            (self.first_ptr, self.first_len),
+            (self.second_ptr, self.second_len),
+        ] {
+            for i in 0..len {
+                match iter.next() {
+                    Some(item) => {
+                        // Safety: It is allowed to write to this memory slot
+                        unsafe { ptr.add(i).write(item) };
+                        iterated += 1;
+                    }
+                    None => break 'outer,
+                }
+            }
+        }
+        // Safety: iterated slots have been initialized above
+        unsafe { self.commit_unchecked(iterated) }
+    }
+
     /// Returns the number of slots in the chunk.
     pub fn len(&self) -> usize {
         self.first_len + self.second_len
@@ -558,22 +577,6 @@ impl<T> WriteChunkUninit<'_, T> {
     /// Returns `true` if the chunk contains no slots.
     pub fn is_empty(&self) -> bool {
         self.first_len == 0
-    }
-}
-
-impl<'a, T> Iterator for WriteChunkUninit<'a, T> {
-    type Item = &'a mut MaybeUninit<T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let ptr = if self.iterated < self.first_len {
-            unsafe { self.first_ptr.add(self.iterated) }
-        } else if self.iterated < self.first_len + self.second_len {
-            unsafe { self.second_ptr.add(self.iterated - self.first_len) }
-        } else {
-            return None;
-        };
-        self.iterated += 1;
-        Some(unsafe { &mut *(ptr as *mut _) })
     }
 }
 
@@ -589,8 +592,8 @@ impl<'a, T> Iterator for WriteChunkUninit<'a, T> {
 ///
 /// After reading, the provided slots are *not* automatically made available
 /// to be written again by the [`Producer`].
-/// If desired, this has to be explicitly done by calling [`commit()`](ReadChunk::commit),
-/// [`commit_iterated()`](ReadChunk::commit_iterated) or [`commit_all()`](ReadChunk::commit_all).
+/// If desired, this has to be explicitly done by calling [`commit()`](ReadChunk::commit)
+/// or [`commit_all()`](ReadChunk::commit_all).
 /// Note that this runs the destructor of the committed items (if `T` implements [`Drop`]).
 /// You can "peek" at the contained values by simply not calling any of the "commit" methods.
 #[derive(Debug, PartialEq, Eq)]
@@ -600,7 +603,6 @@ pub struct ReadChunk<'a, T> {
     second_ptr: *const T,
     second_len: usize,
     consumer: &'a mut Consumer<T>,
-    iterated: usize,
 }
 
 impl<T> ReadChunk<'_, T> {
@@ -623,14 +625,6 @@ impl<T> ReadChunk<'_, T> {
     pub fn commit(self, n: usize) {
         assert!(n <= self.len(), "cannot commit more than chunk size");
         unsafe { self.commit_unchecked(n) };
-    }
-
-    /// Drops all slots that have been iterated, making the space available for writing again.
-    ///
-    /// Returns the number of iterated slots.
-    pub fn commit_iterated(self) -> usize {
-        let slots = self.iterated;
-        unsafe { self.commit_unchecked(slots) }
     }
 
     /// Drops all slots of the chunk, making the space available for writing again.
@@ -669,21 +663,64 @@ impl<T> ReadChunk<'_, T> {
     }
 }
 
-impl<'a, T> Iterator for ReadChunk<'a, T> {
-    type Item = &'a T;
+impl<'a, T> IntoIterator for ReadChunk<'a, T> {
+    type Item = T;
+    type IntoIter = ReadChunkIter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Self::IntoIter {
+            chunk: self,
+            iterated: 0,
+        }
+    }
+}
+
+/// An iterator that moves out of a [`ReadChunk`].
+///
+/// This `struct` is created by the `into_iter()` method on [`ReadChunk`]
+/// (provided by the [`IntoIterator`] trait).
+pub struct ReadChunkIter<'a, T> {
+    chunk: ReadChunk<'a, T>,
+    iterated: usize,
+}
+
+impl<'a, T> Drop for ReadChunkIter<'a, T> {
+    fn drop(&mut self) {
+        let consumer = &self.chunk.consumer;
+        let head = consumer
+            .buffer
+            .increment(consumer.head.get(), self.iterated);
+        consumer.buffer.head.store(head, Ordering::Release);
+        consumer.head.set(head);
+    }
+}
+
+impl<'a, T> Iterator for ReadChunkIter<'a, T> {
+    type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let ptr = if self.iterated < self.first_len {
-            unsafe { self.first_ptr.add(self.iterated) }
-        } else if self.iterated < self.first_len + self.second_len {
-            unsafe { self.second_ptr.add(self.iterated - self.first_len) }
+        let ptr = if self.iterated < self.chunk.first_len {
+            unsafe { self.chunk.first_ptr.add(self.iterated) }
+        } else if self.iterated < self.chunk.first_len + self.chunk.second_len {
+            unsafe {
+                self.chunk
+                    .second_ptr
+                    .add(self.iterated - self.chunk.first_len)
+            }
         } else {
             return None;
         };
         self.iterated += 1;
-        Some(unsafe { &*ptr })
+        Some(unsafe { ptr.read() })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.chunk.first_len + self.chunk.second_len - self.iterated;
+        (remaining, Some(remaining))
     }
 }
+
+impl<'a, T> ExactSizeIterator for ReadChunkIter<'a, T> {}
 
 #[cfg(feature = "std")]
 impl std::io::Write for Producer<u8> {
