@@ -738,6 +738,8 @@ impl<'a, T> Iterator for ReadChunkIntoIter<'a, T> {
 
 impl<'a, T> ExactSizeIterator for ReadChunkIntoIter<'a, T> {}
 
+impl<'a, T> core::iter::FusedIterator for ReadChunkIntoIter<'a, T> {}
+
 #[cfg(feature = "std")]
 impl std::io::Write for Producer<u8> {
     #[inline]
