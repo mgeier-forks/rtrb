@@ -23,15 +23,13 @@
 //!
 //! let (mut producer, mut consumer) = RingBuffer::new(5);
 //!
-//! let mut iter = vec![10, 11, 12].into_iter();
 //! if let Ok(chunk) = producer.write_chunk_uninit(4) {
-//!     chunk.populate(&mut iter);
+//!     chunk.populate(vec![10, 11, 12]);
 //!     // Note that we requested 4 slots but we've only written to 3 of them!
 //! } else {
 //!     unreachable!();
 //! }
 //!
-//! assert_eq!(iter.next(), None);
 //! assert_eq!(producer.slots(), 2);
 //! assert_eq!(consumer.slots(), 3);
 //!
@@ -137,11 +135,12 @@
 //! ```
 //! use rtrb::{Producer, chunks::ChunkError::TooFewSlots};
 //!
-//! fn push_from_iter<T, I>(queue: &mut Producer<T>, iter: &mut I) -> usize
+//! fn push_from_iter<T, I>(queue: &mut Producer<T>, iter: I) -> usize
 //! where
 //!     T: Default,
-//!     I: Iterator<Item = T>,
+//!     I: IntoIterator<Item = T>,
 //! {
+//!     let iter = iter.into_iter();
 //!     let n = match iter.size_hint() {
 //!         (_, None) => queue.slots(),
 //!         (_, Some(n)) => n,
@@ -520,30 +519,31 @@ impl<T> WriteChunkUninit<'_, T> {
     /// ```
     /// use rtrb::{RingBuffer, PopError};
     ///
-    /// let (mut p, mut c) = RingBuffer::new(3);
+    /// let (mut p, mut c) = RingBuffer::new(4);
     ///
-    /// let mut it = vec![10, 20].into_iter();
     /// if let Ok(chunk) = p.write_chunk_uninit(3) {
-    ///     assert_eq!(chunk.populate(&mut it), 2);
+    ///     assert_eq!(chunk.populate(vec![10, 20]), 2);
     /// } else {
     ///     unreachable!();
     /// }
-    /// assert_eq!(p.slots(), 1);
+    /// assert_eq!(p.slots(), 2);
     /// assert_eq!(c.pop(), Ok(10));
     /// assert_eq!(c.pop(), Ok(20));
     /// assert_eq!(c.pop(), Err(PopError::Empty));
     /// ```
     ///
-    /// If the chunk size is too small, some items may remain in the iterator:
+    /// If the chunk size is too small, some items may remain in the iterator.
+    /// To be able to keep using the iterator after the call,
+    /// [`by_ref()`](Iterator::by_ref) can be used.
     ///
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (mut p, mut c) = RingBuffer::new(3);
+    /// let (mut p, mut c) = RingBuffer::new(4);
     ///
     /// let mut it = vec![10, 20, 30].into_iter();
     /// if let Ok(chunk) = p.write_chunk_uninit(2) {
-    ///     assert_eq!(chunk.populate(&mut it), 2);
+    ///     assert_eq!(chunk.populate(it.by_ref()), 2);
     /// } else {
     ///     unreachable!();
     /// }
@@ -551,10 +551,11 @@ impl<T> WriteChunkUninit<'_, T> {
     /// assert_eq!(c.pop(), Ok(20));
     /// assert_eq!(it.next(), Some(30));
     /// ```
-    pub fn populate<I>(self, iter: &mut I) -> usize
+    pub fn populate<I>(self, iter: I) -> usize
     where
-        I: Iterator<Item = T>,
+        I: IntoIterator<Item = T>,
     {
+        let mut iter = iter.into_iter();
         let mut iterated = 0;
         'outer: for &(ptr, len) in &[
             (self.first_ptr, self.first_len),
