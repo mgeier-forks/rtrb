@@ -24,7 +24,7 @@
 //! let (mut producer, mut consumer) = RingBuffer::new(5);
 //!
 //! if let Ok(chunk) = producer.write_chunk_uninit(4) {
-//!     chunk.populate(vec![10, 11, 12]);
+//!     chunk.populate([10, 11, 12]);
 //!     // Note that we requested 4 slots but we've only written to 3 of them!
 //! } else {
 //!     unreachable!();
@@ -522,7 +522,7 @@ impl<T> WriteChunkUninit<'_, T> {
     /// let (mut p, mut c) = RingBuffer::new(4);
     ///
     /// if let Ok(chunk) = p.write_chunk_uninit(3) {
-    ///     assert_eq!(chunk.populate(vec![10, 20]), 2);
+    ///     assert_eq!(chunk.populate([10, 20]), 2);
     /// } else {
     ///     unreachable!();
     /// }
