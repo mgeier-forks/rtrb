@@ -1,15 +1,20 @@
 //! Writing and reading multiple items at once into and from a [`RingBuffer`].
 //!
-//! Multiple items can be written at once by using [`Producer::write_chunk()`]
-//! or its `unsafe` (but probably slightly faster) cousin [`Producer::write_chunk_uninit()`].
+//! Multiple items at once can be moved from an iterator into the ring buffer by using
+//! [`Producer::write_chunk_uninit()`] and [`WriteChunkUninit::populate()`].
+//! Alternatively, mutable access to the (uninitialized) slots of the chunk can be obtained with
+//! [`WriteChunkUninit::as_mut_slices()`], which requires writing some `unsafe` code.
+//! To avoid that, [`Producer::write_chunk()`] can be used,
+//! which initializes all slots with their [`Default`] value
+//! and provides mutable access by means of [`WriteChunk::as_mut_slices()`].
 //!
-//! Multiple items can be read at once with [`Consumer::read_chunk()`].
+//! Multiple items at once can be moved out of the ring buffer by using
+//! [`Consumer::read_chunk()`] and iterating over the returned [`ReadChunk`]
+//! (or by explicitly calling [`ReadChunk::into_iter()`]).
+//! Immutable access to the slots of the chunk can be obtained with [`ReadChunk::as_slices()`].
 //!
 //! # Examples
 //!
-//! Producing and consuming multiple items at once with
-//! [`Producer::write_chunk()`]/[`Producer::write_chunk_uninit()`]
-//! and [`Consumer::read_chunk()`], respectively.
 //! This example uses a single thread for simplicity, but in a real application,
 //! `producer` and `consumer` would of course live on different threads:
 //!
@@ -21,11 +26,12 @@
 //! let mut iter = vec![10, 11, 12].into_iter();
 //! if let Ok(chunk) = producer.write_chunk_uninit(4) {
 //!     chunk.populate(&mut iter);
-//!     // Note that we requested 4 slots but we've only written 3!
+//!     // Note that we requested 4 slots but we've only written to 3 of them!
 //! } else {
 //!     unreachable!();
 //! }
 //!
+//! assert_eq!(iter.next(), None);
 //! assert_eq!(producer.slots(), 2);
 //! assert_eq!(consumer.slots(), 3);
 //!
@@ -665,8 +671,12 @@ impl<T> ReadChunk<'_, T> {
 
 impl<'a, T> IntoIterator for ReadChunk<'a, T> {
     type Item = T;
-    type IntoIter = ReadChunkIter<'a, T>;
+    type IntoIter = ReadChunkIntoIter<'a, T>;
 
+    /// Turns a [`ReadChunk`] into an iterator.
+    ///
+    /// When the iterator is dropped, all iterated slots are made available for writing again.
+    /// Non-iterated items remain in the ring buffer.
     fn into_iter(self) -> Self::IntoIter {
         Self::IntoIter {
             chunk: self,
@@ -677,14 +687,20 @@ impl<'a, T> IntoIterator for ReadChunk<'a, T> {
 
 /// An iterator that moves out of a [`ReadChunk`].
 ///
-/// This `struct` is created by the `into_iter()` method on [`ReadChunk`]
-/// (provided by the [`IntoIterator`] trait).
-pub struct ReadChunkIter<'a, T> {
+/// This `struct` is created by the [`into_iter()`](ReadChunk::into_iter) method
+/// on [`ReadChunk`] (provided by the [`IntoIterator`] trait).
+///
+/// When this `struct` is dropped, the iterated slots are made available for writing again.
+/// Non-iterated items remain in the ring buffer.
+pub struct ReadChunkIntoIter<'a, T> {
     chunk: ReadChunk<'a, T>,
     iterated: usize,
 }
 
-impl<'a, T> Drop for ReadChunkIter<'a, T> {
+impl<'a, T> Drop for ReadChunkIntoIter<'a, T> {
+    /// Makes all iterated slots available for writing again.
+    ///
+    /// Non-iterated items remain in the ring buffer and are *not* dropped.
     fn drop(&mut self) {
         let consumer = &self.chunk.consumer;
         let head = consumer
@@ -695,7 +711,7 @@ impl<'a, T> Drop for ReadChunkIter<'a, T> {
     }
 }
 
-impl<'a, T> Iterator for ReadChunkIter<'a, T> {
+impl<'a, T> Iterator for ReadChunkIntoIter<'a, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -720,7 +736,7 @@ impl<'a, T> Iterator for ReadChunkIter<'a, T> {
     }
 }
 
-impl<'a, T> ExactSizeIterator for ReadChunkIter<'a, T> {}
+impl<'a, T> ExactSizeIterator for ReadChunkIntoIter<'a, T> {}
 
 #[cfg(feature = "std")]
 impl std::io::Write for Producer<u8> {
