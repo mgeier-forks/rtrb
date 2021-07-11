@@ -206,18 +206,14 @@ impl<T> Producer<T> {
     /// Use [`Producer::slots()`] to obtain the number of available slots beforehand.
     ///
     /// [`WriteChunk::as_mut_slices()`] provides mutable access to the slots.
-    /// After writing to those slots, they are *not* automatically made available
-    /// to be read by the [`Consumer`].
-    /// This has to be explicitly done by calling [`WriteChunk::commit()`]
+    /// After writing to those slots, they explicitly have to be made available
+    /// to be read by the [`Consumer`] by calling [`WriteChunk::commit()`]
     /// or [`WriteChunk::commit_all()`].
-    /// If items are written but *not* committed afterwards,
-    /// they will *not* become available for reading and
-    /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
     ///
     /// For an alternative that does not require the trait bound [`Default`],
     /// see [`Producer::write_chunk_uninit()`].
     ///
-    /// If the items to be written to the ring buffer are available from an iterator,
+    /// If items are supposed to be moved from an iterator into the ring buffer,
     /// [`Producer::write_chunk_uninit()`] and [`WriteChunkUninit::populate()`] can be used.
     ///
     /// # Examples
@@ -289,65 +285,19 @@ impl<T> Consumer<T> {
     /// (containing the number of available slots) is returned.
     /// Use [`Consumer::slots()`] to obtain the number of available slots beforehand.
     ///
-    /// The elements can be accessed with [`ReadChunk::as_slices()`] or
-    /// by iterating over (a `&mut` to) the [`ReadChunk`].
-    ///
-    /// The provided slots are *not* automatically made available
-    /// to be written again by the [`Producer`].
-    /// This has to be explicitly done by calling [`ReadChunk::commit()`]
+    /// [`ReadChunk::as_slices()`] provides immutable access to the slots.
+    /// After reading from those slots, they explicitly have to be made available
+    /// to be written again by the [`Producer`] by calling [`ReadChunk::commit()`]
     /// or [`ReadChunk::commit_all()`].
-    /// Note that this runs the destructor of the committed items (if `T` implements [`Drop`]).
-    /// You can "peek" at the contained values by simply
-    /// not calling any of the "commit" methods.
+    ///
+    /// Alternatively, items can be moved out of the [`ReadChunk`] using iteration
+    /// because it implements [`IntoIterator`]
+    /// ([`ReadChunk::into_iter()`] can be used to explicitly turn it into an [`Iterator`]).
+    /// All moved items are automatically made available to be written again by the [`Producer`].
     ///
     /// # Examples
     ///
-    /// The following example shows that items are dropped when "committed"
-    /// (which is only relevant if `T` implements [`Drop`]).
-    ///
-    /// ```
-    /// use rtrb::RingBuffer;
-    ///
-    /// // Static variable to count all drop() invocations
-    /// static mut DROP_COUNT: i32 = 0;
-    /// #[derive(Debug)]
-    /// struct Thing;
-    /// impl Drop for Thing {
-    ///     fn drop(&mut self) { unsafe { DROP_COUNT += 1; } }
-    /// }
-    ///
-    /// // Scope to limit lifetime of ring buffer
-    /// {
-    ///     let (mut p, mut c) = RingBuffer::new(2);
-    ///
-    ///     assert!(p.push(Thing).is_ok()); // 1
-    ///     assert!(p.push(Thing).is_ok()); // 2
-    ///     if let Ok(thing) = c.pop() {
-    ///         // "thing" has been *moved* out of the queue but not yet dropped
-    ///         assert_eq!(unsafe { DROP_COUNT }, 0);
-    ///     } else {
-    ///         unreachable!();
-    ///     }
-    ///     // First Thing has been dropped when "thing" went out of scope:
-    ///     assert_eq!(unsafe { DROP_COUNT }, 1);
-    ///     assert!(p.push(Thing).is_ok()); // 3
-    ///
-    ///     if let Ok(chunk) = c.read_chunk(2) {
-    ///         assert_eq!(chunk.len(), 2);
-    ///         assert_eq!(unsafe { DROP_COUNT }, 1);
-    ///         chunk.commit(1); // Drops only one of the two Things
-    ///         assert_eq!(unsafe { DROP_COUNT }, 2);
-    ///     } else {
-    ///         unreachable!();
-    ///     }
-    ///     // The last Thing is still in the queue ...
-    ///     assert_eq!(unsafe { DROP_COUNT }, 2);
-    /// }
-    /// // ... and it is dropped when the ring buffer goes out of scope:
-    /// assert_eq!(unsafe { DROP_COUNT }, 3);
-    /// ```
-    ///
-    /// See the documentation of the [`chunks`](crate::chunks#examples) module for more examples.
+    /// See the documentation of the [`chunks`](crate::chunks#examples) module.
     pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
         let head = self.head.get();
 
@@ -380,24 +330,9 @@ impl<T> Consumer<T> {
 ///
 /// This is returned from [`Producer::write_chunk()`].
 ///
-/// For an unsafe alternative that provides uninitialized slots,
-/// see [`WriteChunkUninit`].
-///
-/// The slots (which initially contain [`Default`] values) can be accessed with
-/// [`as_mut_slices()`](WriteChunk::as_mut_slices)
-/// or by iteration, which yields mutable references (in other words: `&mut T`).
-/// A mutable reference (`&mut`) to the `WriteChunk`
-/// should be used to iterate over it.
-/// Each slot can only be iterated once and the number of iterations is tracked.
-///
-/// After writing, the provided slots are *not* automatically made available
-/// to be read by the [`Consumer`].
-/// If desired, this has to be explicitly done by calling
-/// [`commit()`](WriteChunk::commit) or
-/// [`commit_all()`](WriteChunk::commit_all).
-/// If items are written but *not* committed afterwards,
-/// they will *not* become available for reading and
-/// they will be leaked (which is only relevant if `T` implements [`Drop`]).
+/// To obtain uninitialized slots, use [`Producer::write_chunk_uninit()`] instead,
+/// which also allows moving items from an iterator into the ring buffer
+/// by means of [`WriteChunkUninit::populate()`].
 #[derive(Debug, PartialEq, Eq)]
 pub struct WriteChunk<'a, T>(WriteChunkUninit<'a, T>);
 
@@ -431,6 +366,14 @@ where
     ///
     /// The first slice can only be empty if `0` slots have been requested.
     /// If the first slice contains all requested slots, the second one is empty.
+    ///
+    /// After writing to the slots, they are *not* automatically made available
+    /// to be read by the [`Consumer`].
+    /// This has to be explicitly done by calling [`commit()`](WriteChunk::commit)
+    /// or [`commit_all()`](WriteChunk::commit_all).
+    /// If items are written but *not* committed afterwards,
+    /// they will *not* become available for reading and
+    /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
     pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
         // Safety: All slots have been initialized in From::from().
         unsafe {
@@ -535,11 +478,16 @@ impl<T> WriteChunkUninit<'_, T> {
         n
     }
 
-    /// Fill chunk with items taken from an iterator.
+    /// Moves items from an iterator into the (uninitialized) slots of the chunk.
+    ///
+    /// The number of moved items is returned.
+    ///
+    /// All moved items are automatically made availabe to be read by the [`Consumer`].
     ///
     /// # Examples
     ///
-    /// If the iterator contains too few items, only a part of the chunk is committed:
+    /// If the iterator contains too few items, only a part of the chunk
+    /// is made available for reading:
     ///
     /// ```
     /// use rtrb::{RingBuffer, PopError};
@@ -559,7 +507,7 @@ impl<T> WriteChunkUninit<'_, T> {
     ///
     /// If the chunk size is too small, some items may remain in the iterator.
     /// To be able to keep using the iterator after the call,
-    /// [`by_ref()`](Iterator::by_ref) can be used.
+    /// `&mut` (or [`Iterator::by_ref()`]) can be used.
     ///
     /// ```
     /// use rtrb::{RingBuffer, PopError};
@@ -568,7 +516,7 @@ impl<T> WriteChunkUninit<'_, T> {
     ///
     /// let mut it = vec![10, 20, 30].into_iter();
     /// if let Ok(chunk) = p.write_chunk_uninit(2) {
-    ///     assert_eq!(chunk.populate(it.by_ref()), 2);
+    ///     assert_eq!(chunk.populate(&mut it), 2);
     /// } else {
     ///     unreachable!();
     /// }
@@ -616,19 +564,6 @@ impl<T> WriteChunkUninit<'_, T> {
 /// Structure for reading from multiple slots in one go.
 ///
 /// This is returned from [`Consumer::read_chunk()`].
-///
-/// The slots can be accessed with [`as_slices()`](ReadChunk::as_slices)
-/// or by iteration.
-/// Even though iterating yields immutable references (`&T`),
-/// a mutable reference (`&mut`) to the `ReadChunk` should be used to iterate over it.
-/// Each slot can only be iterated once and the number of iterations is tracked.
-///
-/// After reading, the provided slots are *not* automatically made available
-/// to be written again by the [`Producer`].
-/// If desired, this has to be explicitly done by calling [`commit()`](ReadChunk::commit)
-/// or [`commit_all()`](ReadChunk::commit_all).
-/// Note that this runs the destructor of the committed items (if `T` implements [`Drop`]).
-/// You can "peek" at the contained values by simply not calling any of the "commit" methods.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ReadChunk<'a, T> {
     first_ptr: *const T,
@@ -643,6 +578,13 @@ impl<T> ReadChunk<'_, T> {
     ///
     /// The first slice can only be empty if `0` slots have been requested.
     /// If the first slice contains all requested slots, the second one is empty.
+    ///
+    /// The provided slots are *not* automatically made available
+    /// to be written again by the [`Producer`].
+    /// This has to be explicitly done by calling [`commit()`](ReadChunk::commit)
+    /// or [`commit_all()`](ReadChunk::commit_all).
+    /// Note that this runs the destructor of the committed items (if `T` implements [`Drop`]).
+    /// You can "peek" at the contained values by simply not calling any of the "commit" methods.
     pub fn as_slices(&self) -> (&[T], &[T]) {
         (
             unsafe { core::slice::from_raw_parts(self.first_ptr, self.first_len) },
@@ -655,6 +597,53 @@ impl<T> ReadChunk<'_, T> {
     /// # Panics
     ///
     /// Panics if `n` is greater than the number of slots in the chunk.
+    ///
+    /// # Examples
+    ///
+    /// The following example shows that items are dropped when "committed"
+    /// (which is only relevant if `T` implements [`Drop`]).
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// // Static variable to count all drop() invocations
+    /// static mut DROP_COUNT: i32 = 0;
+    /// #[derive(Debug)]
+    /// struct Thing;
+    /// impl Drop for Thing {
+    ///     fn drop(&mut self) { unsafe { DROP_COUNT += 1; } }
+    /// }
+    ///
+    /// // Scope to limit lifetime of ring buffer
+    /// {
+    ///     let (mut p, mut c) = RingBuffer::new(2);
+    ///
+    ///     assert!(p.push(Thing).is_ok()); // 1
+    ///     assert!(p.push(Thing).is_ok()); // 2
+    ///     if let Ok(thing) = c.pop() {
+    ///         // "thing" has been *moved* out of the queue but not yet dropped
+    ///         assert_eq!(unsafe { DROP_COUNT }, 0);
+    ///     } else {
+    ///         unreachable!();
+    ///     }
+    ///     // First Thing has been dropped when "thing" went out of scope:
+    ///     assert_eq!(unsafe { DROP_COUNT }, 1);
+    ///     assert!(p.push(Thing).is_ok()); // 3
+    ///
+    ///     if let Ok(chunk) = c.read_chunk(2) {
+    ///         assert_eq!(chunk.len(), 2);
+    ///         assert_eq!(unsafe { DROP_COUNT }, 1);
+    ///         chunk.commit(1); // Drops only one of the two Things
+    ///         assert_eq!(unsafe { DROP_COUNT }, 2);
+    ///     } else {
+    ///         unreachable!();
+    ///     }
+    ///     // The last Thing is still in the queue ...
+    ///     assert_eq!(unsafe { DROP_COUNT }, 2);
+    /// }
+    /// // ... and it is dropped when the ring buffer goes out of scope:
+    /// assert_eq!(unsafe { DROP_COUNT }, 3);
+    /// ```
     pub fn commit(self, n: usize) {
         assert!(n <= self.len(), "cannot commit more than chunk size");
         unsafe { self.commit_unchecked(n) };
