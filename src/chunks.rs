@@ -108,7 +108,8 @@
 //! which requires the trait bound `T: Default`.
 //! If that's too restrictive or if you want to squeeze out the last bit of performance,
 //! you can use [`Producer::write_chunk_uninit()`] instead,
-//! but this will force you to write some `unsafe` code.
+//! but this will force you to write some `unsafe` code
+//! (except when using [`WriteChunkUninit::populate()`]).
 //!
 //! Copy a whole slice of items into the ring buffer, but only if space permits
 //! (if not, the input slice is returned as an error):
@@ -202,11 +203,10 @@ impl<T> Producer<T> {
     ///
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
+    /// Use [`Producer::slots()`] to obtain the number of available slots beforehand.
     ///
-    /// The elements can be accessed with [`WriteChunk::as_mut_slices()`] or
-    /// by iterating over (a `&mut` to) the [`WriteChunk`].
-    ///
-    /// The provided slots are *not* automatically made available
+    /// [`WriteChunk::as_mut_slices()`] provides mutable access to the slots.
+    /// After writing to those slots, they are *not* automatically made available
     /// to be read by the [`Consumer`].
     /// This has to be explicitly done by calling [`WriteChunk::commit()`]
     /// or [`WriteChunk::commit_all()`].
@@ -214,12 +214,15 @@ impl<T> Producer<T> {
     /// they will *not* become available for reading and
     /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
     ///
-    /// For an unsafe alternative that has no restrictions on `T`,
+    /// For an alternative that does not require the trait bound [`Default`],
     /// see [`Producer::write_chunk_uninit()`].
+    ///
+    /// If the items to be written to the ring buffer are available from an iterator,
+    /// [`Producer::write_chunk_uninit()`] and [`WriteChunkUninit::populate()`] can be used.
     ///
     /// # Examples
     ///
-    /// See the documentation of the [`chunks`](crate::chunks#examples) module for more examples.
+    /// See the documentation of the [`chunks`](crate::chunks#examples) module.
     pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T>, ChunkError>
     where
         T: Default,
@@ -231,24 +234,26 @@ impl<T> Producer<T> {
     ///
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
+    /// Use [`Producer::slots()`] to obtain the number of available slots beforehand.
     ///
-    /// The elements can be accessed with [`WriteChunkUninit::as_mut_slices()`] or
-    /// by iterating over (a `&mut` to) the [`WriteChunkUninit`].
-    ///
-    /// The provided slots are *not* automatically made available
-    /// to be read by the [`Consumer`].
-    /// This has to be explicitly done by calling [`WriteChunkUninit::commit()`]
+    /// [`WriteChunkUninit::as_mut_slices()`] provides mutable access
+    /// to the uninitialized slots.
+    /// After writing to those slots, they explicitly have to be made available
+    /// to be read by the [`Consumer`] by calling [`WriteChunkUninit::commit()`]
     /// or [`WriteChunkUninit::commit_all()`].
-    /// If items are written but *not* committed afterwards,
-    /// they will *not* become available for reading and
-    /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
+    ///
+    /// Alternatively, [`WriteChunkUninit::populate()`] can be used
+    /// to move items from an iterator into the available slots.
+    /// All moved items are automatically made available to be read by the [`Consumer`].
     ///
     /// # Safety
     ///
-    /// This function itself is safe, but accessing the returned slots might not be,
-    /// as well as invoking some methods of [`WriteChunkUninit`].
+    /// This function itself is safe, as is [`WriteChunkUninit::populate()`].
+    /// However, when using [`WriteChunkUninit::as_mut_slices()`],
+    /// the user has to make sure that the relevant slots have been initialized
+    /// before calling [`WriteChunkUninit::commit()`] or [`WriteChunkUninit::commit_all()`].
     ///
-    /// For a safe alternative that provides [`Default`]-initialized slots,
+    /// For a safe alternative that provides mutable slices of [`Default`]-initialized slots,
     /// see [`Producer::write_chunk()`].
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
         let tail = self.tail.get();
@@ -282,6 +287,7 @@ impl<T> Consumer<T> {
     ///
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
+    /// Use [`Consumer::slots()`] to obtain the number of available slots beforehand.
     ///
     /// The elements can be accessed with [`ReadChunk::as_slices()`] or
     /// by iterating over (a `&mut` to) the [`ReadChunk`].
@@ -465,25 +471,6 @@ where
 /// Structure for writing into multiple (uninitialized) slots in one go.
 ///
 /// This is returned from [`Producer::write_chunk_uninit()`].
-///
-/// For a safe alternative that provides [`Default`]-initialized slots, see [`WriteChunk`].
-///
-/// The slots can be accessed with
-/// [`as_mut_slices()`](WriteChunkUninit::as_mut_slices)
-/// or by iteration, which yields mutable references to possibly uninitialized data
-/// (in other words: `&mut MaybeUninit<T>`).
-/// A mutable reference (`&mut`) to the `WriteChunkUninit`
-/// should be used to iterate over it.
-/// Each slot can only be iterated once and the number of iterations is tracked.
-///
-/// After writing, the provided slots are *not* automatically made available
-/// to be read by the [`Consumer`].
-/// If desired, this has to be explicitly done by calling
-/// [`commit()`](WriteChunkUninit::commit) or
-/// [`commit_all()`](WriteChunkUninit::commit_all).
-/// If items are written but *not* committed afterwards,
-/// they will *not* become available for reading and
-/// they will be leaked (which is only relevant if `T` implements [`Drop`]).
 #[derive(Debug, PartialEq, Eq)]
 pub struct WriteChunkUninit<'a, T> {
     first_ptr: *mut T,
@@ -500,6 +487,14 @@ impl<T> WriteChunkUninit<'_, T> {
     /// If the first slice contains all requested slots, the second one is empty.
     ///
     /// The extension trait [`CopyToUninit`] can be used to safely copy data into those slices.
+    ///
+    /// After writing to the slots, they are *not* automatically made available
+    /// to be read by the [`Consumer`].
+    /// This has to be explicitly done by calling [`commit()`](WriteChunkUninit::commit)
+    /// or [`commit_all()`](WriteChunkUninit::commit_all).
+    /// If items are written but *not* committed afterwards,
+    /// they will *not* become available for reading and
+    /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
     pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
         unsafe {
             (
@@ -517,8 +512,7 @@ impl<T> WriteChunkUninit<'_, T> {
     ///
     /// # Safety
     ///
-    /// The user must make sure that the first `n` elements
-    /// (and not more, in case `T` implements [`Drop`]) have been initialized.
+    /// The user must make sure that the first `n` elements have been initialized.
     pub unsafe fn commit(self, n: usize) {
         assert!(n <= self.len(), "cannot commit more than chunk size");
         self.commit_unchecked(n);
@@ -568,7 +562,7 @@ impl<T> WriteChunkUninit<'_, T> {
     /// [`by_ref()`](Iterator::by_ref) can be used.
     ///
     /// ```
-    /// use rtrb::RingBuffer;
+    /// use rtrb::{RingBuffer, PopError};
     ///
     /// let (mut p, mut c) = RingBuffer::new(4);
     ///
@@ -580,6 +574,7 @@ impl<T> WriteChunkUninit<'_, T> {
     /// }
     /// assert_eq!(c.pop(), Ok(10));
     /// assert_eq!(c.pop(), Ok(20));
+    /// assert_eq!(c.pop(), Err(PopError::Empty));
     /// assert_eq!(it.next(), Some(30));
     /// ```
     pub fn populate<I>(self, iter: I) -> usize
