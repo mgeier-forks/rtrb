@@ -167,6 +167,7 @@
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
+use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
 use crate::{Consumer, CopyToUninit, Producer};
@@ -252,9 +253,10 @@ impl<T> Producer<T> {
         let first_len = n.min(self.buffer.capacity - tail);
         Ok(WriteChunkUninit {
             // SAFETY: tail has been updated to a valid position.
-            first_ptr: unsafe { self.buffer.data_ptr.add(tail) },
+            first_ptr: unsafe { NonNull::new_unchecked(self.buffer.data_ptr.add(tail)) },
             first_len,
-            second_ptr: self.buffer.data_ptr,
+            // SAFETY: data_ptr is valid and non-null.
+            second_ptr: unsafe { NonNull::new_unchecked(self.buffer.data_ptr) },
             second_len: n - first_len,
             producer: self,
         })
@@ -341,11 +343,11 @@ where
     fn from(chunk: WriteChunkUninit<'a, T>) -> Self {
         for i in 0..chunk.first_len {
             // SAFETY: i is in a valid range.
-            unsafe { chunk.first_ptr.add(i).write(Default::default()) };
+            unsafe { chunk.first_ptr.as_ptr().add(i).write(Default::default()) };
         }
         for i in 0..chunk.second_len {
             // SAFETY: i is in a valid range.
-            unsafe { chunk.second_ptr.add(i).write(Default::default()) };
+            unsafe { chunk.second_ptr.as_ptr().add(i).write(Default::default()) };
         }
         WriteChunk(Some(chunk), PhantomData)
     }
@@ -376,8 +378,8 @@ where
         // and all slots have been initialized in From::from().
         unsafe {
             (
-                core::slice::from_raw_parts_mut(chunk.first_ptr, chunk.first_len),
-                core::slice::from_raw_parts_mut(chunk.second_ptr, chunk.second_len),
+                core::slice::from_raw_parts_mut(chunk.first_ptr.as_ptr(), chunk.first_len),
+                core::slice::from_raw_parts_mut(chunk.second_ptr.as_ptr(), chunk.second_len),
             )
         }
     }
@@ -431,9 +433,9 @@ where
 /// This is returned from [`Producer::write_chunk_uninit()`].
 #[derive(Debug, PartialEq, Eq)]
 pub struct WriteChunkUninit<'a, T> {
-    first_ptr: *mut T,
+    first_ptr: NonNull<T>,
     first_len: usize,
-    second_ptr: *mut T,
+    second_ptr: NonNull<T>,
     second_len: usize,
     producer: &'a Producer<T>,
 }
@@ -461,8 +463,8 @@ impl<T> WriteChunkUninit<'_, T> {
         // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit().
         unsafe {
             (
-                core::slice::from_raw_parts_mut(self.first_ptr.cast(), self.first_len),
-                core::slice::from_raw_parts_mut(self.second_ptr.cast(), self.second_len),
+                core::slice::from_raw_parts_mut(self.first_ptr.as_ptr().cast(), self.first_len),
+                core::slice::from_raw_parts_mut(self.second_ptr.as_ptr().cast(), self.second_len),
             )
         }
     }
@@ -562,7 +564,7 @@ impl<T> WriteChunkUninit<'_, T> {
                 match iter.next() {
                     Some(item) => {
                         // SAFETY: It is allowed to write to this memory slot
-                        unsafe { ptr.add(i).write(item) };
+                        unsafe { ptr.as_ptr().add(i).write(item) };
                         iterated += 1;
                     }
                     None => break 'outer,
@@ -592,11 +594,11 @@ impl<T> WriteChunkUninit<'_, T> {
         // NB: If n >= self.len(), the loops are not entered.
         for i in n..self.first_len {
             // SAFETY: The caller must make sure that all slots are initialized.
-            unsafe { self.first_ptr.add(i).drop_in_place() };
+            unsafe { self.first_ptr.as_ptr().add(i).drop_in_place() };
         }
         for i in n.saturating_sub(self.first_len)..self.second_len {
             // SAFETY: The caller must make sure that all slots are initialized.
-            unsafe { self.second_ptr.add(i).drop_in_place() };
+            unsafe { self.second_ptr.as_ptr().add(i).drop_in_place() };
         }
     }
 }
