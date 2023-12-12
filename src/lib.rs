@@ -121,6 +121,7 @@ impl<T> RingBuffer<T> {
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
+        let capacity = capacity.next_power_of_two();
         let buffer = Arc::new(RingBuffer {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
@@ -158,60 +159,35 @@ impl<T> RingBuffer<T> {
         self.capacity
     }
 
-    /// Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
+    /// Wraps a position from the range ... to `0 .. capacity`.
     fn collapse_position(&self, pos: usize) -> usize {
-        debug_assert!(pos == 0 || pos < 2 * self.capacity);
-        if pos < self.capacity {
-            pos
-        } else {
-            pos - self.capacity
-        }
+        pos & (self.capacity - 1)
     }
 
     /// Returns a pointer to the slot at position `pos`.
     ///
     /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
     unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
-        debug_assert!(pos == 0 || pos < 2 * self.capacity);
         let pos = self.collapse_position(pos);
-        // SAFETY: The caller must ensure a valid pos.
+        // SAFETY: collapse_position() will always return a valid pos.
         unsafe { self.data_ptr.add(pos) }
     }
 
     /// Increments a position by going `n` slots forward.
     fn increment(&self, pos: usize, n: usize) -> usize {
-        debug_assert!(pos == 0 || pos < 2 * self.capacity);
-        debug_assert!(n <= self.capacity);
-        let threshold = 2 * self.capacity - n;
-        if pos < threshold {
-            pos + n
-        } else {
-            pos - threshold
-        }
+        pos.wrapping_add(n)
     }
 
     /// Increments a position by going one slot forward.
     ///
     /// This is more efficient than self.increment(..., 1).
     fn increment1(&self, pos: usize) -> usize {
-        debug_assert_ne!(self.capacity, 0);
-        debug_assert!(pos < 2 * self.capacity);
-        if pos < 2 * self.capacity - 1 {
-            pos + 1
-        } else {
-            0
-        }
+        pos.wrapping_add(1)
     }
 
     /// Returns the distance between two positions.
     fn distance(&self, a: usize, b: usize) -> usize {
-        debug_assert!(a == 0 || a < 2 * self.capacity);
-        debug_assert!(b == 0 || b < 2 * self.capacity);
-        if a <= b {
-            b - a
-        } else {
-            2 * self.capacity - a + b
-        }
+        b.wrapping_sub(a)
     }
 }
 
