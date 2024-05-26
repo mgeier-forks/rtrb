@@ -170,14 +170,17 @@ unsafe impl<T, A: Addressing, I: Indices> Storage for DynamicStorage<T, A, I> {
     type Addr = A;
     type Indices = I;
 
+    #[inline]
     fn data_ptr(&self) -> *mut Self::Item {
         self.data_ptr
     }
 
+    #[inline]
     fn addr(&self) -> &Self::Addr {
         &self.addr
     }
 
+    #[inline]
     fn indices(&self) -> &Self::Indices {
         &self.indices
     }

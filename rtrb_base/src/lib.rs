@@ -87,6 +87,7 @@ pub unsafe trait Storage {
     /// Returns a pointer to the slot at position `pos`.
     ///
     /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
+    #[inline]
     unsafe fn slot_ptr(&self, pos: usize) -> *mut Self::Item {
         self.data_ptr().add(self.addr().collapse_position(pos))
     }
@@ -150,6 +151,7 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
     ///
     /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
     /// For performance, this special case is immplemented separately.
+    #[inline]
     fn next_tail(&self) -> Option<usize> {
         let indices = self.buffer.indices();
         let addr = self.buffer.addr();
@@ -241,6 +243,7 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
     ///
     /// This is a strict subset of the functionality implemented in `read_chunk()`.
     /// For performance, this special case is immplemented separately.
+    #[inline]
     fn next_head(&self) -> Option<usize> {
         let indices = self.buffer.indices();
         // "head" is only ever written by the consumer thread, "Relaxed" is enough
