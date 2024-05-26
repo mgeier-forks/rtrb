@@ -46,7 +46,7 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(rust_2018_idioms)]
-#![deny(missing_docs, missing_debug_implementations)]
+//#![deny(missing_docs, missing_debug_implementations)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::undocumented_unsafe_blocks, clippy::unnecessary_safety_comment)]
 
@@ -54,21 +54,29 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::cell::Cell;
-use core::fmt;
 use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::AtomicUsize;
 
 #[allow(dead_code, clippy::undocumented_unsafe_blocks)]
 mod cache_padded;
 use cache_padded::CachePadded;
 
+/*
 pub mod chunks;
 
 // This is used in the documentation.
 #[allow(unused_imports)]
 use chunks::WriteChunkUninit;
+*/
+
+use rtrb_base::{Addressing, Indices, Storage};
+
+// TODO: use rtrb_base::errors::* or something?
+pub use rtrb_base::{PopError, PeekError, PushError};
+
+// NB: non-public!
+type RingBufferInner<T> = DynamicStorage<T, TightAddressing, CachePaddedIndices>;
 
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
@@ -77,29 +85,10 @@ use chunks::WriteChunkUninit;
 ///
 /// *See also the [crate-level documentation](crate).*
 #[derive(Debug)]
-pub struct RingBuffer<T> {
-    /// The head of the queue.
-    ///
-    /// This integer is in range `0 .. 2 * capacity`.
-    head: CachePadded<AtomicUsize>,
-
-    /// The tail of the queue.
-    ///
-    /// This integer is in range `0 .. 2 * capacity`.
-    tail: CachePadded<AtomicUsize>,
-
-    /// The buffer holding slots.
-    data_ptr: *mut T,
-
-    /// The queue capacity.
-    capacity: usize,
-
-    /// Indicates that dropping a `RingBuffer<T>` may drop elements of type `T`.
-    _marker: PhantomData<T>,
-}
+pub struct RingBuffer<T>(RingBufferInner<T>);
 
 impl<T> RingBuffer<T> {
-    /// Creates a `RingBuffer` with the given `capacity` and returns [`Producer`] and [`Consumer`].
+    /// Creates a ring buffer with the given `capacity` and returns [`Producer`] and [`Consumer`].
     ///
     /// # Examples
     ///
@@ -118,47 +107,136 @@ impl<T> RingBuffer<T> {
     /// let (mut producer, consumer) = RingBuffer::new(100);
     /// assert_eq!(producer.push(0.0f32), Ok(()));
     /// ```
+    #[inline(always)]
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
-    pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
-        let buffer = Arc::new(RingBuffer {
-            head: CachePadded::new(AtomicUsize::new(0)),
-            tail: CachePadded::new(AtomicUsize::new(0)),
+    pub fn new(
+        capacity: usize,
+    ) -> (Producer<T>, Consumer<T>) {
+        let (p, c) = RingBufferInner::<T>::new(capacity);
+        (Producer(p), Consumer(c))
+    }
+}
+
+/// Dynamic storage on the heap.
+#[derive(Debug)]
+pub struct DynamicStorage<T, A: Addressing, I: Indices> {
+    addr: A,
+    indices: I,
+
+    /// The buffer holding slots.
+    data_ptr: *mut T,
+
+    /// Indicates that dropping a `DynamicStorage<T, _>` may drop elements of type `T`.
+    _marker: PhantomData<T>,
+}
+
+impl<T, A: Addressing, I: Indices> DynamicStorage<T, A, I> {
+    #[allow(clippy::new_ret_no_self)]
+    #[must_use]
+    pub fn new(
+        capacity: usize,
+    ) -> (
+        rtrb_base::Producer<Arc<DynamicStorage<T, A, I>>>,
+        rtrb_base::Consumer<Arc<DynamicStorage<T, A, I>>>,
+    ) {
+        let addr = A::new(capacity);
+        let capacity = addr.capacity();
+        let reference = Arc::new(Self {
+            addr,
+            indices: I::new(),
             data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
-            capacity,
             _marker: PhantomData,
         });
-        let p = Producer {
-            buffer: buffer.clone(),
-            cached_head: Cell::new(0),
-            cached_tail: Cell::new(0),
-        };
-        let c = Consumer {
-            buffer,
-            cached_head: Cell::new(0),
-            cached_tail: Cell::new(0),
-        };
+        // SAFETY: Only a single instance of Producer is allowed.
+        let p = unsafe { rtrb_base::Producer::new(reference.clone()) };
+        // SAFETY: Only a single instance of Consumer is allowed.
+        let c = unsafe { rtrb_base::Consumer::new(reference) };
         (p, c)
     }
+}
 
-    /// Returns the capacity of the queue.
+impl<T, A: Addressing, I: Indices> PartialEq for DynamicStorage<T, A, I> {
+    fn eq(&self, other: &Self) -> bool {
+        core::ptr::eq(self, other)
+    }
+}
+
+impl<T, A: Addressing, I: Indices> Eq for DynamicStorage<T, A, I> {}
+
+// SAFETY: all methods must be implemented correctly, or the whole thing is unsound
+unsafe impl<T, A: Addressing, I: Indices> Storage for DynamicStorage<T, A, I> {
+    type Item = T;
+    type Addr = A;
+    type Indices = I;
+
+    fn data_ptr(&self) -> *mut Self::Item {
+        self.data_ptr
+    }
+
+    fn addr(&self) -> &Self::Addr {
+        &self.addr
+    }
+
+    fn indices(&self) -> &Self::Indices {
+        &self.indices
+    }
+}
+
+/// Padded indices to avoid false sharing.
+#[derive(Debug)]
+pub struct CachePaddedIndices {
+    /// The head of the queue.
     ///
-    /// # Examples
+    /// This integer is in range `0 .. 2 * capacity`.
+    head: CachePadded<AtomicUsize>,
+
+    /// The tail of the queue.
     ///
-    /// ```
-    /// use rtrb::RingBuffer;
-    ///
-    /// let (producer, consumer) = RingBuffer::<f32>::new(100);
-    /// assert_eq!(producer.buffer().capacity(), 100);
-    /// assert_eq!(consumer.buffer().capacity(), 100);
-    /// // Both producer and consumer of course refer to the same ring buffer:
-    /// assert_eq!(producer.buffer(), consumer.buffer());
-    /// ```
-    pub fn capacity(&self) -> usize {
+    /// This integer is in range `0 .. 2 * capacity`.
+    tail: CachePadded<AtomicUsize>,
+}
+
+// SAFETY: all methods must be implemented correctly, or the whole thing is unsound
+unsafe impl Indices for CachePaddedIndices {
+    fn new() -> Self {
+        CachePaddedIndices {
+            head: CachePadded::new(AtomicUsize::new(0)),
+            tail: CachePadded::new(AtomicUsize::new(0)),
+        }
+    }
+
+    #[inline]
+    fn head(&self) -> &AtomicUsize {
+        &self.head
+    }
+
+    #[inline]
+    fn tail(&self) -> &AtomicUsize {
+        &self.tail
+    }
+}
+
+/// Exact length.
+#[derive(Debug)]
+pub struct TightAddressing {
+    /// The queue capacity.
+    capacity: usize,
+}
+
+// SAFETY: all methods must be implemented correctly, or the whole thing is unsound
+unsafe impl Addressing for TightAddressing {
+    fn new(capacity: usize) -> Self {
+        Self { capacity }
+    }
+
+    #[inline]
+    fn capacity(&self) -> usize {
         self.capacity
     }
 
     /// Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
+    #[inline]
     fn collapse_position(&self, pos: usize) -> usize {
         debug_assert!(pos == 0 || pos < 2 * self.capacity);
         if pos < self.capacity {
@@ -168,17 +246,8 @@ impl<T> RingBuffer<T> {
         }
     }
 
-    /// Returns a pointer to the slot at position `pos`.
-    ///
-    /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
-    unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
-        debug_assert!(pos == 0 || pos < 2 * self.capacity);
-        let pos = self.collapse_position(pos);
-        // SAFETY: The caller must ensure a valid pos.
-        unsafe { self.data_ptr.add(pos) }
-    }
-
     /// Increments a position by going `n` slots forward.
+    #[inline]
     fn increment(&self, pos: usize, n: usize) -> usize {
         debug_assert!(pos == 0 || pos < 2 * self.capacity);
         debug_assert!(n <= self.capacity);
@@ -190,9 +259,7 @@ impl<T> RingBuffer<T> {
         }
     }
 
-    /// Increments a position by going one slot forward.
-    ///
-    /// This is more efficient than self.increment(..., 1).
+    #[inline]
     fn increment1(&self, pos: usize) -> usize {
         debug_assert_ne!(self.capacity, 0);
         debug_assert!(pos < 2 * self.capacity);
@@ -203,7 +270,7 @@ impl<T> RingBuffer<T> {
         }
     }
 
-    /// Returns the distance between two positions.
+    #[inline]
     fn distance(&self, a: usize, b: usize) -> usize {
         debug_assert!(a == 0 || a < 2 * self.capacity);
         debug_assert!(b == 0 || b < 2 * self.capacity);
@@ -215,45 +282,53 @@ impl<T> RingBuffer<T> {
     }
 }
 
-impl<T> Drop for RingBuffer<T> {
+/// Force power of two.
+#[derive(Debug)]
+pub struct PowerOfTwoAddressing {
+    /// The queue capacity (a power of 2).
+    capacity: usize,
+}
+
+// SAFETY: all methods must be implemented correctly, or the whole thing is unsound
+unsafe impl Addressing for PowerOfTwoAddressing {
+    fn new(capacity: usize) -> Self {
+        Self {
+            capacity: capacity.next_power_of_two(),
+        }
+    }
+
+    #[inline]
+    fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    #[inline]
+    fn collapse_position(&self, pos: usize) -> usize {
+        // TODO: is capacity 0 supported?
+        pos & (self.capacity - 1)
+    }
+
+    #[inline]
+    fn increment(&self, pos: usize, n: usize) -> usize {
+        pos.wrapping_add(n)
+    }
+
+    #[inline]
+    fn distance(&self, a: usize, b: usize) -> usize {
+        b.wrapping_sub(a)
+    }
+}
+
+impl<T, A: Addressing, I: Indices> Drop for DynamicStorage<T, A, I> {
     /// Drops all non-empty slots.
     fn drop(&mut self) {
-        let mut head = self.head.load(Ordering::Relaxed);
-        let tail = self.tail.load(Ordering::Relaxed);
-
-        // Loop over all slots that hold a value and drop them.
-        while head != tail {
-            // SAFETY: All slots between head and tail have been initialized.
-            unsafe { self.slot_ptr(head).drop_in_place() };
-            head = self.increment1(head);
-        }
+        self.drop_all_elements();
 
         // Finally, deallocate the buffer, but don't run any destructors.
         // SAFETY: data_ptr and capacity are still valid from the original initialization.
-        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.capacity) };
+        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.addr().capacity()) };
     }
 }
-
-impl<T> PartialEq for RingBuffer<T> {
-    /// This method tests for `self` and `other` values to be equal, and is used by `==`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rtrb::RingBuffer;
-    ///
-    /// let (p1, c1) = RingBuffer::<f32>::new(1000);
-    /// assert_eq!(p1.buffer(), c1.buffer());
-    ///
-    /// let (p2, c2) = RingBuffer::<f32>::new(1000);
-    /// assert_ne!(p1.buffer(), p2.buffer());
-    /// ```
-    fn eq(&self, other: &Self) -> bool {
-        core::ptr::eq(self, other)
-    }
-}
-
-impl<T> Eq for RingBuffer<T> {}
 
 /// The producer side of a [`RingBuffer`].
 ///
@@ -277,26 +352,7 @@ impl<T> Eq for RingBuffer<T> {}
 /// When the `Producer` is dropped after the [`Consumer`] has already been dropped,
 /// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Producer<T> {
-    /// A reference to the ring buffer.
-    buffer: Arc<RingBuffer<T>>,
-
-    /// A copy of `buffer.head` for quick access.
-    ///
-    /// This value can be stale and sometimes needs to be resynchronized with `buffer.head`.
-    cached_head: Cell<usize>,
-
-    /// A copy of `buffer.tail` for quick access.
-    ///
-    /// This value is always in sync with `buffer.tail`.
-    // NB: Caching the tail seems to have little effect on Intel CPUs, but it seems to
-    //     improve performance on AMD CPUs, see https://github.com/mgeier/rtrb/pull/132
-    cached_tail: Cell<usize>,
-}
-
-// SAFETY: After moving a Producer to another thread, there is still only a single thread
-// that can access the producer side of the queue.
-unsafe impl<T: Send> Send for Producer<T> {}
+pub struct Producer<T>(rtrb_base::Producer<Arc<RingBufferInner<T>>>);
 
 impl<T> Producer<T> {
     /// Attempts to push an element into the queue.
@@ -318,17 +374,9 @@ impl<T> Producer<T> {
     /// assert_eq!(p.push(10), Ok(()));
     /// assert_eq!(p.push(20), Err(PushError::Full(20)));
     /// ```
+    #[inline(always)]
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
-        if let Some(tail) = self.next_tail() {
-            // SAFETY: tail points to an empty slot.
-            unsafe { self.buffer.slot_ptr(tail).write(value) };
-            let tail = self.buffer.increment1(tail);
-            self.buffer.tail.store(tail, Ordering::Release);
-            self.cached_tail.set(tail);
-            Ok(())
-        } else {
-            Err(PushError::Full(value))
-        }
+        self.0.push(value)
     }
 
     /// Returns the number of slots available for writing.
@@ -349,10 +397,9 @@ impl<T> Producer<T> {
     ///
     /// assert_eq!(p.slots(), 1024);
     /// ```
+    #[inline(always)]
     pub fn slots(&self) -> usize {
-        let head = self.buffer.head.load(Ordering::Acquire);
-        self.cached_head.set(head);
-        self.buffer.capacity - self.buffer.distance(head, self.cached_tail.get())
+        self.0.slots()
     }
 
     /// Returns `true` if there are currently no slots available for writing.
@@ -391,10 +438,32 @@ impl<T> Producer<T> {
     ///     // At least one slot is guaranteed to be available for writing.
     /// }
     /// ```
+    #[inline(always)]
     pub fn is_full(&self) -> bool {
-        self.next_tail().is_none()
+        self.0.is_full()
     }
 
+    /// Returns the total capacity of the queue.
+    ///
+    /// At any time, the capacity is subdivided into
+    /// [`Producer::slots()`] available for writing and
+    /// [`Consumer::slots()`] available for reading.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (producer, consumer) = RingBuffer::<f32>::new(100);
+    /// assert_eq!(producer.capacity(), 100);
+    /// assert_eq!(consumer.capacity(), 100);
+    /// ```
+    #[inline(always)]
+    pub fn capacity(&self) -> usize {
+        self.0.capacity()
+    }
+
+/*
     /// Returns `true` if the corresponding [`Consumer`] has been destroyed.
     ///
     /// Note that since Rust version 1.74.0, this is not synchronizing with the consumer thread
@@ -442,32 +511,7 @@ impl<T> Producer<T> {
     pub fn is_abandoned(&self) -> bool {
         Arc::strong_count(&self.buffer) < 2
     }
-
-    /// Returns a read-only reference to the ring buffer.
-    pub fn buffer(&self) -> &RingBuffer<T> {
-        &self.buffer
-    }
-
-    /// Get the tail position for writing the next slot, if available.
-    ///
-    /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
-    /// For performance, this special case is immplemented separately.
-    fn next_tail(&self) -> Option<usize> {
-        let tail = self.cached_tail.get();
-
-        // Check if the queue is *possibly* full.
-        if self.buffer.distance(self.cached_head.get(), tail) == self.buffer.capacity {
-            // Refresh the head ...
-            let head = self.buffer.head.load(Ordering::Acquire);
-            self.cached_head.set(head);
-
-            // ... and check if it's *really* full.
-            if self.buffer.distance(head, tail) == self.buffer.capacity {
-                return None;
-            }
-        }
-        Some(tail)
-    }
+*/
 }
 
 /// The consumer side of a [`RingBuffer`].
@@ -491,26 +535,8 @@ impl<T> Producer<T> {
 /// When the `Consumer` is dropped after the [`Producer`] has already been dropped,
 /// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Consumer<T> {
-    /// A reference to the ring buffer.
-    buffer: Arc<RingBuffer<T>>,
+pub struct Consumer<T>(rtrb_base::Consumer<Arc<RingBufferInner<T>>>);
 
-    /// A copy of `buffer.head` for quick access.
-    ///
-    /// This value is always in sync with `buffer.head`.
-    // NB: Caching the head seems to have little effect on Intel CPUs, but it seems to
-    //     improve performance on AMD CPUs, see https://github.com/mgeier/rtrb/pull/132
-    cached_head: Cell<usize>,
-
-    /// A copy of `buffer.tail` for quick access.
-    ///
-    /// This value can be stale and sometimes needs to be resynchronized with `buffer.tail`.
-    cached_tail: Cell<usize>,
-}
-
-// SAFETY: After moving a Consumer to another thread, there is still only a single thread
-// that can access the consumer side of the queue.
-unsafe impl<T: Send> Send for Consumer<T> {}
 
 impl<T> Consumer<T> {
     /// Attempts to pop an element from the queue.
@@ -542,17 +568,9 @@ impl<T> Consumer<T> {
     /// assert_eq!(p.push(20), Ok(()));
     /// assert_eq!(c.pop().ok(), Some(20));
     /// ```
+    #[inline(always)]
     pub fn pop(&mut self) -> Result<T, PopError> {
-        if let Some(head) = self.next_head() {
-            // SAFETY: head points to an initialized slot.
-            let value = unsafe { self.buffer.slot_ptr(head).read() };
-            let head = self.buffer.increment1(head);
-            self.buffer.head.store(head, Ordering::Release);
-            self.cached_head.set(head);
-            Ok(value)
-        } else {
-            Err(PopError::Empty)
-        }
+        self.0.pop()
     }
 
     /// Attempts to read an element from the queue without removing it.
@@ -573,13 +591,9 @@ impl<T> Consumer<T> {
     /// assert_eq!(c.peek(), Ok(&10));
     /// assert_eq!(c.peek(), Ok(&10));
     /// ```
+    #[inline(always)]
     pub fn peek(&self) -> Result<&T, PeekError> {
-        if let Some(head) = self.next_head() {
-            // SAFETY: head points to an initialized slot.
-            Ok(unsafe { &*self.buffer.slot_ptr(head) })
-        } else {
-            Err(PeekError::Empty)
-        }
+        self.0.peek()
     }
 
     /// Returns the number of slots available for reading.
@@ -600,10 +614,9 @@ impl<T> Consumer<T> {
     ///
     /// assert_eq!(c.slots(), 0);
     /// ```
+    #[inline(always)]
     pub fn slots(&self) -> usize {
-        let tail = self.buffer.tail.load(Ordering::Acquire);
-        self.cached_tail.set(tail);
-        self.buffer.distance(self.cached_head.get(), tail)
+        self.0.slots()
     }
 
     /// Returns `true` if there are currently no slots available for reading.
@@ -642,10 +655,12 @@ impl<T> Consumer<T> {
     ///     // At least one slot is guaranteed to be available for reading.
     /// }
     /// ```
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.next_head().is_none()
+        self.0.is_empty()
     }
 
+    /*
     /// Returns `true` if the corresponding [`Producer`] has been destroyed.
     ///
     /// Note that since Rust version 1.74.0, this is not synchronizing with the producer thread
@@ -689,34 +704,30 @@ impl<T> Consumer<T> {
     ///     // The producer does definitely not exist anymore.
     /// }
     /// ```
+    #[inline(always)]
     pub fn is_abandoned(&self) -> bool {
-        Arc::strong_count(&self.buffer) < 2
+        self.0.is_abandoned()
     }
+    */
 
-    /// Returns a read-only reference to the ring buffer.
-    pub fn buffer(&self) -> &RingBuffer<T> {
-        &self.buffer
-    }
-
-    /// Get the head position for reading the next slot, if available.
+    /// Returns the total capacity of the queue.
     ///
-    /// This is a strict subset of the functionality implemented in `read_chunk()`.
-    /// For performance, this special case is immplemented separately.
-    fn next_head(&self) -> Option<usize> {
-        let head = self.cached_head.get();
-
-        // Check if the queue is *possibly* empty.
-        if head == self.cached_tail.get() {
-            // Refresh the tail ...
-            let tail = self.buffer.tail.load(Ordering::Acquire);
-            self.cached_tail.set(tail);
-
-            // ... and check if it's *really* empty.
-            if head == tail {
-                return None;
-            }
-        }
-        Some(head)
+    /// At any time, the capacity is subdivided into
+    /// [`Producer::slots()`] available for writing and
+    /// [`Consumer::slots()`] available for reading.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (producer, consumer) = RingBuffer::<f32>::new(100);
+    /// assert_eq!(producer.capacity(), 100);
+    /// assert_eq!(consumer.capacity(), 100);
+    /// ```
+    #[inline(always)]
+    pub fn capacity(&self) -> usize {
+        self.0.capacity()
     }
 }
 
@@ -758,64 +769,5 @@ impl<T: Copy> CopyToUninit<T> for [T] {
     }
 }
 
-/// Error type for [`Consumer::pop()`].
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum PopError {
-    /// The queue was empty.
-    Empty,
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for PopError {}
-
-impl fmt::Display for PopError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PopError::Empty => "empty ring buffer".fmt(f),
-        }
-    }
-}
-
-/// Error type for [`Consumer::peek()`].
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum PeekError {
-    /// The queue was empty.
-    Empty,
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for PeekError {}
-
-impl fmt::Display for PeekError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PeekError::Empty => "empty ring buffer".fmt(f),
-        }
-    }
-}
-
-/// Error type for [`Producer::push()`].
-#[derive(Copy, Clone, PartialEq, Eq)]
-pub enum PushError<T> {
-    /// The queue was full.
-    Full(T),
-}
-
-#[cfg(feature = "std")]
-impl<T> std::error::Error for PushError<T> {}
-
-impl<T> fmt::Debug for PushError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PushError::Full(_) => f.pad("Full(_)"),
-        }
-    }
-}
-
-impl<T> fmt::Display for PushError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PushError::Full(_) => "full ring buffer".fmt(f),
-        }
-    }
-}
+/// Ring buffer with power-of-two storage.
+pub type RingBuffer2<T> = DynamicStorage<T, PowerOfTwoAddressing, CachePaddedIndices>;

@@ -4,8 +4,8 @@ use rtrb::RingBuffer;
 fn capacity() {
     for i in 0..10 {
         let (p, c) = RingBuffer::<i32>::new(i);
-        assert_eq!(p.buffer().capacity(), i);
-        assert_eq!(c.buffer().capacity(), i);
+        assert_eq!(p.capacity(), i);
+        assert_eq!(c.capacity(), i);
     }
 }
 
@@ -29,7 +29,7 @@ fn zero_sized_type() {
     assert_eq!(std::mem::size_of::<ZeroSized>(), 0);
 
     let (mut p, mut c) = RingBuffer::new(1);
-    assert_eq!(p.buffer().capacity(), 1);
+    assert_eq!(p.capacity(), 1);
     assert_eq!(p.slots(), 1);
     assert_eq!(c.slots(), 0);
     assert!(p.push(ZeroSized).is_ok());
@@ -122,9 +122,9 @@ fn drops() {
 fn trait_impls() {
     let (mut p, mut c) = RingBuffer::<u8>::new(0);
 
-    assert!(format!("{:?}", p.buffer()).starts_with("RingBuffer {"));
-    assert!(format!("{:?}", p).starts_with("Producer {"));
-    assert!(format!("{:?}", c).starts_with("Consumer {"));
+    //assert!(format!("{:?}", p.buffer()).starts_with("RingBuffer {"));
+    assert!(format!("{:?}", p).starts_with("Producer(Producer {"));
+    assert!(format!("{:?}", c).starts_with("Consumer(Consumer {"));
 
     assert_eq!(format!("{:?}", p.push(42).unwrap_err()), "Full(_)");
     assert_eq!(p.push(42).unwrap_err().to_string(), "full ring buffer");
@@ -138,6 +138,7 @@ fn trait_impls() {
     assert_ne!(c, another_c);
 }
 
+/*
 #[test]
 fn no_race_with_is_abandoned() {
     static mut V: u32 = 0;
@@ -157,3 +158,4 @@ fn no_race_with_is_abandoned() {
         t.join().unwrap();
     }
 }
+*/

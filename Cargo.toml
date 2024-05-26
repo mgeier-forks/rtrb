@@ -22,11 +22,16 @@ exclude = [
 default = ["std"]
 std = []
 
+[dependencies]
+rtrb-base = { path = "rtrb_base" }
+
 [dev-dependencies]
 rand = "0.8"
 criterion = "0.3"
 # TODO: This is only needed for the doctests of cache_padded.rs! Is there a way to avoid this?
 crossbeam-utils = { version = "0.8", default-features = false }
+crossbeam-queue-pr338 = { git = "https://github.com/mgeier/crossbeam", branch = "spsc", package = "crossbeam-queue" }
+npnc = "0.2"
 
 # aggressive optimization for benchmarks
 [profile.bench]
@@ -37,17 +42,17 @@ codegen-units = 1
 [lib]
 bench = false # Don't disturb criterion command line parsing
 
-[[bench]]
-name = "single_thread_single_byte"
-harness = false
+#[[bench]]
+#name = "single_thread_single_byte"
+#harness = false
 
-[[bench]]
-name = "single_thread_two_bytes"
-harness = false
+#[[bench]]
+#name = "single_thread_two_bytes"
+#harness = false
 
-[[bench]]
-name = "single_thread_with_chunks"
-harness = false
+#[[bench]]
+#name = "single_thread_with_chunks"
+#harness = false
 
 [[bench]]
 name = "two_threads"
