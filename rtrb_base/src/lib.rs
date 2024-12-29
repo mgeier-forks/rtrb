@@ -225,6 +225,11 @@ where
     ///
     /// This value can be stale and sometimes needs to be resynchronized with `buffer.head`.
     cached_head: Cell<usize>,
+
+    /// A copy of `buffer.tail` for quick access.
+    ///
+    /// This value is always in sync with `buffer.tail`.
+    cached_tail: Cell<usize>,
 }
 
 // SAFETY: After moving a Producer to another thread, there is still only a single thread
@@ -239,9 +244,11 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
     /// Only a single `Producer` can exist at a time.
     pub unsafe fn new(buffer: R) -> Self {
         let head = buffer.indices().head().load(Ordering::Acquire);
+        let tail = buffer.indices().tail().load(Ordering::Acquire);
         Self {
             buffer,
             cached_head: Cell::new(head),
+            cached_tail: Cell::new(tail),
         }
     }
 
@@ -251,6 +258,7 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
             unsafe { self.buffer.slot_ptr(tail).write(value) };
             let tail = S::ADDR.increment1(tail, self.buffer.capacity());
             self.buffer.indices().tail().store(tail, Ordering::Release);
+            self.cached_tail.set(tail);
             Ok(())
         } else {
             Err(PushError::Full(value))
@@ -260,10 +268,8 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
     pub fn slots(&self) -> usize {
         let head = self.buffer.indices().head().load(Ordering::Acquire);
         self.cached_head.set(head);
-        // "tail" is only ever written by the producer thread, "Relaxed" is enough
-        let tail = self.buffer.indices().tail().load(Ordering::Relaxed);
         let capacity = self.buffer.capacity();
-        capacity - S::ADDR.distance(head, tail, capacity)
+        capacity - S::ADDR.distance(head, self.cached_tail.get(), capacity)
     }
 
     pub fn is_full(&self) -> bool {
@@ -277,22 +283,21 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
     /// Get the tail position for writing the next slot, if available.
     ///
     /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
-    /// For performance, this special case is immplemented separately.
+    /// For performance, this special case is implemented separately.
     #[inline]
     fn next_tail(&self) -> Option<usize> {
-        let indices = self.buffer.indices();
+        let tail = self.cached_tail.get();
         let capacity = self.buffer.capacity();
-        // "tail" is only ever written by the producer thread, "Relaxed" is enough
-        let tail = indices.tail().load(Ordering::Relaxed);
-
         // Check if the queue is *possibly* full.
         if S::ADDR.distance(self.cached_head.get(), tail, capacity) == capacity {
             // Refresh the head ...
-            let head = indices.head().load(Ordering::Acquire);
+            let head = self.buffer.indices().head().load(Ordering::Acquire);
             // ... and check if it's *really* full.
             if S::ADDR.distance(head, tail, capacity) == capacity {
+                // `head` didn't change, queue is full.
                 return None;
             }
+            // `head` did change.
             self.cached_head.set(head);
         }
         Some(tail)
@@ -317,6 +322,11 @@ where
     /// A reference to the ring buffer.
     buffer: R,
 
+    /// A copy of `buffer.head` for quick access.
+    ///
+    /// This value is always in sync with `buffer.head`.
+    cached_head: Cell<usize>,
+
     /// A copy of `buffer.tail` for quick access.
     ///
     /// This value can be stale and sometimes needs to be resynchronized with `buffer.tail`.
@@ -334,9 +344,11 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
     ///
     /// Only a single `Consumer` can exist at a time.
     pub unsafe fn new(buffer: R) -> Self {
+        let head = buffer.indices().head().load(Ordering::Acquire);
         let tail = buffer.indices().tail().load(Ordering::Acquire);
         Self {
             buffer,
+            cached_head: Cell::new(head),
             cached_tail: Cell::new(tail),
         }
     }
@@ -347,6 +359,7 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
             let value = unsafe { self.buffer.slot_ptr(head).read() };
             let head = S::ADDR.increment1(head, self.buffer.capacity());
             self.buffer.indices().head().store(head, Ordering::Release);
+            self.cached_head.set(head);
             Ok(value)
         } else {
             Err(PopError::Empty)
@@ -365,9 +378,7 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
     pub fn slots(&self) -> usize {
         let tail = self.buffer.indices().tail().load(Ordering::Acquire);
         self.cached_tail.set(tail);
-        // "head" is only ever written by the consumer thread, "Relaxed" is enough
-        let head = self.buffer.indices().head().load(Ordering::Relaxed);
-        S::ADDR.distance(head, tail, self.buffer.capacity())
+        S::ADDR.distance(self.cached_head.get(), tail, self.buffer.capacity())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -387,21 +398,21 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
     /// Get the head position for reading the next slot, if available.
     ///
     /// This is a strict subset of the functionality implemented in `read_chunk()`.
-    /// For performance, this special case is immplemented separately.
+    /// For performance, this special case is implemented separately.
     #[inline]
     fn next_head(&self) -> Option<usize> {
-        let indices = self.buffer.indices();
-        // "head" is only ever written by the consumer thread, "Relaxed" is enough
-        let head = indices.head().load(Ordering::Relaxed);
+        let head = self.cached_head.get();
 
         // Check if the queue is *possibly* empty.
         if head == self.cached_tail.get() {
             // Refresh the tail ...
-            let tail = indices.tail().load(Ordering::Acquire);
+            let tail = self.buffer.indices().tail().load(Ordering::Acquire);
             // ... and check if it's *really* empty.
             if head == tail {
+                // `tail` didn't change, queue is empty.
                 return None;
             }
+            // `tail` did change.
             self.cached_tail.set(tail);
         }
         Some(head)
