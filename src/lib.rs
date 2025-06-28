@@ -127,7 +127,7 @@ pub struct DynamicStorage<T, A: Addressing, I: Indices> {
     /// The buffer holding slots.
     data_ptr: *mut T,
 
-    /// Indicates that dropping a `DynamicStorage<T, _>` may drop elements of type `T`.
+    /// Indicates that dropping a `DynamicStorage` may drop elements of type `T`.
     _marker: PhantomData<T>,
 }
 

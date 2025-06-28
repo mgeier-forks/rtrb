@@ -3,6 +3,8 @@
 
 use core::cell::Cell;
 use core::fmt;
+use core::marker::PhantomData;
+use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -87,6 +89,7 @@ pub unsafe trait Storage {
     /// Returns a pointer to the slot at position `pos`.
     ///
     /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
+    // TODO: take &mut? define slot_ptr() and slot_ptr_mut()?
     #[inline]
     unsafe fn slot_ptr(&self, pos: usize) -> *mut Self::Item {
         self.data_ptr().add(self.addr().collapse_position(pos))
@@ -322,5 +325,72 @@ impl<T> fmt::Display for PushError<T> {
         match self {
             PushError::Full(_) => "full ring buffer".fmt(f),
         }
+    }
+}
+
+/// Static storage.
+#[derive(Debug)]
+pub struct StaticStorage<T, const N: usize, A: Addressing, I: Indices> {
+    addr: A,
+    indices: I,
+
+    /// The static array holding slots.
+    slots: [MaybeUninit<T>; N],
+
+    /// Indicates that dropping a `StaticStorage` may drop elements of type `T`.
+    _marker: PhantomData<T>,
+}
+
+impl<T, const N: usize, A: Addressing, I: Indices> StaticStorage<T, N, A, I> {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            addr: A::new(N),
+            indices: I::new(),
+            slots: [const { MaybeUninit::uninit() }; N],
+            _marker: PhantomData,
+        }
+    }
+
+    /// Split ...
+    ///
+    /// This takes a mutable reference, which makes sure that `split()` isn't called a second time.
+    /// Holding a reference (regardless whether mutable or not) also guarantees that the storage
+    /// isn't moved as long as a producer and consumer exist.
+    pub fn split(&mut self) -> ((), ()) {
+        todo!()
+    }
+}
+
+/*
+impl<T, A: Addressing, I: Indices> PartialEq for StaticStorage<T, A, I> {
+    fn eq(&self, other: &Self) -> bool {
+        core::ptr::eq(self, other)
+    }
+}
+
+impl<T, A: Addressing, I: Indices> Eq for StaticStorage<T, A, I> {}
+*/
+
+// SAFETY: all methods must be implemented correctly, or the whole thing is unsound
+unsafe impl<T, const N: usize, A: Addressing, I: Indices> Storage for StaticStorage<T, N, A, I> {
+    type Item = T;
+    type Addr = A;
+    type Indices = I;
+
+    #[inline]
+    fn data_ptr(&self) -> *mut Self::Item {
+        // TODO: what happens if N == 0?
+        self.slots.as_mut_ptr().cast()
+    }
+
+    #[inline]
+    fn addr(&self) -> &Self::Addr {
+        &self.addr
+    }
+
+    #[inline]
+    fn indices(&self) -> &Self::Indices {
+        &self.indices
     }
 }
