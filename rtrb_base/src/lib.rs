@@ -1,7 +1,7 @@
 #![no_std]
 #![warn(rust_2018_idioms)]
 
-use core::cell::Cell;
+use core::cell::{Cell, UnsafeCell};
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
@@ -89,7 +89,6 @@ pub unsafe trait Storage {
     /// Returns a pointer to the slot at position `pos`.
     ///
     /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
-    // TODO: take &mut? define slot_ptr() and slot_ptr_mut()?
     #[inline]
     unsafe fn slot_ptr(&self, pos: usize) -> *mut Self::Item {
         self.data_ptr().add(self.addr().collapse_position(pos))
@@ -273,8 +272,10 @@ pub enum PopError {
     Empty,
 }
 
+/*
 #[cfg(feature = "std")]
 impl std::error::Error for PopError {}
+*/
 
 impl fmt::Display for PopError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -291,8 +292,10 @@ pub enum PeekError {
     Empty,
 }
 
+/*
 #[cfg(feature = "std")]
 impl std::error::Error for PeekError {}
+*/
 
 impl fmt::Display for PeekError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -309,8 +312,10 @@ pub enum PushError<T> {
     Full(T),
 }
 
+/*
 #[cfg(feature = "std")]
 impl<T> std::error::Error for PushError<T> {}
+*/
 
 impl<T> fmt::Debug for PushError<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -335,7 +340,11 @@ pub struct StaticStorage<T, const N: usize, A: Addressing, I: Indices> {
     indices: I,
 
     /// The static array holding slots.
-    slots: [MaybeUninit<T>; N],
+    ///
+    /// This must be in an `UnsafeCell` because both producer and consumer
+    /// have a (non-mutable) reference to the ring buffer and they use
+    /// *interior mutability* to modify it.
+    slots: UnsafeCell<[MaybeUninit<T>; N]>,
 
     /// Indicates that dropping a `StaticStorage` may drop elements of type `T`.
     _marker: PhantomData<T>,
@@ -344,10 +353,15 @@ pub struct StaticStorage<T, const N: usize, A: Addressing, I: Indices> {
 impl<T, const N: usize, A: Addressing, I: Indices> StaticStorage<T, N, A, I> {
     #[must_use]
     pub fn new() -> Self {
+        let addr = A::new(N);
+        // TODO: move this check to compile time!
+        if addr.capacity() != N {
+            panic!("StaticStorage doesn't support changing capacity");
+        }
         Self {
-            addr: A::new(N),
+            addr,
             indices: I::new(),
-            slots: [const { MaybeUninit::uninit() }; N],
+            slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
             _marker: PhantomData,
         }
     }
@@ -357,8 +371,12 @@ impl<T, const N: usize, A: Addressing, I: Indices> StaticStorage<T, N, A, I> {
     /// This takes a mutable reference, which makes sure that `split()` isn't called a second time.
     /// Holding a reference (regardless whether mutable or not) also guarantees that the storage
     /// isn't moved as long as a producer and consumer exist.
-    pub fn split(&mut self) -> ((), ()) {
-        todo!()
+    pub fn split(&mut self) -> (Producer<&Self>, Consumer<&Self>) {
+        // SAFETY: Only a single instance of Producer is allowed.
+        let p = unsafe { Producer::new(&*self) };
+        // SAFETY: Only a single instance of Consumer is allowed.
+        let c = unsafe { Consumer::new(&*self) };
+        (p, c)
     }
 }
 
@@ -381,7 +399,7 @@ unsafe impl<T, const N: usize, A: Addressing, I: Indices> Storage for StaticStor
     #[inline]
     fn data_ptr(&self) -> *mut Self::Item {
         // TODO: what happens if N == 0?
-        self.slots.as_mut_ptr().cast()
+        self.slots.get().cast()
     }
 
     #[inline]
@@ -394,3 +412,147 @@ unsafe impl<T, const N: usize, A: Addressing, I: Indices> Storage for StaticStor
         &self.indices
     }
 }
+
+/// Exact length.
+#[derive(Debug)]
+pub struct TightAddressing {
+    /// The queue capacity.
+    capacity: usize,
+}
+
+// SAFETY: all methods must be implemented correctly, or the whole thing is unsound
+unsafe impl Addressing for TightAddressing {
+    fn new(capacity: usize) -> Self {
+        Self { capacity }
+    }
+
+    #[inline]
+    fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    /// Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
+    #[inline]
+    fn collapse_position(&self, pos: usize) -> usize {
+        debug_assert!(pos == 0 || pos < 2 * self.capacity);
+        if pos < self.capacity {
+            pos
+        } else {
+            pos - self.capacity
+        }
+    }
+
+    /// Increments a position by going `n` slots forward.
+    #[inline]
+    fn increment(&self, pos: usize, n: usize) -> usize {
+        debug_assert!(pos == 0 || pos < 2 * self.capacity);
+        debug_assert!(n <= self.capacity);
+        let threshold = 2 * self.capacity - n;
+        if pos < threshold {
+            pos + n
+        } else {
+            pos - threshold
+        }
+    }
+
+    #[inline]
+    fn increment1(&self, pos: usize) -> usize {
+        debug_assert_ne!(self.capacity, 0);
+        debug_assert!(pos < 2 * self.capacity);
+        if pos < 2 * self.capacity - 1 {
+            pos + 1
+        } else {
+            0
+        }
+    }
+
+    #[inline]
+    fn distance(&self, a: usize, b: usize) -> usize {
+        debug_assert!(a == 0 || a < 2 * self.capacity);
+        debug_assert!(b == 0 || b < 2 * self.capacity);
+        if a <= b {
+            b - a
+        } else {
+            2 * self.capacity - a + b
+        }
+    }
+}
+
+/// Force power of two.
+#[derive(Debug)]
+pub struct PowerOfTwoAddressing {
+    /// The queue capacity (a power of 2).
+    capacity: usize,
+}
+
+// SAFETY: all methods must be implemented correctly, or the whole thing is unsound
+unsafe impl Addressing for PowerOfTwoAddressing {
+    fn new(capacity: usize) -> Self {
+        Self {
+            capacity: capacity.next_power_of_two(),
+        }
+    }
+
+    #[inline]
+    fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    #[inline]
+    fn collapse_position(&self, pos: usize) -> usize {
+        // TODO: is capacity 0 supported?
+        pos & (self.capacity - 1)
+    }
+
+    #[inline]
+    fn increment(&self, pos: usize, n: usize) -> usize {
+        pos.wrapping_add(n)
+    }
+
+    #[inline]
+    fn distance(&self, a: usize, b: usize) -> usize {
+        b.wrapping_sub(a)
+    }
+}
+
+/// Unpadded indices.
+// TODO: generic argument for size type?
+#[derive(Debug)]
+pub struct TightIndices {
+    /// The head of the queue.
+    ///
+    /// This integer is in range `0 .. 2 * capacity`.
+    head: AtomicUsize,
+
+    /// The tail of the queue.
+    ///
+    /// This integer is in range `0 .. 2 * capacity`.
+    tail: AtomicUsize,
+}
+
+// SAFETY: all methods must be implemented correctly, or the whole thing is unsound
+unsafe impl Indices for TightIndices {
+    fn new() -> Self {
+        TightIndices {
+            head: AtomicUsize::new(0),
+            tail: AtomicUsize::new(0),
+        }
+    }
+
+    #[inline]
+    fn head(&self) -> &AtomicUsize {
+        &self.head
+    }
+
+    #[inline]
+    fn tail(&self) -> &AtomicUsize {
+        &self.tail
+    }
+}
+
+/// ...
+///
+/// no cache padding, no dynamic allocation
+/// power-of-two optimizations might be done automatically by the compiler? TODO: verify
+// TODO: change to newtype, add docs
+pub type EmbeddedRingBuffer<T, const N: usize> = StaticStorage<T, N, TightAddressing, TightIndices>;

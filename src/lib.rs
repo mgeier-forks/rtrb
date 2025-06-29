@@ -76,7 +76,7 @@ use rtrb_base::{Addressing, Indices, Storage};
 pub use rtrb_base::{PopError, PeekError, PushError};
 
 // NB: non-public!
-type RingBufferInner<T> = DynamicStorage<T, TightAddressing, CachePaddedIndices>;
+type RingBufferInner<T> = DynamicStorage<T, rtrb_base::TightAddressing, CachePaddedIndices>;
 
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
@@ -217,108 +217,6 @@ unsafe impl Indices for CachePaddedIndices {
     #[inline]
     fn tail(&self) -> &AtomicUsize {
         &self.tail
-    }
-}
-
-/// Exact length.
-#[derive(Debug)]
-pub struct TightAddressing {
-    /// The queue capacity.
-    capacity: usize,
-}
-
-// SAFETY: all methods must be implemented correctly, or the whole thing is unsound
-unsafe impl Addressing for TightAddressing {
-    fn new(capacity: usize) -> Self {
-        Self { capacity }
-    }
-
-    #[inline]
-    fn capacity(&self) -> usize {
-        self.capacity
-    }
-
-    /// Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
-    #[inline]
-    fn collapse_position(&self, pos: usize) -> usize {
-        debug_assert!(pos == 0 || pos < 2 * self.capacity);
-        if pos < self.capacity {
-            pos
-        } else {
-            pos - self.capacity
-        }
-    }
-
-    /// Increments a position by going `n` slots forward.
-    #[inline]
-    fn increment(&self, pos: usize, n: usize) -> usize {
-        debug_assert!(pos == 0 || pos < 2 * self.capacity);
-        debug_assert!(n <= self.capacity);
-        let threshold = 2 * self.capacity - n;
-        if pos < threshold {
-            pos + n
-        } else {
-            pos - threshold
-        }
-    }
-
-    #[inline]
-    fn increment1(&self, pos: usize) -> usize {
-        debug_assert_ne!(self.capacity, 0);
-        debug_assert!(pos < 2 * self.capacity);
-        if pos < 2 * self.capacity - 1 {
-            pos + 1
-        } else {
-            0
-        }
-    }
-
-    #[inline]
-    fn distance(&self, a: usize, b: usize) -> usize {
-        debug_assert!(a == 0 || a < 2 * self.capacity);
-        debug_assert!(b == 0 || b < 2 * self.capacity);
-        if a <= b {
-            b - a
-        } else {
-            2 * self.capacity - a + b
-        }
-    }
-}
-
-/// Force power of two.
-#[derive(Debug)]
-pub struct PowerOfTwoAddressing {
-    /// The queue capacity (a power of 2).
-    capacity: usize,
-}
-
-// SAFETY: all methods must be implemented correctly, or the whole thing is unsound
-unsafe impl Addressing for PowerOfTwoAddressing {
-    fn new(capacity: usize) -> Self {
-        Self {
-            capacity: capacity.next_power_of_two(),
-        }
-    }
-
-    #[inline]
-    fn capacity(&self) -> usize {
-        self.capacity
-    }
-
-    #[inline]
-    fn collapse_position(&self, pos: usize) -> usize {
-        // TODO: is capacity 0 supported?
-        pos & (self.capacity - 1)
-    }
-
-    #[inline]
-    fn increment(&self, pos: usize, n: usize) -> usize {
-        pos.wrapping_add(n)
-    }
-
-    #[inline]
-    fn distance(&self, a: usize, b: usize) -> usize {
-        b.wrapping_sub(a)
     }
 }
 
@@ -773,4 +671,5 @@ impl<T: Copy> CopyToUninit<T> for [T] {
 }
 
 /// Ring buffer with power-of-two storage.
-pub type RingBuffer2<T> = DynamicStorage<T, PowerOfTwoAddressing, CachePaddedIndices>;
+// TODO: change to newtype, add docs
+pub type RingBuffer2<T> = DynamicStorage<T, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>;
