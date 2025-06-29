@@ -8,6 +8,9 @@ use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+// TODO: separate module for traits?
+// TODO: separate module for "policies", maybe "diy"?
+
 /// Indices.
 ///
 /// # Safety

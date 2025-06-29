@@ -673,3 +673,13 @@ impl<T: Copy> CopyToUninit<T> for [T] {
 /// Ring buffer with power-of-two storage.
 // TODO: change to newtype, add docs
 pub type RingBuffer2<T> = DynamicStorage<T, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>;
+
+
+/// ...
+///
+/// no dynamic allocation, but cache-padded indices
+// TODO: change to newtype, add docs
+pub type StaticRingBuffer<T, const N: usize> = rtrb_base::StaticStorage<T, N, rtrb_base::TightAddressing, CachePaddedIndices>;
+
+// power-of-two optimizations might be done automatically by the compiler? TODO: verify
+pub type StaticRingBuffer2<T, const N: usize> = rtrb_base::StaticStorage<T, N, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>;
