@@ -75,6 +75,8 @@ use rtrb_base::{Addressing, Indices, Storage};
 // TODO: use rtrb_base::errors::* or something?
 pub use rtrb_base::{PopError, PeekError, PushError};
 
+pub use rtrb_base::EmbeddedRingBuffer;
+
 // NB: non-public!
 type RingBufferInner<T> = DynamicStorage<T, rtrb_base::TightAddressing, CachePaddedIndices>;
 
@@ -85,7 +87,7 @@ type RingBufferInner<T> = DynamicStorage<T, rtrb_base::TightAddressing, CachePad
 ///
 /// *See also the [crate-level documentation](crate).*
 #[derive(Debug)]
-pub struct RingBuffer<T>(RingBufferInner<T>);
+pub struct RingBuffer<T>(PhantomData<T>);
 
 impl<T> RingBuffer<T> {
     /// Creates a ring buffer with the given `capacity` and returns [`Producer`] and [`Consumer`].
@@ -683,3 +685,5 @@ pub type StaticRingBuffer<T, const N: usize> = rtrb_base::StaticStorage<T, N, rt
 
 // power-of-two optimizations might be done automatically by the compiler? TODO: verify
 pub type StaticRingBuffer2<T, const N: usize> = rtrb_base::StaticStorage<T, N, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>;
+pub type StaticProducer2<'a, T, const N: usize> = rtrb_base::Producer<&'a rtrb_base::StaticStorage<T, N, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>>;
+pub type StaticConsumer2<'a, T, const N: usize> = rtrb_base::Consumer<&'a rtrb_base::StaticStorage<T, N, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>>;
