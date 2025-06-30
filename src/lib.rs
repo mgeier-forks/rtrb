@@ -122,11 +122,14 @@ impl<T> RingBuffer<T> {
 /// Dynamic storage on the heap.
 #[derive(Debug)]
 pub struct DynamicStorage<T, A: Addressing, I: Indices> {
-    addr: A,
+    _addr: PhantomData<A>,
     indices: I,
 
     /// The buffer holding slots.
     data_ptr: *mut T,
+
+    /// The queue capacity.
+    capacity: usize,
 
     /// Indicates that dropping a `DynamicStorage` may drop elements of type `T`.
     _marker: PhantomData<T>,
@@ -141,12 +144,12 @@ impl<T, A: Addressing, I: Indices> DynamicStorage<T, A, I> {
         rtrb_base::Producer<Arc<DynamicStorage<T, A, I>>>,
         rtrb_base::Consumer<Arc<DynamicStorage<T, A, I>>>,
     ) {
-        let addr = A::new(capacity);
-        let capacity = addr.capacity();
+        let capacity = A::update_capacity(capacity);
         let reference = Arc::new(Self {
-            addr,
+            _addr: PhantomData,
             indices: I::new(),
             data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
+            capacity,
             _marker: PhantomData,
         });
         // SAFETY: Only a single instance of Producer is allowed.
@@ -177,8 +180,8 @@ unsafe impl<T, A: Addressing, I: Indices> Storage for DynamicStorage<T, A, I> {
     }
 
     #[inline(always)]
-    fn addr(&self) -> &Self::Addr {
-        &self.addr
+    fn capacity(&self) -> usize {
+        self.capacity
     }
 
     #[inline(always)]
@@ -229,18 +232,21 @@ impl<T, A: Addressing, I: Indices> Drop for DynamicStorage<T, A, I> {
 
         // Finally, deallocate the buffer, but don't run any destructors.
         // SAFETY: data_ptr and capacity are still valid from the original initialization.
-        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.addr().capacity()) };
+        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.capacity()) };
     }
 }
 
 // TODO: put behind a feature
 #[derive(Debug)]
 pub struct MmapStorage<T, A: Addressing, I: Indices> {
-    addr: A,
+    _addr: PhantomData<A>,
     indices: I,
 
     /// Pointer to the first mapped region
     data_ptr: *mut T,
+
+    /// The queue capacity.
+    capacity: usize,
 
     /// Indicates that dropping a `MmapStorage` may drop elements of type `T`.
     _marker: PhantomData<T>,
@@ -267,8 +273,7 @@ impl<T, A: Addressing, I: Indices> MmapStorage<T, A, I> {
         assert_eq!(rem, 0);
         let pages = (capacity / elements_per_page) + (capacity % elements_per_page > 0) as usize;
         let capacity = pages * elements_per_page;
-        let addr = A::new(capacity);
-        let capacity = addr.capacity();
+        let capacity = A::update_capacity(capacity);
         assert_eq!(capacity, capacity.next_power_of_two());
         let len = capacity * core::mem::size_of::<T>();
         let data_ptr: *mut T = unsafe {
@@ -315,9 +320,10 @@ impl<T, A: Addressing, I: Indices> MmapStorage<T, A, I> {
         };
         assert!(data_ptr.is_aligned());
         let reference = Arc::new(Self {
-            addr,
+            _addr: PhantomData,
             indices: I::new(),
             data_ptr,
+            capacity,
             _marker: PhantomData,
         });
         // SAFETY: Only a single instance of Producer is allowed.
@@ -335,7 +341,7 @@ impl<T, A: Addressing, I: Indices> Drop for MmapStorage<T, A, I> {
         unsafe { self.drop_all_elements() };
         // SAFETY: The memory is not used anymore.
         unsafe {
-            let len = self.addr.capacity() * core::mem::size_of::<T>();
+            let len = self.capacity() * core::mem::size_of::<T>();
             let ptr_one: *mut libc::c_void = self.data_ptr.cast();
             let r = libc::munmap(ptr_one, len);
             assert_eq!(r, 0); // TODO: check for errno?
@@ -358,13 +364,12 @@ unsafe impl<T, A: Addressing, I: Indices> Storage for MmapStorage<T, A, I> {
     }
 
     #[inline]
-    fn addr(&self) -> &Self::Addr {
-        &self.addr
-    }
-
-    #[inline]
     fn indices(&self) -> &Self::Indices {
         &self.indices
+    }
+
+    fn capacity(&self) -> usize {
+        self.capacity
     }
 }
 
