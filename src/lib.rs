@@ -121,11 +121,14 @@ impl<T> RingBuffer<T> {
 /// Dynamic storage on the heap.
 #[derive(Debug)]
 pub struct DynamicStorage<T, A: Addressing, I: Indices> {
-    addr: A,
+    _addr: PhantomData<A>,
     indices: I,
 
     /// The buffer holding slots.
     data_ptr: *mut T,
+
+    /// The queue capacity.
+    capacity: usize,
 
     /// Indicates that dropping a `DynamicStorage` may drop elements of type `T`.
     _marker: PhantomData<T>,
@@ -140,12 +143,12 @@ impl<T, A: Addressing, I: Indices> DynamicStorage<T, A, I> {
         rtrb_base::Producer<Arc<DynamicStorage<T, A, I>>>,
         rtrb_base::Consumer<Arc<DynamicStorage<T, A, I>>>,
     ) {
-        let addr = A::new(capacity);
-        let capacity = addr.capacity();
+        let capacity = A::update_capacity(capacity);
         let reference = Arc::new(Self {
-            addr,
+            _addr: PhantomData,
             indices: I::new(),
             data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
+            capacity,
             _marker: PhantomData,
         });
         // SAFETY: Only a single instance of Producer is allowed.
@@ -170,17 +173,17 @@ unsafe impl<T, A: Addressing, I: Indices> Storage for DynamicStorage<T, A, I> {
     type Addr = A;
     type Indices = I;
 
-    #[inline]
+    #[inline(always)]
     fn data_ptr(&self) -> *mut Self::Item {
         self.data_ptr
     }
 
-    #[inline]
-    fn addr(&self) -> &Self::Addr {
-        &self.addr
+    #[inline(always)]
+    fn capacity(&self) -> usize {
+        self.capacity
     }
 
-    #[inline]
+    #[inline(always)]
     fn indices(&self) -> &Self::Indices {
         &self.indices
     }
@@ -227,7 +230,7 @@ impl<T, A: Addressing, I: Indices> Drop for DynamicStorage<T, A, I> {
 
         // Finally, deallocate the buffer, but don't run any destructors.
         // SAFETY: data_ptr and capacity are still valid from the original initialization.
-        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.addr().capacity()) };
+        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.capacity()) };
     }
 }
 

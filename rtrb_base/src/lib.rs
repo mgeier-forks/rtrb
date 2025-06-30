@@ -32,25 +32,26 @@ pub unsafe trait Addressing {
     //type SizeType;
     // TODO: AtomicSizeType?
 
-    fn new(capacity: usize) -> Self;
+    #[inline(always)]
+    fn update_capacity(capacity: usize) -> usize {
+        capacity
+    }
 
-    fn capacity(&self) -> usize;
-
-    fn collapse_position(&self, pos: usize) -> usize;
+    fn collapse_position(pos: usize, capacity: usize) -> usize;
 
     /// Increments a position by going `n` slots forward.
-    fn increment(&self, pos: usize, n: usize) -> usize;
+    fn increment(pos: usize, n: usize, capacity: usize) -> usize;
 
     /// Increments a position by going one slot forward.
     ///
     /// This might be more efficient than self.increment(..., 1).
     #[inline]
-    fn increment1(&self, pos: usize) -> usize {
-        self.increment(pos, 1)
+    fn increment1(pos: usize, capacity: usize) -> usize {
+        Self::increment(pos, 1, capacity)
     }
 
     /// Returns the distance between two positions.
-    fn distance(&self, a: usize, b: usize) -> usize;
+    fn distance(a: usize, b: usize, capacity: usize) -> usize;
 }
 
 /// Storage.
@@ -69,7 +70,7 @@ pub unsafe trait Storage {
 
     fn data_ptr(&self) -> *mut Self::Item;
 
-    fn addr(&self) -> &Self::Addr;
+    fn capacity(&self) -> usize;
 
     fn indices(&self) -> &Self::Indices;
 
@@ -82,7 +83,7 @@ pub unsafe trait Storage {
         while head != tail {
             // SAFETY: All slots between head and tail have been initialized.
             unsafe { self.slot_ptr(head).drop_in_place() };
-            head = self.addr().increment1(head);
+            head = Self::Addr::increment1(head, self.capacity());
         }
         // This is not needed if drop_all_elements() is only called once,
         // but to be safe, we call it anyway:
@@ -94,7 +95,7 @@ pub unsafe trait Storage {
     /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
     #[inline]
     unsafe fn slot_ptr(&self, pos: usize) -> *mut Self::Item {
-        self.data_ptr().add(self.addr().collapse_position(pos))
+        self.data_ptr().add(Self::Addr::collapse_position(pos, self.capacity()))
     }
 
     //fn is_abandoned(this: &Self::Reference) -> bool;
@@ -128,7 +129,7 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
         if let Some(tail) = self.next_tail() {
             // SAFETY: tail points to an empty slot.
             unsafe { self.buffer.slot_ptr(tail).write(value) };
-            let tail = self.buffer.addr().increment1(tail);
+            let tail = S::Addr::increment1(tail, self.capacity());
             self.buffer.indices().tail().store(tail, Ordering::Release);
             Ok(())
         } else {
@@ -141,15 +142,17 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
         self.cached_head.set(head);
         // "tail" is only ever written by the producer thread, "Relaxed" is enough
         let tail = self.buffer.indices().tail().load(Ordering::Relaxed);
-        self.buffer.addr().capacity() - self.buffer.addr().distance(head, tail)
+        let capacity = self.buffer.capacity();
+        capacity - S::Addr::distance(head, tail, capacity)
     }
 
     pub fn is_full(&self) -> bool {
         self.next_tail().is_none()
     }
 
+    #[inline(always)]
     pub fn capacity(&self) -> usize {
-        self.buffer.addr().capacity()
+        self.buffer.capacity()
     }
 
     /// Get the tail position for writing the next slot, if available.
@@ -159,16 +162,16 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
     #[inline]
     fn next_tail(&self) -> Option<usize> {
         let indices = self.buffer.indices();
-        let addr = self.buffer.addr();
         // "tail" is only ever written by the producer thread, "Relaxed" is enough
         let tail = indices.tail().load(Ordering::Relaxed);
+        let capacity = self.buffer.capacity();
 
         // Check if the queue is *possibly* full.
-        if addr.distance(self.cached_head.get(), tail) == addr.capacity() {
+        if S::Addr::distance(self.cached_head.get(), tail, capacity) == capacity {
             // Refresh the head ...
             let head = indices.head().load(Ordering::Acquire);
             // ... and check if it's *really* full.
-            if addr.distance(head, tail) == addr.capacity() {
+            if S::Addr::distance(head, tail, capacity) == capacity {
                 return None;
             }
             self.cached_head.set(head);
@@ -205,7 +208,7 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
         if let Some(head) = self.next_head() {
             // SAFETY: head points to an initialized slot.
             let value = unsafe { self.buffer.slot_ptr(head).read() };
-            let head = self.buffer.addr().increment1(head);
+            let head = S::Addr::increment1(head, self.capacity());
             self.buffer.indices().head().store(head, Ordering::Release);
             Ok(value)
         } else {
@@ -227,7 +230,7 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
         self.cached_tail.set(tail);
         // "head" is only ever written by the consumer thread, "Relaxed" is enough
         let head = self.buffer.indices().head().load(Ordering::Relaxed);
-        self.buffer.addr().distance(head, tail)
+        S::Addr::distance(head, tail, self.capacity())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -240,8 +243,9 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
     }
     */
 
+    #[inline(always)]
     pub fn capacity(&self) -> usize {
-        self.buffer.addr().capacity()
+        self.buffer.capacity()
     }
 
     /// Get the head position for reading the next slot, if available.
@@ -339,7 +343,7 @@ impl<T> fmt::Display for PushError<T> {
 /// Static storage.
 #[derive(Debug)]
 pub struct StaticStorage<T, const N: usize, A: Addressing, I: Indices> {
-    addr: A,
+    _addr: PhantomData<A>,
     indices: I,
 
     /// The static array holding slots.
@@ -356,13 +360,13 @@ pub struct StaticStorage<T, const N: usize, A: Addressing, I: Indices> {
 impl<T, const N: usize, A: Addressing, I: Indices> StaticStorage<T, N, A, I> {
     #[must_use]
     pub fn new() -> Self {
-        let addr = A::new(N);
+        let capacity = A::update_capacity(N);
         // TODO: move this check to compile time!
-        if addr.capacity() != N {
+        if capacity != N {
             panic!("StaticStorage doesn't support changing capacity");
         }
         Self {
-            addr,
+            _addr: PhantomData,
             indices: I::new(),
             slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
             _marker: PhantomData,
@@ -406,8 +410,8 @@ unsafe impl<T, const N: usize, A: Addressing, I: Indices> Storage for StaticStor
     }
 
     #[inline]
-    fn addr(&self) -> &Self::Addr {
-        &self.addr
+    fn capacity(&self) -> usize {
+        N
     }
 
     #[inline]
@@ -418,39 +422,27 @@ unsafe impl<T, const N: usize, A: Addressing, I: Indices> Storage for StaticStor
 
 /// Exact length.
 #[derive(Debug)]
-pub struct TightAddressing {
-    /// The queue capacity.
-    capacity: usize,
-}
+pub struct TightAddressing;
 
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound
 unsafe impl Addressing for TightAddressing {
-    fn new(capacity: usize) -> Self {
-        Self { capacity }
-    }
-
-    #[inline]
-    fn capacity(&self) -> usize {
-        self.capacity
-    }
-
     /// Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
     #[inline]
-    fn collapse_position(&self, pos: usize) -> usize {
-        debug_assert!(pos == 0 || pos < 2 * self.capacity);
-        if pos < self.capacity {
+    fn collapse_position(pos: usize, capacity: usize) -> usize {
+        debug_assert!(pos == 0 || pos < 2 * capacity);
+        if pos < capacity {
             pos
         } else {
-            pos - self.capacity
+            pos - capacity
         }
     }
 
     /// Increments a position by going `n` slots forward.
     #[inline]
-    fn increment(&self, pos: usize, n: usize) -> usize {
-        debug_assert!(pos == 0 || pos < 2 * self.capacity);
-        debug_assert!(n <= self.capacity);
-        let threshold = 2 * self.capacity - n;
+    fn increment(pos: usize, n: usize, capacity: usize) -> usize {
+        debug_assert!(pos == 0 || pos < 2 * capacity);
+        debug_assert!(n <= capacity);
+        let threshold = 2 * capacity - n;
         if pos < threshold {
             pos + n
         } else {
@@ -459,10 +451,10 @@ unsafe impl Addressing for TightAddressing {
     }
 
     #[inline]
-    fn increment1(&self, pos: usize) -> usize {
-        debug_assert_ne!(self.capacity, 0);
-        debug_assert!(pos < 2 * self.capacity);
-        if pos < 2 * self.capacity - 1 {
+    fn increment1(pos: usize, capacity: usize) -> usize {
+        debug_assert_ne!(capacity, 0);
+        debug_assert!(pos < 2 * capacity);
+        if pos < 2 * capacity - 1 {
             pos + 1
         } else {
             0
@@ -470,50 +462,42 @@ unsafe impl Addressing for TightAddressing {
     }
 
     #[inline]
-    fn distance(&self, a: usize, b: usize) -> usize {
-        debug_assert!(a == 0 || a < 2 * self.capacity);
-        debug_assert!(b == 0 || b < 2 * self.capacity);
+    fn distance(a: usize, b: usize, capacity: usize) -> usize {
+        debug_assert!(a == 0 || a < 2 * capacity);
+        debug_assert!(b == 0 || b < 2 * capacity);
         if a <= b {
             b - a
         } else {
-            2 * self.capacity - a + b
+            2 * capacity - a + b
         }
     }
 }
 
 /// Force power of two.
 #[derive(Debug)]
-pub struct PowerOfTwoAddressing {
-    /// The queue capacity (a power of 2).
-    capacity: usize,
-}
+pub struct PowerOfTwoAddressing;
 
+/// The queue capacity is always a power of 2.
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound
 unsafe impl Addressing for PowerOfTwoAddressing {
-    fn new(capacity: usize) -> Self {
-        Self {
-            capacity: capacity.next_power_of_two(),
-        }
+    #[inline(always)]
+    fn update_capacity(capacity: usize) -> usize {
+        capacity.next_power_of_two()
     }
 
     #[inline]
-    fn capacity(&self) -> usize {
-        self.capacity
-    }
-
-    #[inline]
-    fn collapse_position(&self, pos: usize) -> usize {
+    fn collapse_position(pos: usize, capacity: usize) -> usize {
         // TODO: is capacity 0 supported?
-        pos & (self.capacity - 1)
+        pos & (capacity - 1)
     }
 
     #[inline]
-    fn increment(&self, pos: usize, n: usize) -> usize {
+    fn increment(pos: usize, n: usize, _capacity: usize) -> usize {
         pos.wrapping_add(n)
     }
 
     #[inline]
-    fn distance(&self, a: usize, b: usize) -> usize {
+    fn distance(a: usize, b: usize, _capacity: usize) -> usize {
         b.wrapping_sub(a)
     }
 }
