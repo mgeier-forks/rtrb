@@ -73,7 +73,7 @@ use chunks::WriteChunkUninit;
 use rtrb_base::{Addressing, Indices, Storage};
 
 // TODO: use rtrb_base::errors::* or something?
-pub use rtrb_base::{PopError, PeekError, PushError};
+pub use rtrb_base::{PeekError, PopError, PushError};
 
 pub use rtrb_base::EmbeddedRingBuffer;
 
@@ -112,9 +112,7 @@ impl<T> RingBuffer<T> {
     #[inline(always)]
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
-    pub fn new(
-        capacity: usize,
-    ) -> (Producer<T>, Consumer<T>) {
+    pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
         let (p, c) = RingBufferInner::<T>::new(capacity);
         (Producer(p), Consumer(c))
     }
@@ -366,7 +364,7 @@ impl<T> Producer<T> {
         self.0.capacity()
     }
 
-/*
+    /*
     /// Returns `true` if the corresponding [`Consumer`] has been destroyed.
     ///
     /// Note that since Rust version 1.74.0, this is not synchronizing with the consumer thread
@@ -414,7 +412,7 @@ impl<T> Producer<T> {
     pub fn is_abandoned(&self) -> bool {
         Arc::strong_count(&self.buffer) < 2
     }
-*/
+    */
 }
 
 /// The consumer side of a [`RingBuffer`].
@@ -439,7 +437,6 @@ impl<T> Producer<T> {
 /// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<T>(rtrb_base::Consumer<Arc<RingBufferInner<T>>>);
-
 
 impl<T> Consumer<T> {
     /// Attempts to pop an element from the queue.
@@ -676,14 +673,19 @@ impl<T: Copy> CopyToUninit<T> for [T] {
 // TODO: change to newtype, add docs
 pub type RingBuffer2<T> = DynamicStorage<T, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>;
 
-
 /// ...
 ///
 /// no dynamic allocation, but cache-padded indices
 // TODO: change to newtype, add docs
-pub type StaticRingBuffer<T, const N: usize> = rtrb_base::StaticStorage<T, N, rtrb_base::TightAddressing, CachePaddedIndices>;
+pub type StaticRingBuffer<T, const N: usize> =
+    rtrb_base::StaticStorage<T, N, rtrb_base::TightAddressing, CachePaddedIndices>;
 
 // power-of-two optimizations might be done automatically by the compiler? TODO: verify
-pub type StaticRingBuffer2<T, const N: usize> = rtrb_base::StaticStorage<T, N, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>;
-pub type StaticProducer2<'a, T, const N: usize> = rtrb_base::Producer<&'a rtrb_base::StaticStorage<T, N, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>>;
-pub type StaticConsumer2<'a, T, const N: usize> = rtrb_base::Consumer<&'a rtrb_base::StaticStorage<T, N, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>>;
+pub type StaticRingBuffer2<T, const N: usize> =
+    rtrb_base::StaticStorage<T, N, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>;
+pub type StaticProducer2<'a, T, const N: usize> = rtrb_base::Producer<
+    &'a rtrb_base::StaticStorage<T, N, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>,
+>;
+pub type StaticConsumer2<'a, T, const N: usize> = rtrb_base::Consumer<
+    &'a rtrb_base::StaticStorage<T, N, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>,
+>;
