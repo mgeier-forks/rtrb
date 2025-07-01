@@ -54,6 +54,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::convert::TryInto;
 use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
 use core::sync::atomic::AtomicUsize;
@@ -228,6 +229,153 @@ impl<T, A: Addressing, I: Indices> Drop for DynamicStorage<T, A, I> {
         // Finally, deallocate the buffer, but don't run any destructors.
         // SAFETY: data_ptr and capacity are still valid from the original initialization.
         unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.addr().capacity()) };
+    }
+}
+
+// TODO: put behind a feature
+#[derive(Debug)]
+pub struct MmapStorage<T, I: Indices> {
+    addr: MmapAddressing,
+    indices: I,
+
+    /// Pointer to the first mapped region
+    data_ptr: *mut T,
+
+    /// Indicates that dropping a `MmapStorage` may drop elements of type `T`.
+    _marker: PhantomData<T>,
+}
+
+impl<T, I: Indices> MmapStorage<T, I> {
+    #[allow(clippy::new_ret_no_self)]
+    #[must_use]
+    pub fn new(
+        capacity: usize,
+    ) -> (
+        rtrb_base::Producer<Arc<MmapStorage<T, I>>>,
+        rtrb_base::Consumer<Arc<MmapStorage<T, I>>>,
+    ) {
+        let addr = MmapAddressing::with_t::<T>(capacity);
+        let capacity = addr.capacity();
+        assert_eq!(capacity, capacity.next_power_of_two());
+        let len = capacity * std::mem::size_of::<T>();
+
+        let data_ptr: *mut T = unsafe {
+            use libc::*;
+            let fd = memfd_create(core::ffi::CStr::from_bytes_with_nul(b"rtrb-buffer\0").unwrap().as_ptr(), 0);
+            ftruncate(fd, TryInto::<off_t>::try_into(len).unwrap());
+            // Get an address with twice the capacity available
+            let ptr_one = mmap(std::ptr::null_mut(), 2 * len, PROT_NONE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+            assert_ne!(ptr_one, MAP_FAILED); // TODO: check for errno?
+            let r = mmap(ptr_one, len, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);
+            assert_eq!(r, ptr_one); // TODO: check for errno?
+            let ptr_two = ptr_one.add(len);
+            let r = mmap(ptr_two, len, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);
+            assert_eq!(r, ptr_two); // TODO: check for errno?
+            let r = close(fd);
+            assert_eq!(r, 0); // TODO: check for errno?
+            ptr_one.cast()
+        };
+        assert!(data_ptr.is_aligned());
+        let reference = Arc::new(Self {
+            addr,
+            indices: I::new(),
+            data_ptr,
+            _marker: PhantomData,
+        });
+        // SAFETY: Only a single instance of Producer is allowed.
+        let p = unsafe { rtrb_base::Producer::new(reference.clone()) };
+        // SAFETY: Only a single instance of Consumer is allowed.
+        let c = unsafe { rtrb_base::Consumer::new(reference) };
+        (p, c)
+    }
+}
+
+impl<T, I: Indices> Drop for MmapStorage<T, I> {
+    /// Drops all non-empty slots.
+    fn drop(&mut self) {
+        self.drop_all_elements();
+        unsafe {
+            let len = self.addr.capacity() * std::mem::size_of::<T>();
+            let ptr_one: *mut libc::c_void = self.data_ptr.cast();
+            let r = libc::munmap(ptr_one, len);
+            assert_eq!(r, 0);
+            let ptr_two = ptr_one.add(len);
+            let r = libc::munmap(ptr_two, len);
+            assert_eq!(r, 0);
+        }
+    }
+}
+
+
+// SAFETY: all methods must be implemented correctly, or the whole thing is unsound
+unsafe impl<T, I: Indices> Storage for MmapStorage<T, I> {
+    type Item = T;
+    type Addr = MmapAddressing;
+    type Indices = I;
+
+    #[inline]
+    fn data_ptr(&self) -> *mut Self::Item {
+        self.data_ptr
+    }
+
+    #[inline]
+    fn addr(&self) -> &Self::Addr {
+        &self.addr
+    }
+
+    #[inline]
+    fn indices(&self) -> &Self::Indices {
+        &self.indices
+    }
+}
+
+#[derive(Debug)]
+pub struct MmapAddressing {
+    /// The queue capacity, a multiple of (page size / size of `T`).
+    capacity: usize,
+}
+
+impl MmapAddressing {
+    fn with_t<T>(capacity: usize) -> Self {
+        // TODO: what if capacity is 0?
+        let pagesize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        assert_ne!(pagesize, -1);
+
+        let size_of_t = std::mem::size_of::<T>();
+        let elements_per_page = TryInto::<usize>::try_into(pagesize).unwrap() / size_of_t;
+        let rem = TryInto::<usize>::try_into(pagesize).unwrap() % size_of_t;
+        assert_eq!(rem, 0);
+        let pages = (capacity / elements_per_page) + (capacity % elements_per_page > 0) as usize;
+        Self {
+            capacity: pages * elements_per_page,
+        }
+    }
+}
+
+unsafe impl Addressing for MmapAddressing {
+    fn new(_capacity: usize) -> Self {
+        unimplemented!()
+    }
+
+    #[inline]
+    fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    #[inline]
+    fn collapse_position(&self, pos: usize) -> usize {
+        // TODO: is capacity 0 supported?
+        pos & (self.capacity - 1)
+    }
+
+    #[inline]
+    fn increment(&self, pos: usize, n: usize) -> usize {
+        pos.wrapping_add(n)
+    }
+
+    #[inline]
+    fn distance(&self, a: usize, b: usize) -> usize {
+        b.wrapping_sub(a)
     }
 }
 
@@ -689,3 +837,5 @@ pub type StaticProducer2<'a, T, const N: usize> = rtrb_base::Producer<
 pub type StaticConsumer2<'a, T, const N: usize> = rtrb_base::Consumer<
     &'a rtrb_base::StaticStorage<T, N, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>,
 >;
+
+pub type MmapRingBuffer<T> = MmapStorage<T, CachePaddedIndices>;

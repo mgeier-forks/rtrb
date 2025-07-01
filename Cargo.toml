@@ -24,6 +24,8 @@ std = []
 
 [dependencies]
 rtrb-base = { path = "rtrb_base" }
+# TODO: put behind a feature:
+libc = "0.2"
 
 [dev-dependencies]
 rand = "0.8"
