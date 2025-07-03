@@ -171,17 +171,17 @@ unsafe impl<T, A: Addressing, I: Indices> Storage for DynamicStorage<T, A, I> {
     type Addr = A;
     type Indices = I;
 
-    #[inline]
+    #[inline(always)]
     fn data_ptr(&self) -> *mut Self::Item {
         self.data_ptr
     }
 
-    #[inline]
+    #[inline(always)]
     fn addr(&self) -> &Self::Addr {
         &self.addr
     }
 
-    #[inline]
+    #[inline(always)]
     fn indices(&self) -> &Self::Indices {
         &self.indices
     }
@@ -224,7 +224,8 @@ unsafe impl Indices for CachePaddedIndices {
 impl<T, A: Addressing, I: Indices> Drop for DynamicStorage<T, A, I> {
     /// Drops all non-empty slots.
     fn drop(&mut self) {
-        self.drop_all_elements();
+        // SAFETY: this is called exactly once, no references to any elements exist anymore.
+        unsafe { self.drop_all_elements() };
 
         // Finally, deallocate the buffer, but don't run any destructors.
         // SAFETY: data_ptr and capacity are still valid from the original initialization.
@@ -330,7 +331,9 @@ impl<T, A: Addressing, I: Indices> MmapStorage<T, A, I> {
 impl<T, A: Addressing, I: Indices> Drop for MmapStorage<T, A, I> {
     /// Drops all non-empty slots.
     fn drop(&mut self) {
-        self.drop_all_elements();
+        // SAFETY: this is called exactly once, no references to any elements exist anymore.
+        unsafe { self.drop_all_elements() };
+        // SAFETY: The memory is not used anymore.
         unsafe {
             let len = self.addr.capacity() * core::mem::size_of::<T>();
             let ptr_one: *mut libc::c_void = self.data_ptr.cast();

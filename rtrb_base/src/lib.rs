@@ -3,13 +3,17 @@
 
 use core::cell::{Cell, UnsafeCell};
 use core::fmt;
-use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::ops::Deref;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 // TODO: separate module for traits?
 // TODO: separate module for "policies", maybe "diy"?
+
+const HAS_PRODUCER: u8 = 0b10000000;
+const HAS_CONSUMER: u8 = 0b01000000;
+// NB: This overlaps with HAS_PRODUCER, they are never used at the same time.
+//const IS_ABANDONED: u8 = 0b10000000;
 
 /// Indices.
 ///
@@ -73,8 +77,31 @@ pub unsafe trait Storage {
 
     fn indices(&self) -> &Self::Indices;
 
+    /// Do whatever is needed when the `Producer` is dropped.
+    ///
+    /// # Safety
+    ///
+    /// This can only be called in `Producer::drop()`.
+    unsafe fn drop_producer(&self) {}
+
+    /// Do whatever is needed when the `Consumer` is dropped.
+    ///
+    /// # Safety
+    ///
+    /// This can only be called in `Consumer::drop()`.
+    unsafe fn drop_consumer(&self) {}
+
+    /// Drop all elements that are still in the buffer.
+    ///
+    /// After this, head and tail indices are invalid.
+    ///
+    /// # Safety
+    ///
+    /// This can only be called in the `Drop` implementation of the storage.
     #[inline(never)]
-    fn drop_all_elements(&mut self) {
+    unsafe fn drop_all_elements(&mut self) {
+        // The threads have already been synchronized in `abandon()`,
+        // Relaxed ordering is sufficient here.
         let mut head = self.indices().head().load(Ordering::Relaxed);
         let tail = self.indices().tail().load(Ordering::Relaxed);
 
@@ -84,24 +111,28 @@ pub unsafe trait Storage {
             unsafe { self.slot_ptr(head).drop_in_place() };
             head = self.addr().increment1(head);
         }
-        // This is not needed if drop_all_elements() is only called once,
-        // but to be safe, we call it anyway:
-        self.indices().head().store(head, Ordering::Relaxed);
     }
 
-    /// Returns a pointer to the slot at position `pos`.
+    /// Returns a pointer to the (possibly uninitialized) slot at position `pos`.
+    ///
+    /// # Safety
+    ///
+    /// `pos` must be valid.
     ///
     /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
     #[inline]
     unsafe fn slot_ptr(&self, pos: usize) -> *mut Self::Item {
         self.data_ptr().add(self.addr().collapse_position(pos))
     }
-
-    //fn is_abandoned(this: &Self::Reference) -> bool;
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Producer<R> {
+// NB: this syntax needs MSRV 1.79
+//pub struct Producer<R: Deref<Target: Storage>>
+pub struct Producer<R: Deref>
+where
+    <R as Deref>::Target: Storage,
+{
     /// A reference to the ring buffer.
     buffer: R,
 
@@ -118,9 +149,10 @@ unsafe impl<S: Storage, R: Deref<Target = S>> Send for Producer<R> where S::Item
 impl<S: Storage, R: Deref<Target = S>> Producer<R> {
     #[doc(hidden)]
     pub unsafe fn new(buffer: R) -> Self {
+        let head = buffer.indices().head().load(Ordering::Acquire);
         Self {
             buffer,
-            cached_head: Cell::new(0),
+            cached_head: Cell::new(head),
         }
     }
 
@@ -177,8 +209,21 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
     }
 }
 
+impl<R: Deref> Drop for Producer<R>
+where
+    <R as Deref>::Target: Storage,
+{
+    fn drop(&mut self) {
+        // SAFETY: This is only called in Producer::drop().
+        unsafe { self.buffer.drop_producer() };
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
-pub struct Consumer<R> {
+pub struct Consumer<R: Deref>
+where
+    <R as Deref>::Target: Storage,
+{
     /// A reference to the ring buffer.
     buffer: R,
 
@@ -195,9 +240,10 @@ unsafe impl<S: Storage, R: Deref<Target = S>> Send for Consumer<R> where S::Item
 impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
     #[doc(hidden)]
     pub unsafe fn new(buffer: R) -> Self {
+        let tail = buffer.indices().tail().load(Ordering::Acquire);
         Self {
             buffer,
-            cached_tail: Cell::new(0),
+            cached_tail: Cell::new(tail),
         }
     }
 
@@ -265,6 +311,16 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
             self.cached_tail.set(tail);
         }
         Some(head)
+    }
+}
+
+impl<R: Deref> Drop for Consumer<R>
+where
+    <R as Deref>::Target: Storage,
+{
+    fn drop(&mut self) {
+        // SAFETY: This is only called in Consumer::drop().
+        unsafe { self.buffer.drop_consumer() };
     }
 }
 
@@ -342,15 +398,15 @@ pub struct StaticStorage<T, const N: usize, A: Addressing, I: Indices> {
     addr: A,
     indices: I,
 
+    /// Indicates whether a producer and/or a consumer is connected.
+    flags: AtomicU8,
+
     /// The static array holding slots.
     ///
     /// This must be in an `UnsafeCell` because both producer and consumer
     /// have a (non-mutable) reference to the ring buffer and they use
     /// *interior mutability* to modify it.
     slots: UnsafeCell<[MaybeUninit<T>; N]>,
-
-    /// Indicates that dropping a `StaticStorage` may drop elements of type `T`.
-    _marker: PhantomData<T>,
 }
 
 impl<T, const N: usize, A: Addressing, I: Indices> StaticStorage<T, N, A, I> {
@@ -364,22 +420,36 @@ impl<T, const N: usize, A: Addressing, I: Indices> StaticStorage<T, N, A, I> {
         Self {
             addr,
             indices: I::new(),
+            flags: AtomicU8::new(0),
             slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
-            _marker: PhantomData,
         }
     }
 
-    /// Split ...
-    ///
-    /// This takes a mutable reference, which makes sure that `split()` isn't called a second time.
-    /// Holding a reference (regardless whether mutable or not) also guarantees that the storage
-    /// isn't moved as long as a producer and consumer exist.
-    pub fn split(&mut self) -> (Producer<&Self>, Consumer<&Self>) {
-        // SAFETY: Only a single instance of Producer is allowed.
-        let p = unsafe { Producer::new(&*self) };
-        // SAFETY: Only a single instance of Consumer is allowed.
-        let c = unsafe { Consumer::new(&*self) };
-        (p, c)
+    pub fn producer(&self) -> Option<Producer<&Self>> {
+        let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
+        if old_flags & HAS_PRODUCER == 0 {
+            // SAFETY: This is the one and only producer.
+            Some(unsafe { Producer::new(self) })
+        } else {
+            None
+        }
+    }
+
+    pub fn consumer(&self) -> Option<Consumer<&Self>> {
+        let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
+        if old_flags & HAS_CONSUMER == 0 {
+            // SAFETY: This is the one and only consumer.
+            Some(unsafe { Consumer::new(self) })
+        } else {
+            None
+        }
+    }
+}
+
+impl<T, const N: usize, A: Addressing, I: Indices> Drop for StaticStorage<T, N, A, I> {
+    fn drop(&mut self) {
+        // SAFETY: this is called exactly once, no references to any elements exist anymore.
+        unsafe { self.drop_all_elements() };
     }
 }
 
@@ -399,20 +469,30 @@ unsafe impl<T, const N: usize, A: Addressing, I: Indices> Storage for StaticStor
     type Addr = A;
     type Indices = I;
 
-    #[inline]
+    #[inline(always)]
     fn data_ptr(&self) -> *mut Self::Item {
         // TODO: what happens if N == 0?
         self.slots.get().cast()
     }
 
-    #[inline]
+    #[inline(always)]
     fn addr(&self) -> &Self::Addr {
         &self.addr
     }
 
-    #[inline]
+    #[inline(always)]
     fn indices(&self) -> &Self::Indices {
         &self.indices
+    }
+
+    #[inline(always)]
+    unsafe fn drop_producer(&self) {
+        let _ = self.flags.fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
+    }
+
+    #[inline(always)]
+    unsafe fn drop_consumer(&self) {
+        let _ = self.flags.fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
     }
 }
 
