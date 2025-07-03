@@ -557,5 +557,25 @@ unsafe impl Indices for TightIndices {
 ///
 /// no cache padding, no dynamic allocation
 /// power-of-two optimizations might be done automatically by the compiler? TODO: verify
-// TODO: change to newtype, add docs
+///
+/// TODO: move this to split() docs?
+///
+/// Only one pair of producer/consumer can exist at once:
+/// ```compile_fail
+/// # use rtrb_base::EmbeddedRingBuffer;
+/// let mut rb = EmbeddedRingBuffer::<i32, 64>::new();
+/// let (mut producer, mut consumer) = rb.split();
+/// let (mut another_producer, mut another_consumer) = rb.split();
+/// ```
+/// TODO: show error message
+///
+/// Once both have been dropped, a new pair can be created:
+/// ```
+/// # use rtrb_base::EmbeddedRingBuffer;
+/// let mut rb = EmbeddedRingBuffer::<i32, 64>::new();
+/// let (mut producer, mut consumer) = rb.split();
+/// drop(producer); drop(consumer);
+/// let (mut another_producer, mut another_consumer) = rb.split();
+/// ```
+// TODO: change to newtype, add more docs
 pub type EmbeddedRingBuffer<T, const N: usize> = StaticStorage<T, N, TightAddressing, TightIndices>;

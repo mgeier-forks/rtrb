@@ -234,8 +234,8 @@ impl<T, A: Addressing, I: Indices> Drop for DynamicStorage<T, A, I> {
 
 // TODO: put behind a feature
 #[derive(Debug)]
-pub struct MmapStorage<T, I: Indices> {
-    addr: MmapAddressing,
+pub struct MmapStorage<T, A: Addressing, I: Indices> {
+    addr: A,
     indices: I,
 
     /// Pointer to the first mapped region
@@ -245,31 +245,68 @@ pub struct MmapStorage<T, I: Indices> {
     _marker: PhantomData<T>,
 }
 
-impl<T, I: Indices> MmapStorage<T, I> {
+// Any `Addressing` should work, but the capacity will always be a power of two
+// (a multiple of (page size / size of `T`)),
+// so `PowerOfTwoAddressing` probably makes most sense.
+impl<T, A: Addressing, I: Indices> MmapStorage<T, A, I> {
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     pub fn new(
         capacity: usize,
     ) -> (
-        rtrb_base::Producer<Arc<MmapStorage<T, I>>>,
-        rtrb_base::Consumer<Arc<MmapStorage<T, I>>>,
+        rtrb_base::Producer<Arc<MmapStorage<T, A, I>>>,
+        rtrb_base::Consumer<Arc<MmapStorage<T, A, I>>>,
     ) {
-        let addr = MmapAddressing::with_t::<T>(capacity);
+        // TODO: what if capacity is 0?
+        let pagesize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        assert_ne!(pagesize, -1);
+        let size_of_t = core::mem::size_of::<T>();
+        let elements_per_page = TryInto::<usize>::try_into(pagesize).unwrap() / size_of_t;
+        let rem = TryInto::<usize>::try_into(pagesize).unwrap() % size_of_t;
+        assert_eq!(rem, 0);
+        let pages = (capacity / elements_per_page) + (capacity % elements_per_page > 0) as usize;
+        let capacity = pages * elements_per_page;
+        let addr = A::new(capacity);
         let capacity = addr.capacity();
         assert_eq!(capacity, capacity.next_power_of_two());
-        let len = capacity * std::mem::size_of::<T>();
-
+        let len = capacity * core::mem::size_of::<T>();
         let data_ptr: *mut T = unsafe {
             use libc::*;
-            let fd = memfd_create(core::ffi::CStr::from_bytes_with_nul(b"rtrb-buffer\0").unwrap().as_ptr(), 0);
+            let fd = memfd_create(
+                core::ffi::CStr::from_bytes_with_nul(b"rtrb-buffer\0")
+                    .unwrap()
+                    .as_ptr(),
+                0,
+            );
             ftruncate(fd, TryInto::<off_t>::try_into(len).unwrap());
             // Get an address with twice the capacity available
-            let ptr_one = mmap(std::ptr::null_mut(), 2 * len, PROT_NONE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+            let ptr_one = mmap(
+                core::ptr::null_mut(),
+                2 * len,
+                PROT_NONE,
+                MAP_PRIVATE | MAP_ANONYMOUS,
+                -1,
+                0,
+            );
             assert_ne!(ptr_one, MAP_FAILED); // TODO: check for errno?
-            let r = mmap(ptr_one, len, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);
+            let r = mmap(
+                ptr_one,
+                len,
+                PROT_READ | PROT_WRITE,
+                MAP_SHARED | MAP_FIXED,
+                fd,
+                0,
+            );
             assert_eq!(r, ptr_one); // TODO: check for errno?
             let ptr_two = ptr_one.add(len);
-            let r = mmap(ptr_two, len, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);
+            let r = mmap(
+                ptr_two,
+                len,
+                PROT_READ | PROT_WRITE,
+                MAP_SHARED | MAP_FIXED,
+                fd,
+                0,
+            );
             assert_eq!(r, ptr_two); // TODO: check for errno?
             let r = close(fd);
             assert_eq!(r, 0); // TODO: check for errno?
@@ -290,27 +327,26 @@ impl<T, I: Indices> MmapStorage<T, I> {
     }
 }
 
-impl<T, I: Indices> Drop for MmapStorage<T, I> {
+impl<T, A: Addressing, I: Indices> Drop for MmapStorage<T, A, I> {
     /// Drops all non-empty slots.
     fn drop(&mut self) {
         self.drop_all_elements();
         unsafe {
-            let len = self.addr.capacity() * std::mem::size_of::<T>();
+            let len = self.addr.capacity() * core::mem::size_of::<T>();
             let ptr_one: *mut libc::c_void = self.data_ptr.cast();
             let r = libc::munmap(ptr_one, len);
-            assert_eq!(r, 0);
+            assert_eq!(r, 0); // TODO: check for errno?
             let ptr_two = ptr_one.add(len);
             let r = libc::munmap(ptr_two, len);
-            assert_eq!(r, 0);
+            assert_eq!(r, 0); // TODO: check for errno?
         }
     }
 }
 
-
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound
-unsafe impl<T, I: Indices> Storage for MmapStorage<T, I> {
+unsafe impl<T, A: Addressing, I: Indices> Storage for MmapStorage<T, A, I> {
     type Item = T;
-    type Addr = MmapAddressing;
+    type Addr = A;
     type Indices = I;
 
     #[inline]
@@ -326,56 +362,6 @@ unsafe impl<T, I: Indices> Storage for MmapStorage<T, I> {
     #[inline]
     fn indices(&self) -> &Self::Indices {
         &self.indices
-    }
-}
-
-#[derive(Debug)]
-pub struct MmapAddressing {
-    /// The queue capacity, a multiple of (page size / size of `T`).
-    capacity: usize,
-}
-
-impl MmapAddressing {
-    fn with_t<T>(capacity: usize) -> Self {
-        // TODO: what if capacity is 0?
-        let pagesize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-        assert_ne!(pagesize, -1);
-
-        let size_of_t = std::mem::size_of::<T>();
-        let elements_per_page = TryInto::<usize>::try_into(pagesize).unwrap() / size_of_t;
-        let rem = TryInto::<usize>::try_into(pagesize).unwrap() % size_of_t;
-        assert_eq!(rem, 0);
-        let pages = (capacity / elements_per_page) + (capacity % elements_per_page > 0) as usize;
-        Self {
-            capacity: pages * elements_per_page,
-        }
-    }
-}
-
-unsafe impl Addressing for MmapAddressing {
-    fn new(_capacity: usize) -> Self {
-        unimplemented!()
-    }
-
-    #[inline]
-    fn capacity(&self) -> usize {
-        self.capacity
-    }
-
-    #[inline]
-    fn collapse_position(&self, pos: usize) -> usize {
-        // TODO: is capacity 0 supported?
-        pos & (self.capacity - 1)
-    }
-
-    #[inline]
-    fn increment(&self, pos: usize, n: usize) -> usize {
-        pos.wrapping_add(n)
-    }
-
-    #[inline]
-    fn distance(&self, a: usize, b: usize) -> usize {
-        b.wrapping_sub(a)
     }
 }
 
@@ -838,4 +824,4 @@ pub type StaticConsumer2<'a, T, const N: usize> = rtrb_base::Consumer<
     &'a rtrb_base::StaticStorage<T, N, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>,
 >;
 
-pub type MmapRingBuffer<T> = MmapStorage<T, CachePaddedIndices>;
+pub type MmapRingBuffer<T> = MmapStorage<T, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>;
