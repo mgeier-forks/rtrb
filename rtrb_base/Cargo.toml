@@ -1,3 +1,4 @@
 [package]
 name = "rtrb-base"
 version = "0.0.0"
+edition = "2018"
