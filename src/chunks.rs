@@ -240,7 +240,7 @@ impl<T> Producer<T> {
         // Check if the queue has *possibly* not enough slots.
         if buffer.capacity() - buffer.distance(self.cached_head.get(), tail) < n {
             // Refresh the head ...
-            let head = buffer.head.load(Ordering::Acquire);
+            let head = buffer.ctl.head.load(Ordering::Acquire);
             self.cached_head.set(head);
 
             // ... and check if there *really* are not enough slots.
@@ -297,7 +297,7 @@ impl<T> Consumer<T> {
         // Check if the queue has *possibly* not enough slots.
         if buffer.distance(head, self.cached_tail.get()) < n {
             // Refresh the tail ...
-            let tail = buffer.tail.load(Ordering::Acquire);
+            let tail = buffer.ctl.tail.load(Ordering::Acquire);
             self.cached_tail.set(tail);
 
             // ... and check if there *really* are not enough slots.
@@ -508,7 +508,7 @@ impl<T> WriteChunkUninit<'_, T> {
     unsafe fn commit_unchecked(self, n: usize) -> usize {
         let p = self.producer;
         let tail = p.buffer().increment(p.cached_tail.get(), n);
-        p.buffer().tail.store(tail, Ordering::Release);
+        p.buffer().ctl.tail.store(tail, Ordering::Release);
         p.cached_tail.set(tail);
         n
     }
@@ -778,7 +778,7 @@ impl<T> ReadChunk<'_, T> {
             });
         let c = self.consumer;
         let head = c.buffer().increment(c.cached_head.get(), n);
-        c.buffer().head.store(head, Ordering::Release);
+        c.buffer().ctl.head.store(head, Ordering::Release);
         c.cached_head.set(head);
         n
     }
@@ -832,7 +832,7 @@ impl<T> Drop for ReadChunkIntoIter<'_, T> {
     fn drop(&mut self) {
         let c = &self.chunk.consumer;
         let head = c.buffer().increment(c.cached_head.get(), self.iterated);
-        c.buffer().head.store(head, Ordering::Release);
+        c.buffer().ctl.head.store(head, Ordering::Release);
         c.cached_head.set(head);
     }
 }
