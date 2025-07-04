@@ -100,8 +100,6 @@ pub unsafe trait Storage {
     /// This can only be called in the `Drop` implementation of the storage.
     #[inline(never)]
     unsafe fn drop_all_elements(&mut self) {
-        // The threads have already been synchronized in `abandon()`,
-        // Relaxed ordering is sufficient here.
         let mut head = self.indices().head().load(Ordering::Relaxed);
         let tail = self.indices().tail().load(Ordering::Relaxed);
 
