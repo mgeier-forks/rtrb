@@ -409,6 +409,9 @@ pub struct StaticStorage<T, const N: usize, A: Addressing, I: Indices> {
     slots: UnsafeCell<[MaybeUninit<T>; N]>,
 }
 
+// TODO: check if this is correct:
+unsafe impl<T: Sync, const N: usize, A: Addressing + Sync, I: Indices + Sync> Sync for StaticStorage<T, N, A, I> {}
+
 impl<T, const N: usize, A: Addressing, I: Indices> StaticStorage<T, N, A, I> {
     #[must_use]
     pub fn new() -> Self {
