@@ -79,7 +79,8 @@ pub use rtrb_base::{PeekError, PopError, PushError};
 pub use rtrb_base::EmbeddedRingBuffer;
 
 // NB: non-public!
-type RingBufferInner<T> = DynamicStorage<T, rtrb_base::TightAddressing, CachePaddedIndices>;
+type RingBufferInner<T> =
+    DynamicStorage<T, { rtrb_base::Addressing::Tight as u8 }, CachePaddedIndices>;
 
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
@@ -121,18 +122,19 @@ impl<T> RingBuffer<T> {
 
 /// Dynamic storage on the heap.
 #[derive(Debug)]
-pub struct DynamicStorage<T, A: Addressing, I: Indices> {
-    addr: A,
+pub struct DynamicStorage<T, const A: u8, I: Indices> {
     indices: I,
 
     /// The buffer holding slots.
     data_ptr: *mut T,
 
+    capacity: usize,
+
     /// Indicates that dropping a `DynamicStorage` may drop elements of type `T`.
     _marker: PhantomData<T>,
 }
 
-impl<T, A: Addressing, I: Indices> DynamicStorage<T, A, I> {
+impl<T, const A: u8, I: Indices> DynamicStorage<T, A, I> {
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     pub fn new(
@@ -141,12 +143,11 @@ impl<T, A: Addressing, I: Indices> DynamicStorage<T, A, I> {
         rtrb_base::Producer<Arc<DynamicStorage<T, A, I>>>,
         rtrb_base::Consumer<Arc<DynamicStorage<T, A, I>>>,
     ) {
-        let addr = A::new(capacity);
-        let capacity = addr.capacity();
+        let capacity = Addressing::from_u8(A).update_capacity(capacity);
         let reference = Arc::new(Self {
-            addr,
-            indices: I::new(),
+            indices: I::INIT,
             data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
+            capacity,
             _marker: PhantomData,
         });
         // SAFETY: Only a single instance of Producer is allowed.
@@ -157,19 +158,19 @@ impl<T, A: Addressing, I: Indices> DynamicStorage<T, A, I> {
     }
 }
 
-impl<T, A: Addressing, I: Indices> PartialEq for DynamicStorage<T, A, I> {
+impl<T, const A: u8, I: Indices> PartialEq for DynamicStorage<T, A, I> {
     fn eq(&self, other: &Self) -> bool {
         core::ptr::eq(self, other)
     }
 }
 
-impl<T, A: Addressing, I: Indices> Eq for DynamicStorage<T, A, I> {}
+impl<T, const A: u8, I: Indices> Eq for DynamicStorage<T, A, I> {}
 
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound
-unsafe impl<T, A: Addressing, I: Indices> Storage for DynamicStorage<T, A, I> {
+unsafe impl<T, const A: u8, I: Indices> Storage for DynamicStorage<T, A, I> {
     type Item = T;
-    type Addr = A;
     type Indices = I;
+    const ADDR: Addressing = Addressing::from_u8(A);
 
     #[inline(always)]
     fn data_ptr(&self) -> *mut Self::Item {
@@ -177,8 +178,8 @@ unsafe impl<T, A: Addressing, I: Indices> Storage for DynamicStorage<T, A, I> {
     }
 
     #[inline(always)]
-    fn addr(&self) -> &Self::Addr {
-        &self.addr
+    fn capacity(&self) -> usize {
+        self.capacity
     }
 
     #[inline(always)]
@@ -203,12 +204,11 @@ pub struct CachePaddedIndices {
 
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound
 unsafe impl Indices for CachePaddedIndices {
-    fn new() -> Self {
-        CachePaddedIndices {
-            head: CachePadded::new(AtomicUsize::new(0)),
-            tail: CachePadded::new(AtomicUsize::new(0)),
-        }
-    }
+    #[allow(clippy::declare_interior_mutable_const)]
+    const INIT: Self = CachePaddedIndices {
+        head: CachePadded::new(AtomicUsize::new(0)),
+        tail: CachePadded::new(AtomicUsize::new(0)),
+    };
 
     #[inline]
     fn head(&self) -> &AtomicUsize {
@@ -221,7 +221,7 @@ unsafe impl Indices for CachePaddedIndices {
     }
 }
 
-impl<T, A: Addressing, I: Indices> Drop for DynamicStorage<T, A, I> {
+impl<T, const A: u8, I: Indices> Drop for DynamicStorage<T, A, I> {
     /// Drops all non-empty slots.
     fn drop(&mut self) {
         // SAFETY: this is called exactly once, no references to any elements exist anymore.
@@ -229,18 +229,19 @@ impl<T, A: Addressing, I: Indices> Drop for DynamicStorage<T, A, I> {
 
         // Finally, deallocate the buffer, but don't run any destructors.
         // SAFETY: data_ptr and capacity are still valid from the original initialization.
-        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.addr().capacity()) };
+        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.capacity()) };
     }
 }
 
 // TODO: put behind a feature
 #[derive(Debug)]
-pub struct MmapStorage<T, A: Addressing, I: Indices> {
-    addr: A,
+pub struct MmapStorage<T, const A: u8, I: Indices> {
     indices: I,
 
     /// Pointer to the first mapped region
     data_ptr: *mut T,
+
+    capacity: usize,
 
     /// Indicates that dropping a `MmapStorage` may drop elements of type `T`.
     _marker: PhantomData<T>,
@@ -249,7 +250,7 @@ pub struct MmapStorage<T, A: Addressing, I: Indices> {
 // Any `Addressing` should work, but the capacity will always be a power of two
 // (a multiple of (page size / size of `T`)),
 // so `PowerOfTwoAddressing` probably makes most sense.
-impl<T, A: Addressing, I: Indices> MmapStorage<T, A, I> {
+impl<T, const A: u8, I: Indices> MmapStorage<T, A, I> {
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     pub fn new(
@@ -267,8 +268,7 @@ impl<T, A: Addressing, I: Indices> MmapStorage<T, A, I> {
         assert_eq!(rem, 0);
         let pages = (capacity / elements_per_page) + (capacity % elements_per_page > 0) as usize;
         let capacity = pages * elements_per_page;
-        let addr = A::new(capacity);
-        let capacity = addr.capacity();
+        assert_eq!(capacity, Addressing::from_u8(A).update_capacity(capacity));
         assert_eq!(capacity, capacity.next_power_of_two());
         let len = capacity * core::mem::size_of::<T>();
         let data_ptr: *mut T = unsafe {
@@ -315,9 +315,9 @@ impl<T, A: Addressing, I: Indices> MmapStorage<T, A, I> {
         };
         assert!(data_ptr.is_aligned());
         let reference = Arc::new(Self {
-            addr,
-            indices: I::new(),
+            indices: I::INIT,
             data_ptr,
+            capacity,
             _marker: PhantomData,
         });
         // SAFETY: Only a single instance of Producer is allowed.
@@ -328,14 +328,14 @@ impl<T, A: Addressing, I: Indices> MmapStorage<T, A, I> {
     }
 }
 
-impl<T, A: Addressing, I: Indices> Drop for MmapStorage<T, A, I> {
+impl<T, const A: u8, I: Indices> Drop for MmapStorage<T, A, I> {
     /// Drops all non-empty slots.
     fn drop(&mut self) {
         // SAFETY: this is called exactly once, no references to any elements exist anymore.
         unsafe { self.drop_all_elements() };
         // SAFETY: The memory is not used anymore.
         unsafe {
-            let len = self.addr.capacity() * core::mem::size_of::<T>();
+            let len = self.capacity() * core::mem::size_of::<T>();
             let ptr_one: *mut libc::c_void = self.data_ptr.cast();
             let r = libc::munmap(ptr_one, len);
             assert_eq!(r, 0); // TODO: check for errno?
@@ -347,10 +347,10 @@ impl<T, A: Addressing, I: Indices> Drop for MmapStorage<T, A, I> {
 }
 
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound
-unsafe impl<T, A: Addressing, I: Indices> Storage for MmapStorage<T, A, I> {
+unsafe impl<T, const A: u8, I: Indices> Storage for MmapStorage<T, A, I> {
     type Item = T;
-    type Addr = A;
     type Indices = I;
+    const ADDR: Addressing = Addressing::from_u8(A);
 
     #[inline]
     fn data_ptr(&self) -> *mut Self::Item {
@@ -358,8 +358,8 @@ unsafe impl<T, A: Addressing, I: Indices> Storage for MmapStorage<T, A, I> {
     }
 
     #[inline]
-    fn addr(&self) -> &Self::Addr {
-        &self.addr
+    fn capacity(&self) -> usize {
+        self.capacity
     }
 
     #[inline]
@@ -808,23 +808,35 @@ impl<T: Copy> CopyToUninit<T> for [T] {
 
 /// Ring buffer with power-of-two storage.
 // TODO: change to newtype, add docs
-pub type RingBuffer2<T> = DynamicStorage<T, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>;
+pub type RingBuffer2<T> =
+    DynamicStorage<T, { rtrb_base::Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;
 
 /// ...
 ///
 /// no dynamic allocation, but cache-padded indices
 // TODO: change to newtype, add docs
 pub type StaticRingBuffer<T, const N: usize> =
-    rtrb_base::StaticStorage<T, N, rtrb_base::TightAddressing, CachePaddedIndices>;
+    rtrb_base::StaticStorage<T, N, { rtrb_base::Addressing::Tight as u8 }, CachePaddedIndices>;
 
 // power-of-two optimizations might be done automatically by the compiler? TODO: verify
 pub type StaticRingBuffer2<T, const N: usize> =
-    rtrb_base::StaticStorage<T, N, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>;
+    rtrb_base::StaticStorage<T, N, { rtrb_base::Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;
 pub type StaticProducer2<'a, T, const N: usize> = rtrb_base::Producer<
-    &'a rtrb_base::StaticStorage<T, N, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>,
+    &'a rtrb_base::StaticStorage<
+        T,
+        N,
+        { rtrb_base::Addressing::PowerOfTwo as u8 },
+        CachePaddedIndices,
+    >,
 >;
 pub type StaticConsumer2<'a, T, const N: usize> = rtrb_base::Consumer<
-    &'a rtrb_base::StaticStorage<T, N, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>,
+    &'a rtrb_base::StaticStorage<
+        T,
+        N,
+        { rtrb_base::Addressing::PowerOfTwo as u8 },
+        CachePaddedIndices,
+    >,
 >;
 
-pub type MmapRingBuffer<T> = MmapStorage<T, rtrb_base::PowerOfTwoAddressing, CachePaddedIndices>;
+pub type MmapRingBuffer<T> =
+    MmapStorage<T, { rtrb_base::Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;

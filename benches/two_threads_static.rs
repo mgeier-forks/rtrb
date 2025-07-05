@@ -80,11 +80,17 @@ pub const SIZE: usize = 1024;
 
 create_two_threads_static_benchmark!(
     "static-rtrb",
-    || Box::leak(Box::new(rtrb::StaticRingBuffer::<u8, SIZE>::new())).split(),
+    || {
+        static RB: rtrb::StaticRingBuffer<u8, SIZE> = rtrb::StaticRingBuffer::new();
+        (RB.producer().unwrap(), RB.consumer().unwrap())
+    },
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok();
     "static-rtrb2",
-    || Box::leak(Box::new(rtrb::StaticRingBuffer2::<u8, SIZE>::new())).split(),
+    || {
+        static RB: rtrb::StaticRingBuffer2<u8, SIZE> = rtrb::StaticRingBuffer2::new();
+        (RB.producer().unwrap(), RB.consumer().unwrap())
+    },
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok()
 );

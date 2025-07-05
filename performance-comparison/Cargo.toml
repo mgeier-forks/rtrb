@@ -5,6 +5,8 @@ edition = "2021"
 
 publish = false
 
+[workspace]
+
 [dependencies]
 concurrent-queue = "2.3"
 crossbeam-queue = "0.3"

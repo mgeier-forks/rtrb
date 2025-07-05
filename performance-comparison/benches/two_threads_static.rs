@@ -9,17 +9,31 @@ use ringbuf::traits::*;
 create_two_threads_static_benchmark!(
 
     "rtrb",
-    || Box::leak(Box::new(rtrb::StaticRingBuffer::<u8, SIZE>::new())).split(),
+    || {
+        static RB: rtrb::StaticRingBuffer<u8, SIZE> = rtrb::StaticRingBuffer::<u8, SIZE>::new();
+        (RB.producer().unwrap(), RB.consumer().unwrap())
+    },
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok();
 
     "rtrb2",
-    || Box::leak(Box::new(rtrb::StaticRingBuffer2::<u8, SIZE>::new())).split(),
+    || {
+        static RB: rtrb::StaticRingBuffer2<u8, SIZE> = rtrb::StaticRingBuffer2::new();
+        (RB.producer().unwrap(), RB.consumer().unwrap())
+    },
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok();
 
     "rtrb-embedded",
-    || Box::leak(Box::new(rtrb::EmbeddedRingBuffer::<u8, SIZE>::new())).split(),
+    || {
+        static RB: rtrb::EmbeddedRingBuffer<u8, SIZE> = rtrb::EmbeddedRingBuffer::new();
+        (RB.producer().unwrap(), RB.consumer().unwrap())
+    },
+    |p, i| p.push(i).is_ok(),
+    |c| c.pop().ok();
+
+    "rtrb-dynamic",
+    || rtrb::RingBuffer::<u8>::new(SIZE),
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok();
 
