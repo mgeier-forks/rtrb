@@ -595,6 +595,7 @@ pub struct TightIndices {
 
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound
 unsafe impl Indices for TightIndices {
+    #[allow(clippy::declare_interior_mutable_const)]
     const INIT: Self = TightIndices {
         head: AtomicUsize::new(0),
         tail: AtomicUsize::new(0),

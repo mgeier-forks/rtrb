@@ -21,6 +21,7 @@ exclude = [
 # TODO: put rtrb and rtrb_base at the same level?
 [workspace]
 members = ["rtrb_base"]
+exclude = ["crossbeam"]
 
 [features]
 default = ["std"]
