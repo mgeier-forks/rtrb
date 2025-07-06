@@ -35,6 +35,8 @@ pub enum Addressing {
 }
 
 impl Addressing {
+    // This is a work-around until the `adt_const_params` feature has been stabilized
+    // (https://github.com/rust-lang/rust/issues/95174):
     pub const fn from_u8(value: u8) -> Addressing {
         if value == Addressing::Tight as u8 {
             Addressing::Tight

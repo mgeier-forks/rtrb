@@ -121,6 +121,9 @@ impl<T> RingBuffer<T> {
 }
 
 /// Dynamic storage on the heap.
+// Once the `adt_const_params` feature has been stabilized
+// (https://github.com/rust-lang/rust/issues/95174),
+// `u8` can be replaced by `Addressing`.
 #[derive(Debug)]
 pub struct DynamicStorage<T, const A: u8, I: Indices> {
     indices: I,
