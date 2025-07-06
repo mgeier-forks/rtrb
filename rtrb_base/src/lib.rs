@@ -13,7 +13,7 @@ use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 const HAS_PRODUCER: u8 = 0b10000000;
 const HAS_CONSUMER: u8 = 0b01000000;
 // NB: This overlaps with HAS_PRODUCER, they are never used at the same time.
-//const IS_ABANDONED: u8 = 0b10000000;
+pub const IS_ABANDONED: u8 = 0b10000000;
 
 /// Indices.
 ///
@@ -137,14 +137,25 @@ impl Addressing {
 /// Storage must be contiguous.
 ///
 /// ...
+///
+/// Several functions must not be exposed to the user: indices(), flags(), ...
 pub unsafe trait Storage {
     type Item;
     type Indices: Indices;
     const ADDR: Addressing;
 
-    fn data_ptr(&self) -> *mut Self::Item;
-
+    // TODO: make sure head/tail are not exposed to the user?
     fn indices(&self) -> &Self::Indices;
+
+    /// # Safety
+    ///
+    /// ...
+    // This is unsafe because Storage might be exposed to the user.
+    // TODO: make "unsafe"?
+    // TODO: make "container" that contains Storage and other traits without exposing them.
+    fn flags(&self) -> &AtomicU8;
+
+    fn data_ptr(&self) -> *mut Self::Item;
 
     fn capacity(&self) -> usize;
 
@@ -169,8 +180,12 @@ pub unsafe trait Storage {
     /// # Safety
     ///
     /// This can only be called in the `Drop` implementation of the storage.
+    ///
+    /// The threads must have been synchronized before via `flags()`.
     #[inline(never)]
     unsafe fn drop_all_elements(&mut self) {
+        // These atomic variables are *not* used for synchronizing the threads
+        // before destruction.  Relaxed ordering is sufficient here.
         let mut head = self.indices().head().load(Ordering::Relaxed);
         let tail = self.indices().tail().load(Ordering::Relaxed);
 
@@ -515,7 +530,7 @@ impl<T, const N: usize, const A: u8, I: Indices> StaticStorage<T, N, A, I> {
     }
 
     pub fn producer(&self) -> Option<Producer<&Self>> {
-        let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
+        let old_flags = self.flags().fetch_or(HAS_PRODUCER, Ordering::SeqCst);
         if old_flags & HAS_PRODUCER == 0 {
             // SAFETY: This is the one and only producer.
             Some(unsafe { Producer::new(self) })
@@ -525,7 +540,7 @@ impl<T, const N: usize, const A: u8, I: Indices> StaticStorage<T, N, A, I> {
     }
 
     pub fn consumer(&self) -> Option<Consumer<&Self>> {
-        let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
+        let old_flags = self.flags().fetch_or(HAS_CONSUMER, Ordering::SeqCst);
         if old_flags & HAS_CONSUMER == 0 {
             // SAFETY: This is the one and only consumer.
             Some(unsafe { Consumer::new(self) })
@@ -574,19 +589,25 @@ unsafe impl<T, const N: usize, const A: u8, I: Indices> Storage for StaticStorag
     fn capacity(&self) -> usize {
         N
     }
+
     #[inline(always)]
     fn indices(&self) -> &Self::Indices {
         &self.indices
     }
 
     #[inline(always)]
+    fn flags(&self) -> &AtomicU8 {
+        &self.flags
+    }
+
+    #[inline(always)]
     unsafe fn drop_producer(&self) {
-        let _ = self.flags.fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
+        let _ = self.flags().fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
     }
 
     #[inline(always)]
     unsafe fn drop_consumer(&self) {
-        let _ = self.flags.fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
+        let _ = self.flags().fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
     }
 }
 
