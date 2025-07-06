@@ -217,7 +217,11 @@ where
 unsafe impl<S: Storage, R: Deref<Target = S>> Send for Producer<R> where S::Item: Send {}
 
 impl<S: Storage, R: Deref<Target = S>> Producer<R> {
-    #[doc(hidden)]
+    /// Create a new producer.
+    ///
+    /// # Safety
+    ///
+    /// Only a single `Producer` can exist at a time.
     pub unsafe fn new(buffer: R) -> Self {
         let head = buffer.indices().head().load(Ordering::Acquire);
         Self {
@@ -309,7 +313,11 @@ where
 unsafe impl<S: Storage, R: Deref<Target = S>> Send for Consumer<R> where S::Item: Send {}
 
 impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
-    #[doc(hidden)]
+    /// Create a new consumer.
+    ///
+    /// # Safety
+    ///
+    /// Only a single `Consumer` can exist at a time.
     pub unsafe fn new(buffer: R) -> Self {
         let tail = buffer.indices().tail().load(Ordering::Acquire);
         Self {
