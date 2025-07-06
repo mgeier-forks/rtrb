@@ -502,7 +502,8 @@ impl<T, const N: usize, const A: u8, I: Indices> StaticStorage<T, N, A, I> {
         const {
             assert!(
                 N == Addressing::from_u8(A).update_capacity(N),
-                "StaticStorage doesn't support changing capacity"
+                // This assumes that only `Addressing::PowerOfTwo` changes capacity.
+                "`capacity` must be a power of two"
             );
         }
         Self {
@@ -647,4 +648,3 @@ unsafe impl Indices for TightIndices {
 // TODO: change to newtype, add more docs
 pub type EmbeddedRingBuffer<T, const N: usize> =
     StaticStorage<T, N, { Addressing::Tight as u8 }, TightIndices>;
-pub type BrokenRingBuffer<T, const N: usize> = StaticStorage<T, N, 77, TightIndices>;

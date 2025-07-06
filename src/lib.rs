@@ -821,7 +821,8 @@ pub type RingBuffer2<T> =
 pub type StaticRingBuffer<T, const N: usize> =
     rtrb_base::StaticStorage<T, N, { rtrb_base::Addressing::Tight as u8 }, CachePaddedIndices>;
 
-// power-of-two optimizations might be done automatically by the compiler? TODO: verify
+// TODO: Remove because power-of-two optimizations might be done automatically by the compiler?
+// TODO: verify
 pub type StaticRingBuffer2<T, const N: usize> =
     rtrb_base::StaticStorage<T, N, { rtrb_base::Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;
 pub type StaticProducer2<'a, T, const N: usize> = rtrb_base::Producer<
