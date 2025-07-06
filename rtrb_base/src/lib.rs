@@ -500,6 +500,7 @@ impl<T, const N: usize, const A: u8, I: Indices> StaticStorage<T, N, A, I> {
     #[must_use]
     pub const fn new() -> Self {
         const {
+            // assert!() in const since Rust 1.57
             assert!(
                 N == Addressing::from_u8(A).update_capacity(N),
                 // This assumes that only `Addressing::PowerOfTwo` changes capacity.
