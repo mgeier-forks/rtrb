@@ -24,6 +24,17 @@ fn zero_capacity() {
 }
 
 #[test]
+fn send_only_type() {
+    use std::cell::Cell;
+    let (mut p, mut c) = RingBuffer::<Cell<i32>>::new(1);
+    p.push(Cell::new(10)).unwrap();
+    std::thread::spawn(move || {
+        // `Sync` is not required to move items to this thread.
+        assert_eq!(c.pop().unwrap().get(), 10);
+    });
+}
+
+#[test]
 fn zero_sized_type() {
     struct ZeroSized;
     assert_eq!(std::mem::size_of::<ZeroSized>(), 0);

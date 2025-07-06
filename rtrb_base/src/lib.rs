@@ -234,7 +234,12 @@ where
 
 // SAFETY: After moving a Producer to another thread, there is still only a single thread
 // that can access the producer side of the queue.
-unsafe impl<S: Storage, R: Deref<Target = S>> Send for Producer<R> where S::Item: Send {}
+unsafe impl<S: Storage, R: Deref<Target = S>> Send for Producer<R>
+where
+    S: Sync,
+    S::Item: Send,
+{
+}
 
 impl<S: Storage, R: Deref<Target = S>> Producer<R> {
     /// Create a new producer.
@@ -335,7 +340,12 @@ where
 
 // SAFETY: After moving a Consumer to another thread, there is still only a single thread
 // that can access the consumer side of the queue.
-unsafe impl<S: Storage, R: Deref<Target = S>> Send for Consumer<R> where S::Item: Send {}
+unsafe impl<S: Storage, R: Deref<Target = S>> Send for Consumer<R>
+where
+    S: Sync,
+    S::Item: Send,
+{
+}
 
 impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
     /// Create a new consumer.
@@ -516,8 +526,13 @@ pub struct StaticStorage<T, const N: usize, const A: u8, I: Indices> {
     slots: UnsafeCell<[MaybeUninit<T>; N]>,
 }
 
-// TODO: check if this is correct:
-unsafe impl<T: Sync, const N: usize, const A: u8, I: Indices + Sync> Sync
+/// `T` is not `Sync` because we never share it across threads.
+unsafe impl<T: Send, const N: usize, const A: u8, I: Indices + Sync> Sync
+    for StaticStorage<T, N, A, I>
+{
+}
+
+unsafe impl<T: Send, const N: usize, const A: u8, I: Indices + Send> Send
     for StaticStorage<T, N, A, I>
 {
 }

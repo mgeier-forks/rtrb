@@ -226,6 +226,12 @@ pub struct DynamicStorage<T, const A: u8, I: Indices> {
     _marker: PhantomData<T>,
 }
 
+/// `T` is not `Sync` because we never share it across threads.
+// SAFETY: There is not mutable state (except for interior mutability).
+unsafe impl<T: Send, const A: u8, I: Indices + Sync> Sync for DynamicStorage<T, A, I> {}
+
+// NB: DynamicStorage doesn't need to be `Send` because it is never moved.
+
 impl<T, const A: u8, I: Indices> DynamicStorage<T, A, I> {
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
@@ -341,6 +347,12 @@ pub struct MmapStorage<T, const A: u8, I: Indices> {
     /// Indicates that dropping a `MmapStorage` may drop elements of type `T`.
     _marker: PhantomData<T>,
 }
+
+/// `T` is not `Sync` because we never share it across threads.
+// SAFETY: There is not mutable state (except for interior mutability).
+unsafe impl<T: Send, const A: u8, I: Indices + Sync> Sync for MmapStorage<T, A, I> {}
+
+// NB: MmapStorage doesn't need to be `Send` because it is never moved.
 
 // Any `Addressing` should work, but the capacity will always be a power of two
 // (a multiple of (page size / size of `T`)),
