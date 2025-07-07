@@ -1,0 +1,434 @@
+use core::{marker::PhantomData, mem::MaybeUninit, ops::Deref, sync::atomic::Ordering};
+
+use super::{Consumer, Indices, Producer, Storage};
+use crate::chunks::ChunkError;
+
+#[derive(PartialEq, Eq)]
+pub struct WriteChunkUninit<'a, R: Deref>
+where
+    R::Target: Storage,
+{
+    first_ptr: *mut <R::Target as Storage>::Item,
+    first_len: usize,
+    second_ptr: *mut <R::Target as Storage>::Item,
+    second_len: usize,
+    producer: &'a Producer<R>,
+}
+
+/// It (and any wrapper structs) can be moved ...
+/// ```
+/// fn assert_send<X: Send>() {}
+/// assert_send::<rtrb::chunks::WriteChunkUninit<u8>>();
+/// ```
+/// ... but not shared between threads:
+/// ```compile_fail
+/// fn assert_sync<X: Sync>() {}
+/// assert_sync::<rtrb::chunks::WriteChunkUninit<u8>>();
+/// ```
+// SAFETY: WriteChunkUninit only exists while a unique reference to the producer is held.
+// It is therefore safe to move it to another thread.
+unsafe impl<S: Storage, R: Deref<Target = S>> Send for WriteChunkUninit<'_, R> where S::Item: Send {}
+
+impl<R: Deref> WriteChunkUninit<'_, R>
+where
+    R::Target: Storage,
+{
+    pub fn as_mut_slices(
+        &mut self,
+    ) -> (
+        &mut [MaybeUninit<<R::Target as Storage>::Item>],
+        &mut [MaybeUninit<<R::Target as Storage>::Item>],
+    ) {
+        // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit().
+        unsafe {
+            (
+                core::slice::from_raw_parts_mut(self.first_ptr.cast(), self.first_len),
+                core::slice::from_raw_parts_mut(self.second_ptr.cast(), self.second_len),
+            )
+        }
+    }
+
+    pub unsafe fn commit(self, n: usize) {
+        assert!(n <= self.len(), "cannot commit more than chunk size");
+        // SAFETY: Delegated to the caller.
+        unsafe { self.commit_unchecked(n) };
+    }
+
+    pub unsafe fn commit_all(self) {
+        let slots = self.len();
+        // SAFETY: Delegated to the caller.
+        unsafe { self.commit_unchecked(slots) };
+    }
+
+    unsafe fn commit_unchecked(self, n: usize) -> usize {
+        let p = self.producer;
+        let tail = R::Target::ADDR.increment(p.cached_tail.get(), n, p.buffer.capacity());
+        p.buffer.indices().tail().store(tail, Ordering::Release);
+        p.cached_tail.set(tail);
+        n
+    }
+
+    pub fn fill_from_iter<I>(self, iter: I) -> usize
+    where
+        I: IntoIterator<Item = <R::Target as Storage>::Item>,
+    {
+        let mut iter = iter.into_iter();
+        let mut iterated = 0;
+        'outer: for &(ptr, len) in &[
+            (self.first_ptr, self.first_len),
+            (self.second_ptr, self.second_len),
+        ] {
+            for i in 0..len {
+                match iter.next() {
+                    Some(item) => {
+                        // SAFETY: It is allowed to write to this memory slot
+                        unsafe { ptr.add(i).write(item) };
+                        iterated += 1;
+                    }
+                    None => break 'outer,
+                }
+            }
+        }
+        // SAFETY: iterated slots have been initialized above
+        unsafe { self.commit_unchecked(iterated) }
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.first_len + self.second_len
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.first_len == 0
+    }
+
+    /// Drops all elements starting from index `n`.
+    ///
+    /// #Safety
+    ///
+    /// All of those slots must be initialized.
+    unsafe fn drop_suffix(&mut self, n: usize) {
+        // NB: If n >= self.len(), the loops are not entered.
+        for i in n..self.first_len {
+            // SAFETY: The caller must make sure that all slots are initialized.
+            unsafe { self.first_ptr.add(i).drop_in_place() };
+        }
+        for i in n.saturating_sub(self.first_len)..self.second_len {
+            // SAFETY: The caller must make sure that all slots are initialized.
+            unsafe { self.second_ptr.add(i).drop_in_place() };
+        }
+    }
+}
+
+pub struct WriteChunk<'a, R: Deref>(Option<WriteChunkUninit<'a, R>>)
+where
+    R::Target: Storage;
+
+impl<R: Deref> Drop for WriteChunk<'_, R>
+where
+    R::Target: Storage,
+{
+    fn drop(&mut self) {
+        // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
+        if let Some(mut chunk) = self.0.take() {
+            // No part of the chunk has been committed, all slots are dropped.
+            // SAFETY: All slots have been initialized in From::from().
+            unsafe { chunk.drop_suffix(0) };
+        }
+    }
+}
+
+impl<'a, S: Storage, R: Deref<Target = S>> From<WriteChunkUninit<'a, R>> for WriteChunk<'a, R>
+where
+    S::Item: Default,
+{
+    /// Fills all slots with the [`Default`] value.
+    fn from(chunk: WriteChunkUninit<'a, R>) -> Self {
+        for i in 0..chunk.first_len {
+            // SAFETY: i is in a valid range.
+            unsafe { chunk.first_ptr.add(i).write(Default::default()) };
+        }
+        for i in 0..chunk.second_len {
+            // SAFETY: i is in a valid range.
+            unsafe { chunk.second_ptr.add(i).write(Default::default()) };
+        }
+        WriteChunk(Some(chunk))
+    }
+}
+
+impl<S: Storage, R: Deref<Target = S>> WriteChunk<'_, R>
+where
+    S::Item: Default,
+{
+    pub fn as_mut_slices(&mut self) -> (&mut [S::Item], &mut [S::Item]) {
+        // self.0 is always Some(chunk).
+        let chunk = self.0.as_ref().unwrap();
+        // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit()
+        // and all slots have been initialized in From::from().
+        unsafe {
+            (
+                core::slice::from_raw_parts_mut(chunk.first_ptr, chunk.first_len),
+                core::slice::from_raw_parts_mut(chunk.second_ptr, chunk.second_len),
+            )
+        }
+    }
+
+    pub fn commit(mut self, n: usize) {
+        // self.0 is always Some(chunk).
+        let mut chunk = self.0.take().unwrap();
+        // SAFETY: All slots have been initialized in From::from().
+        unsafe {
+            // Slots at index `n` and higher are dropped ...
+            chunk.drop_suffix(n);
+            // ... everything below `n` is committed.
+            chunk.commit(n);
+        }
+        // `self` is dropped here, with `self.0` being set to `None`.
+    }
+
+    pub fn commit_all(mut self) {
+        // self.0 is always Some(chunk).
+        let chunk = self.0.take().unwrap();
+        // SAFETY: All slots have been initialized in From::from().
+        unsafe { chunk.commit_all() };
+        // `self` is dropped here, with `self.0` being set to `None`.
+    }
+
+    pub fn len(&self) -> usize {
+        // self.0 is always Some(chunk).
+        self.0.as_ref().unwrap().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        // self.0 is always Some(chunk).
+        self.0.as_ref().unwrap().is_empty()
+    }
+}
+
+/// A chunk for reading.
+///
+///
+#[derive(Debug, PartialEq, Eq)]
+pub struct ReadChunk<'a, R: Deref>
+where
+    R::Target: Storage,
+{
+    // Must be "mut" for drop_in_place()
+    first_ptr: *mut <R::Target as Storage>::Item,
+    first_len: usize,
+    // Must be "mut" for drop_in_place()
+    second_ptr: *mut <R::Target as Storage>::Item,
+    second_len: usize,
+    consumer: &'a Consumer<R>,
+    /// Indicates that dropping a `ReadChunk` may drop elements of type `R::Target::Item`.
+    _marker: PhantomData<<R::Target as Storage>::Item>,
+}
+
+/// It (and any wrapper structs) can be moved ...
+/// ```
+/// fn assert_send<X: Send>() {}
+/// assert_send::<rtrb::chunks::ReadChunk<u8>>();
+/// ```
+/// ... but not shared between threads:
+/// ```compile_fail
+/// fn assert_sync<X: Sync>() {}
+/// assert_sync::<rtrb::chunks::ReadChunk<u8>>();
+/// ```
+// SAFETY: ReadChunk only exists while a unique reference to the consumer is held.
+// It is therefore safe to move it to another thread.
+unsafe impl<S: Storage, R: Deref<Target = S>> Send for ReadChunk<'_, R> where S::Item: Send {}
+
+impl<S: Storage, R: Deref<Target = S>> ReadChunk<'_, R> {
+    pub fn as_slices(&self) -> (&[S::Item], &[S::Item]) {
+        // SAFETY: The pointers and lengths have been computed correctly in read_chunk().
+        unsafe {
+            (
+                core::slice::from_raw_parts(self.first_ptr, self.first_len),
+                core::slice::from_raw_parts(self.second_ptr, self.second_len),
+            )
+        }
+    }
+
+    pub fn as_mut_slices(&mut self) -> (&mut [S::Item], &mut [S::Item]) {
+        // SAFETY: The pointers and lengths have been computed correctly in read_chunk().
+        unsafe {
+            (
+                core::slice::from_raw_parts_mut(self.first_ptr, self.first_len),
+                core::slice::from_raw_parts_mut(self.second_ptr, self.second_len),
+            )
+        }
+    }
+
+    pub fn commit(self, n: usize) {
+        assert!(n <= self.len(), "cannot commit more than chunk size");
+        // SAFETY: self.len() initialized elements have been obtained in read_chunk().
+        unsafe { self.commit_unchecked(n) };
+    }
+
+    pub fn commit_all(self) {
+        let slots = self.len();
+        // SAFETY: self.len() initialized elements have been obtained in read_chunk().
+        unsafe { self.commit_unchecked(slots) };
+    }
+
+    unsafe fn commit_unchecked(self, n: usize) -> usize {
+        let first_len = self.first_len.min(n);
+        for i in 0..first_len {
+            // SAFETY: The caller must make sure that there are n initialized elements.
+            unsafe { self.first_ptr.add(i).drop_in_place() };
+        }
+        let second_len = self.second_len.min(n - first_len);
+        for i in 0..second_len {
+            // SAFETY: The caller must make sure that there are n initialized elements.
+            unsafe { self.second_ptr.add(i).drop_in_place() };
+        }
+        let c = self.consumer;
+        let head = S::ADDR.increment(c.cached_head.get(), n, c.buffer.capacity());
+        c.buffer.indices().head().store(head, Ordering::Release);
+        c.cached_head.set(head);
+        n
+    }
+
+    pub fn len(&self) -> usize {
+        self.first_len + self.second_len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.first_len == 0
+    }
+}
+
+impl<'a, S: Storage, R: Deref<Target = S>> IntoIterator for ReadChunk<'a, R> {
+    type Item = S::Item;
+    type IntoIter = ReadChunkIntoIter<'a, R>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Self::IntoIter {
+            chunk: self,
+            iterated: 0,
+        }
+    }
+}
+
+pub struct ReadChunkIntoIter<'a, R: Deref>
+where
+    R::Target: Storage,
+{
+    chunk: ReadChunk<'a, R>,
+    iterated: usize,
+}
+
+impl<R: Deref> Drop for ReadChunkIntoIter<'_, R>
+where
+    R::Target: Storage,
+{
+    /// Makes all iterated slots available for writing again.
+    ///
+    /// Non-iterated items remain in the ring buffer and are *not* dropped.
+    fn drop(&mut self) {
+        let c = self.chunk.consumer;
+        let head =
+            R::Target::ADDR.increment(c.cached_head.get(), self.iterated, c.buffer.capacity());
+        c.buffer.indices().head().store(head, Ordering::Release);
+        c.cached_head.set(head);
+    }
+}
+
+impl<S: Storage, R: Deref<Target = S>> Iterator for ReadChunkIntoIter<'_, R> {
+    type Item = S::Item;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let ptr = if self.iterated < self.chunk.first_len {
+            // SAFETY: first_len is valid.
+            unsafe { self.chunk.first_ptr.add(self.iterated) }
+        } else if self.iterated < self.chunk.first_len + self.chunk.second_len {
+            // SAFETY: first_len and second_len are valid.
+            unsafe {
+                self.chunk
+                    .second_ptr
+                    .add(self.iterated - self.chunk.first_len)
+            }
+        } else {
+            return None;
+        };
+        self.iterated += 1;
+        // SAFETY: ptr points to an initialized slot.
+        Some(unsafe { ptr.read() })
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.chunk.first_len + self.chunk.second_len - self.iterated;
+        (remaining, Some(remaining))
+    }
+}
+
+impl<S: Storage, R: Deref<Target = S>> ExactSizeIterator for ReadChunkIntoIter<'_, R> {}
+
+impl<S: Storage, R: Deref<Target = S>> core::iter::FusedIterator for ReadChunkIntoIter<'_, R> {}
+
+impl<S: Storage, R: Deref<Target = S>> Producer<R> {
+    pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, R>, ChunkError> {
+        let tail = self.cached_tail.get();
+        let capacity = self.buffer.capacity();
+        // Check if the queue has *possibly* not enough slots.
+        if capacity - S::ADDR.distance(self.cached_head.get(), tail, capacity) < n {
+            // Refresh the head ...
+            let head = self.buffer.indices().head().load(Ordering::Acquire);
+            self.cached_head.set(head);
+            // ... and check if there *really* are not enough slots.
+            let slots = capacity - S::ADDR.distance(head, tail, capacity);
+            if slots < n {
+                return Err(ChunkError::TooFewSlots(slots));
+            }
+        }
+        let tail = S::ADDR.collapse_position(tail, capacity);
+        let first_len = n.min(capacity - tail);
+        Ok(WriteChunkUninit {
+            // SAFETY: tail has been updated to a valid position.
+            first_ptr: unsafe { self.buffer.data_ptr().add(tail) },
+            first_len,
+            second_ptr: self.buffer.data_ptr(),
+            second_len: n - first_len,
+            producer: self,
+        })
+    }
+
+    pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, R>, ChunkError>
+    where
+        S::Item: Default,
+    {
+        self.write_chunk_uninit(n).map(WriteChunk::from)
+    }
+}
+
+impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
+    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, R>, ChunkError> {
+        let head = self.cached_head.get();
+        let capacity = self.capacity();
+        // Check if the queue has *possibly* not enough slots.
+        if S::ADDR.distance(head, self.cached_tail.get(), capacity) < n {
+            // Refresh the tail ...
+            let tail = self.buffer.indices().tail().load(Ordering::Acquire);
+            self.cached_tail.set(tail);
+            // ... and check if there *really* are not enough slots.
+            let slots = S::ADDR.distance(head, tail, capacity);
+            if slots < n {
+                return Err(ChunkError::TooFewSlots(slots));
+            }
+        }
+        let head = S::ADDR.collapse_position(head, capacity);
+        let first_len = n.min(capacity - head);
+        Ok(ReadChunk {
+            // SAFETY: head has been updated to a valid position.
+            first_ptr: unsafe { self.buffer.data_ptr().add(head) },
+            first_len,
+            second_ptr: self.buffer.data_ptr(),
+            second_len: n - first_len,
+            consumer: self,
+            _marker: PhantomData,
+        })
+    }
+}

@@ -65,26 +65,26 @@ use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 mod cache_padded;
 use cache_padded::CachePadded;
 
-/*
 pub mod chunks;
+pub mod diy;
 
 // This is used in the documentation.
 #[allow(unused_imports)]
 use chunks::WriteChunkUninit;
-*/
 
-use rtrb_base::{Addressing, Indices, Storage};
+use diy::StaticStorage;
+use diy::{Addressing, Indices, Storage};
 
-// TODO: use rtrb_base::errors::* or something?
-pub use rtrb_base::{PeekError, PopError, PushError};
+// TODO: use errors::* or something?
+pub use diy::{PeekError, PopError, PushError};
 
-pub use rtrb_base::EmbeddedRingBuffer;
+// TODO: move here? or to "static" module?
+pub use diy::EmbeddedRingBuffer;
 
-use rtrb_base::IS_ABANDONED;
+use diy::IS_ABANDONED;
 
 // NB: non-public!
-type RingBufferInner<T> =
-    DynamicStorage<T, { rtrb_base::Addressing::Tight as u8 }, CachePaddedIndices>;
+type RingBufferInner<T> = DynamicStorage<T, { Addressing::Tight as u8 }, CachePaddedIndices>;
 
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
@@ -132,21 +132,21 @@ pub struct Ptr<S: Storage> {
 }
 
 impl<S: Storage> Ptr<S> {
-    fn new(storage: S) -> (rtrb_base::Producer<Self>, rtrb_base::Consumer<Self>) {
+    fn new(storage: S) -> (diy::Producer<Self>, diy::Consumer<Self>) {
         // NB: We are assuming that IS_ABANDONED is unset.
         let ptr = Box::leak(Box::new(storage));
         // SAFETY: Pointer from Box is always non-null.
         let ptr = unsafe { NonNull::new_unchecked(ptr) };
         // SAFETY: Only a single instance of Producer is allowed.
         let p = unsafe {
-            rtrb_base::Producer::new(Self {
+            diy::Producer::new(Self {
                 ptr,
                 _marker: PhantomData,
             })
         };
         // SAFETY: Only a single instance of Consumer is allowed.
         let c = unsafe {
-            rtrb_base::Consumer::new(Self {
+            diy::Consumer::new(Self {
                 ptr,
                 _marker: PhantomData,
             })
@@ -238,8 +238,8 @@ impl<T, const A: u8, I: Indices> DynamicStorage<T, A, I> {
     pub fn new(
         capacity: usize,
     ) -> (
-        rtrb_base::Producer<Ptr<DynamicStorage<T, A, I>>>,
-        rtrb_base::Consumer<Ptr<DynamicStorage<T, A, I>>>,
+        diy::Producer<Ptr<DynamicStorage<T, A, I>>>,
+        diy::Consumer<Ptr<DynamicStorage<T, A, I>>>,
     ) {
         let capacity = Addressing::from_u8(A).update_capacity(capacity);
         Ptr::new(Self {
@@ -363,8 +363,8 @@ impl<T, const A: u8, I: Indices> MmapStorage<T, A, I> {
     pub fn new(
         capacity: usize,
     ) -> (
-        rtrb_base::Producer<Ptr<MmapStorage<T, A, I>>>,
-        rtrb_base::Consumer<Ptr<MmapStorage<T, A, I>>>,
+        diy::Producer<Ptr<MmapStorage<T, A, I>>>,
+        diy::Consumer<Ptr<MmapStorage<T, A, I>>>,
     ) {
         // TODO: what if capacity is 0?
         let pagesize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
@@ -497,7 +497,7 @@ unsafe impl<T, const A: u8, I: Indices> Storage for MmapStorage<T, A, I> {
 /// When the `Producer` is dropped after the [`Consumer`] has already been dropped,
 /// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Producer<T>(rtrb_base::Producer<Ptr<RingBufferInner<T>>>);
+pub struct Producer<T>(diy::Producer<Ptr<RingBufferInner<T>>>);
 
 impl<T> Producer<T> {
     /// Attempts to push an element into the queue.
@@ -680,7 +680,7 @@ impl<T> Producer<T> {
 /// When the `Consumer` is dropped after the [`Producer`] has already been dropped,
 /// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Consumer<T>(rtrb_base::Consumer<Ptr<RingBufferInner<T>>>);
+pub struct Consumer<T>(diy::Consumer<Ptr<RingBufferInner<T>>>);
 
 impl<T> Consumer<T> {
     /// Attempts to pop an element from the queue.
@@ -915,36 +915,22 @@ impl<T: Copy> CopyToUninit<T> for [T] {
 
 /// Ring buffer with power-of-two storage.
 // TODO: change to newtype, add docs
-pub type RingBuffer2<T> =
-    DynamicStorage<T, { rtrb_base::Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;
+pub type RingBuffer2<T> = DynamicStorage<T, { Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;
 
 /// ...
 ///
 /// no dynamic allocation, but cache-padded indices
 // TODO: change to newtype, add docs
 pub type StaticRingBuffer<T, const N: usize> =
-    rtrb_base::StaticStorage<T, N, { rtrb_base::Addressing::Tight as u8 }, CachePaddedIndices>;
+    StaticStorage<T, N, { Addressing::Tight as u8 }, CachePaddedIndices>;
 
-// TODO: Remove because power-of-two optimizations might be done automatically by the compiler?
+// TODO: Remove because power-of-two optimizations? Might be done automatically by the compiler?
 // TODO: verify
 pub type StaticRingBuffer2<T, const N: usize> =
-    rtrb_base::StaticStorage<T, N, { rtrb_base::Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;
-pub type StaticProducer2<'a, T, const N: usize> = rtrb_base::Producer<
-    &'a rtrb_base::StaticStorage<
-        T,
-        N,
-        { rtrb_base::Addressing::PowerOfTwo as u8 },
-        CachePaddedIndices,
-    >,
->;
-pub type StaticConsumer2<'a, T, const N: usize> = rtrb_base::Consumer<
-    &'a rtrb_base::StaticStorage<
-        T,
-        N,
-        { rtrb_base::Addressing::PowerOfTwo as u8 },
-        CachePaddedIndices,
-    >,
->;
+    StaticStorage<T, N, { Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;
+pub type StaticProducer2<'a, T, const N: usize> =
+    diy::Producer<&'a StaticStorage<T, N, { Addressing::PowerOfTwo as u8 }, CachePaddedIndices>>;
+pub type StaticConsumer2<'a, T, const N: usize> =
+    diy::Consumer<&'a StaticStorage<T, N, { Addressing::PowerOfTwo as u8 }, CachePaddedIndices>>;
 
-pub type MmapRingBuffer<T> =
-    MmapStorage<T, { rtrb_base::Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;
+pub type MmapRingBuffer<T> = MmapStorage<T, { Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;

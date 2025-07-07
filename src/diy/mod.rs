@@ -1,17 +1,15 @@
-#![no_std]
-#![warn(rust_2018_idioms)]
-
 use core::cell::{Cell, UnsafeCell};
 use core::fmt;
 use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
-// TODO: separate module for traits?
-// TODO: separate module for "policies", maybe "diy"?
+pub mod chunks;
 
-const HAS_PRODUCER: u8 = 0b10000000;
-const HAS_CONSUMER: u8 = 0b01000000;
+// TODO: separate module for traits?
+
+pub const HAS_PRODUCER: u8 = 0b10000000;
+pub const HAS_CONSUMER: u8 = 0b01000000;
 // NB: This overlaps with HAS_PRODUCER, they are never used at the same time.
 pub const IS_ABANDONED: u8 = 0b10000000;
 
@@ -20,6 +18,7 @@ pub const IS_ABANDONED: u8 = 0b10000000;
 /// # Safety
 ///
 /// The indices must not be changed by anyone else.
+// TODO: this is not really something the implementer can control!
 pub unsafe trait Indices {
     const INIT: Self;
 
@@ -206,8 +205,11 @@ pub unsafe trait Storage {
     /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
     #[inline]
     unsafe fn slot_ptr(&self, pos: usize) -> *mut Self::Item {
-        self.data_ptr()
-            .add(Self::ADDR.collapse_position(pos, self.capacity()))
+        // SAFETY: See docstring.
+        unsafe {
+            self.data_ptr()
+                .add(Self::ADDR.collapse_position(pos, self.capacity()))
+        }
     }
 }
 
@@ -216,7 +218,7 @@ pub unsafe trait Storage {
 //pub struct Producer<R: Deref<Target: Storage>>
 pub struct Producer<R: Deref>
 where
-    <R as Deref>::Target: Storage,
+    R::Target: Storage,
 {
     /// A reference to the ring buffer.
     buffer: R,
@@ -232,7 +234,17 @@ where
     cached_tail: Cell<usize>,
 }
 
-// SAFETY: After moving a Producer to another thread, there is still only a single thread
+/// It (and any wrapper structs) can be moved ...
+/// ```
+/// fn assert_send<X: Send>() {}
+/// assert_send::<rtrb::Producer<u8>>();
+/// ```
+/// ... but not shared between threads:
+/// ```compile_fail
+/// fn assert_sync<X: Sync>() {}
+/// assert_sync::<rtrb::Producer<u8>>();
+/// ```
+// SAFETY: After moving a producer to another thread, there is still only a single thread
 // that can access the producer side of the queue.
 unsafe impl<S: Storage, R: Deref<Target = S>> Send for Producer<R>
 where
@@ -338,6 +350,16 @@ where
     cached_tail: Cell<usize>,
 }
 
+/// It (and any wrapper structs) can be moved ...
+/// ```
+/// fn assert_send<X: Send>() {}
+/// assert_send::<rtrb::Consumer<u8>>();
+/// ```
+/// ... but not shared between threads:
+/// ```compile_fail
+/// fn assert_sync<X: Sync>() {}
+/// assert_sync::<rtrb::Consumer<u8>>();
+/// ```
 // SAFETY: After moving a Consumer to another thread, there is still only a single thread
 // that can access the consumer side of the queue.
 unsafe impl<S: Storage, R: Deref<Target = S>> Send for Consumer<R>
@@ -681,7 +703,7 @@ unsafe impl Indices for TightIndices {
 /// Only one producer and one consumer can exist at once,
 /// but once a producer/consumer has been dropped, a new one can be created:
 /// ```
-/// # use rtrb_base::EmbeddedRingBuffer;
+/// # use rtrb::EmbeddedRingBuffer;
 /// let rb = EmbeddedRingBuffer::<i32, 64>::new();
 /// let mut producer = rb.producer().unwrap();
 /// let mut consumer = rb.consumer().unwrap();

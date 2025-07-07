@@ -164,16 +164,13 @@
 //! }
 //! ```
 
-use core::fmt;
-use core::marker::PhantomData;
-use core::mem::MaybeUninit;
-use core::sync::atomic::Ordering;
+use core::{fmt, mem::MaybeUninit};
 
-use crate::{Consumer, CopyToUninit, Producer};
+use crate::{diy::Addressing, CachePaddedIndices, Consumer, DynamicStorage, Producer, Ptr};
 
 // This is used in the documentation.
 #[allow(unused_imports)]
-use crate::RingBuffer;
+use crate::{CopyToUninit, RingBuffer};
 
 impl<T> Producer<T> {
     /// Returns `n` slots (initially containing their [`Default`] value) for writing.
@@ -199,11 +196,12 @@ impl<T> Producer<T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
+    #[inline(always)]
     pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T>, ChunkError>
     where
         T: Default,
     {
-        self.write_chunk_uninit(n).map(WriteChunk::from)
+        self.0.write_chunk(n).map(WriteChunk)
     }
 
     /// Returns `n` (uninitialized) slots for writing.
@@ -233,31 +231,9 @@ impl<T> Producer<T> {
     ///
     /// For a safe alternative that provides mutable slices of [`Default`]-initialized slots,
     /// see [`Producer::write_chunk()`].
+    #[inline(always)]
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
-        let tail = self.cached_tail.get();
-
-        // Check if the queue has *possibly* not enough slots.
-        if self.buffer.capacity - self.buffer.distance(self.cached_head.get(), tail) < n {
-            // Refresh the head ...
-            let head = self.buffer.head.load(Ordering::Acquire);
-            self.cached_head.set(head);
-
-            // ... and check if there *really* are not enough slots.
-            let slots = self.buffer.capacity - self.buffer.distance(head, tail);
-            if slots < n {
-                return Err(ChunkError::TooFewSlots(slots));
-            }
-        }
-        let tail = self.buffer.collapse_position(tail);
-        let first_len = n.min(self.buffer.capacity - tail);
-        Ok(WriteChunkUninit {
-            // SAFETY: tail has been updated to a valid position.
-            first_ptr: unsafe { self.buffer.data_ptr.add(tail) },
-            first_len,
-            second_ptr: self.buffer.data_ptr,
-            second_len: n - first_len,
-            producer: self,
-        })
+        self.0.write_chunk_uninit(n).map(WriteChunkUninit)
     }
 }
 
@@ -283,32 +259,9 @@ impl<T> Consumer<T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
+    #[inline(always)]
     pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
-        let head = self.cached_head.get();
-
-        // Check if the queue has *possibly* not enough slots.
-        if self.buffer.distance(head, self.cached_tail.get()) < n {
-            // Refresh the tail ...
-            let tail = self.buffer.tail.load(Ordering::Acquire);
-            self.cached_tail.set(tail);
-
-            // ... and check if there *really* are not enough slots.
-            let slots = self.buffer.distance(head, tail);
-            if slots < n {
-                return Err(ChunkError::TooFewSlots(slots));
-            }
-        }
-
-        let head = self.buffer.collapse_position(head);
-        let first_len = n.min(self.buffer.capacity - head);
-        Ok(ReadChunk {
-            // SAFETY: head has been updated to a valid position.
-            first_ptr: unsafe { self.buffer.data_ptr.add(head) },
-            first_len,
-            second_ptr: self.buffer.data_ptr,
-            second_len: n - first_len,
-            consumer: self,
-        })
+        self.0.read_chunk(n).map(ReadChunk)
     }
 }
 
@@ -319,35 +272,16 @@ impl<T> Consumer<T> {
 /// To obtain uninitialized slots, use [`Producer::write_chunk_uninit()`] instead,
 /// which also allows moving items from an iterator into the ring buffer
 /// by means of [`WriteChunkUninit::fill_from_iter()`].
-#[derive(Debug, PartialEq, Eq)]
-pub struct WriteChunk<'a, T>(Option<WriteChunkUninit<'a, T>>, PhantomData<T>);
+pub struct WriteChunk<'a, T>(
+    crate::diy::chunks::WriteChunk<
+        'a,
+        Ptr<DynamicStorage<T, { Addressing::Tight as u8 }, CachePaddedIndices>>,
+    >,
+);
 
-impl<T> Drop for WriteChunk<'_, T> {
-    fn drop(&mut self) {
-        // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
-        if let Some(mut chunk) = self.0.take() {
-            // No part of the chunk has been committed, all slots are dropped.
-            // SAFETY: All slots have been initialized in From::from().
-            unsafe { chunk.drop_suffix(0) };
-        }
-    }
-}
-
-impl<'a, T> From<WriteChunkUninit<'a, T>> for WriteChunk<'a, T>
-where
-    T: Default,
-{
-    /// Fills all slots with the [`Default`] value.
-    fn from(chunk: WriteChunkUninit<'a, T>) -> Self {
-        for i in 0..chunk.first_len {
-            // SAFETY: i is in a valid range.
-            unsafe { chunk.first_ptr.add(i).write(Default::default()) };
-        }
-        for i in 0..chunk.second_len {
-            // SAFETY: i is in a valid range.
-            unsafe { chunk.second_ptr.add(i).write(Default::default()) };
-        }
-        WriteChunk(Some(chunk), PhantomData)
+impl<T> fmt::Debug for WriteChunk<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad("WriteChunk")
     }
 }
 
@@ -369,17 +303,9 @@ where
     /// If items are written but *not* committed afterwards,
     /// they will *not* become available for reading and
     /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
+    #[inline(always)]
     pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
-        // self.0 is always Some(chunk).
-        let chunk = self.0.as_ref().unwrap();
-        // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit()
-        // and all slots have been initialized in From::from().
-        unsafe {
-            (
-                core::slice::from_raw_parts_mut(chunk.first_ptr, chunk.first_len),
-                core::slice::from_raw_parts_mut(chunk.second_ptr, chunk.second_len),
-            )
-        }
+        self.0.as_mut_slices()
     }
 
     /// Makes the first `n` slots of the chunk available for reading.
@@ -389,58 +315,48 @@ where
     /// # Panics
     ///
     /// Panics if `n` is greater than the number of slots in the chunk.
-    pub fn commit(mut self, n: usize) {
-        // self.0 is always Some(chunk).
-        let mut chunk = self.0.take().unwrap();
-        // SAFETY: All slots have been initialized in From::from().
-        unsafe {
-            // Slots at index `n` and higher are dropped ...
-            chunk.drop_suffix(n);
-            // ... everything below `n` is committed.
-            chunk.commit(n);
-        }
-        // `self` is dropped here, with `self.0` being set to `None`.
+    #[inline(always)]
+    pub fn commit(self, n: usize) {
+        self.0.commit(n)
     }
 
     /// Makes the whole chunk available for reading.
-    pub fn commit_all(mut self) {
-        // self.0 is always Some(chunk).
-        let chunk = self.0.take().unwrap();
-        // SAFETY: All slots have been initialized in From::from().
-        unsafe { chunk.commit_all() };
-        // `self` is dropped here, with `self.0` being set to `None`.
+    #[inline(always)]
+    pub fn commit_all(self) {
+        self.0.commit_all()
     }
 
     /// Returns the number of slots in the chunk.
     #[must_use]
+    #[inline(always)]
     pub fn len(&self) -> usize {
-        // self.0 is always Some(chunk).
-        self.0.as_ref().unwrap().len()
+        self.0.len()
     }
 
     /// Returns `true` if the chunk contains no slots.
     #[must_use]
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        // self.0 is always Some(chunk).
-        self.0.as_ref().unwrap().is_empty()
+        self.0.is_empty()
     }
 }
 
 /// Structure for writing into multiple (uninitialized) slots in one go.
 ///
 /// This is returned from [`Producer::write_chunk_uninit()`].
-#[derive(Debug, PartialEq, Eq)]
-pub struct WriteChunkUninit<'a, T> {
-    first_ptr: *mut T,
-    first_len: usize,
-    second_ptr: *mut T,
-    second_len: usize,
-    producer: &'a Producer<T>,
-}
+#[derive(PartialEq, Eq)]
+pub struct WriteChunkUninit<'a, T>(
+    crate::diy::chunks::WriteChunkUninit<
+        'a,
+        Ptr<DynamicStorage<T, { Addressing::Tight as u8 }, CachePaddedIndices>>,
+    >,
+);
 
-// SAFETY: WriteChunkUninit only exists while a unique reference to the Producer is held.
-// It is therefore safe to move it to another thread.
-unsafe impl<T: Send> Send for WriteChunkUninit<'_, T> {}
+impl<T> fmt::Debug for WriteChunkUninit<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad("WriteChunkUninit")
+    }
+}
 
 impl<T> WriteChunkUninit<'_, T> {
     /// Returns two slices for writing to the requested slots.
@@ -457,14 +373,9 @@ impl<T> WriteChunkUninit<'_, T> {
     /// If items are written but *not* committed afterwards,
     /// they will *not* become available for reading and
     /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
+    #[inline(always)]
     pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
-        // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit().
-        unsafe {
-            (
-                core::slice::from_raw_parts_mut(self.first_ptr.cast(), self.first_len),
-                core::slice::from_raw_parts_mut(self.second_ptr.cast(), self.second_len),
-            )
-        }
+        self.0.as_mut_slices()
     }
 
     /// Makes the first `n` slots of the chunk available for reading.
@@ -476,10 +387,10 @@ impl<T> WriteChunkUninit<'_, T> {
     /// # Safety
     ///
     /// The caller must make sure that the first `n` elements have been initialized.
+    #[inline(always)]
     pub unsafe fn commit(self, n: usize) {
-        assert!(n <= self.len(), "cannot commit more than chunk size");
-        // SAFETY: Delegated to the caller.
-        unsafe { self.commit_unchecked(n) };
+        // SAFETY: See docstring.
+        unsafe { self.0.commit(n) }
     }
 
     /// Makes the whole chunk available for reading.
@@ -487,18 +398,10 @@ impl<T> WriteChunkUninit<'_, T> {
     /// # Safety
     ///
     /// The caller must make sure that all elements have been initialized.
+    #[inline(always)]
     pub unsafe fn commit_all(self) {
-        let slots = self.len();
-        // SAFETY: Delegated to the caller.
-        unsafe { self.commit_unchecked(slots) };
-    }
-
-    unsafe fn commit_unchecked(self, n: usize) -> usize {
-        let p = self.producer;
-        let tail = p.buffer.increment(p.cached_tail.get(), n);
-        p.buffer.tail.store(tail, Ordering::Release);
-        p.cached_tail.set(tail);
-        n
+        // SAFETY: See docstring.
+        unsafe { self.0.commit_all() }
     }
 
     /// Moves items from an iterator into the (uninitialized) slots of the chunk.
@@ -548,56 +451,26 @@ impl<T> WriteChunkUninit<'_, T> {
     /// assert_eq!(c.pop(), Err(PopError::Empty));
     /// assert_eq!(it.next(), Some(30));
     /// ```
+    #[inline(always)]
     pub fn fill_from_iter<I>(self, iter: I) -> usize
     where
         I: IntoIterator<Item = T>,
     {
-        let mut iter = iter.into_iter();
-        let mut iterated = 0;
-        'outer: for &(ptr, len) in &[
-            (self.first_ptr, self.first_len),
-            (self.second_ptr, self.second_len),
-        ] {
-            for i in 0..len {
-                match iter.next() {
-                    Some(item) => {
-                        // SAFETY: It is allowed to write to this memory slot
-                        unsafe { ptr.add(i).write(item) };
-                        iterated += 1;
-                    }
-                    None => break 'outer,
-                }
-            }
-        }
-        // SAFETY: iterated slots have been initialized above
-        unsafe { self.commit_unchecked(iterated) }
+        self.0.fill_from_iter(iter)
     }
 
     /// Returns the number of slots in the chunk.
     #[must_use]
+    #[inline(always)]
     pub fn len(&self) -> usize {
-        self.first_len + self.second_len
+        self.0.len()
     }
 
     /// Returns `true` if the chunk contains no slots.
     #[must_use]
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.first_len == 0
-    }
-
-    /// Drops all elements starting from index `n`.
-    ///
-    /// All of those slots must be initialized.
-    unsafe fn drop_suffix(&mut self, n: usize) {
-        // NB: If n >= self.len(), the loops are not entered.
-        for i in n..self.first_len {
-            // SAFETY: The caller must make sure that all slots are initialized.
-            unsafe { self.first_ptr.add(i).drop_in_place() };
-        }
-        for i in n.saturating_sub(self.first_len)..self.second_len {
-            // SAFETY: The caller must make sure that all slots are initialized.
-            unsafe { self.second_ptr.add(i).drop_in_place() };
-        }
+        self.0.is_empty()
     }
 }
 
@@ -605,19 +478,12 @@ impl<T> WriteChunkUninit<'_, T> {
 ///
 /// This is returned from [`Consumer::read_chunk()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct ReadChunk<'a, T> {
-    // Must be "mut" for drop_in_place()
-    first_ptr: *mut T,
-    first_len: usize,
-    // Must be "mut" for drop_in_place()
-    second_ptr: *mut T,
-    second_len: usize,
-    consumer: &'a Consumer<T>,
-}
-
-// SAFETY: ReadChunk only exists while a unique reference to the Consumer is held.
-// It is therefore safe to move it to another thread.
-unsafe impl<T: Send> Send for ReadChunk<'_, T> {}
+pub struct ReadChunk<'a, T>(
+    crate::diy::chunks::ReadChunk<
+        'a,
+        Ptr<DynamicStorage<T, { Addressing::Tight as u8 }, CachePaddedIndices>>,
+    >,
+);
 
 impl<T> ReadChunk<'_, T> {
     /// Returns two slices for reading from the requested slots.
@@ -632,14 +498,9 @@ impl<T> ReadChunk<'_, T> {
     /// Note that this runs the destructor of the committed items (if `T` implements [`Drop`]).
     /// You can "peek" at the contained values by simply not calling any of the "commit" methods.
     #[must_use]
+    #[inline(always)]
     pub fn as_slices(&self) -> (&[T], &[T]) {
-        // SAFETY: The pointers and lengths have been computed correctly in read_chunk().
-        unsafe {
-            (
-                core::slice::from_raw_parts(self.first_ptr, self.first_len),
-                core::slice::from_raw_parts(self.second_ptr, self.second_len),
-            )
-        }
+        self.0.as_slices()
     }
 
     /// Returns two mutable slices for reading from the requested slots.
@@ -654,14 +515,9 @@ impl<T> ReadChunk<'_, T> {
     /// operations on the data in-place without copying it to a separate buffer
     /// (e.g. streaming decryption), in which case this version can be used.
     #[must_use]
+    #[inline(always)]
     pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
-        // SAFETY: The pointers and lengths have been computed correctly in read_chunk().
-        unsafe {
-            (
-                core::slice::from_raw_parts_mut(self.first_ptr, self.first_len),
-                core::slice::from_raw_parts_mut(self.second_ptr, self.second_len),
-            )
-        }
+        self.0.as_mut_slices()
     }
 
     /// Drops the first `n` slots of the chunk, making the space available for writing again.
@@ -716,47 +572,29 @@ impl<T> ReadChunk<'_, T> {
     /// // ... and it is dropped when the ring buffer goes out of scope:
     /// assert_eq!(unsafe { DROP_COUNT }, 3);
     /// ```
+    #[inline(always)]
     pub fn commit(self, n: usize) {
-        assert!(n <= self.len(), "cannot commit more than chunk size");
-        // SAFETY: self.len() initialized elements have been obtained in read_chunk().
-        unsafe { self.commit_unchecked(n) };
+        self.0.commit(n)
     }
 
     /// Drops all slots of the chunk, making the space available for writing again.
+    #[inline(always)]
     pub fn commit_all(self) {
-        let slots = self.len();
-        // SAFETY: self.len() initialized elements have been obtained in read_chunk().
-        unsafe { self.commit_unchecked(slots) };
-    }
-
-    unsafe fn commit_unchecked(self, n: usize) -> usize {
-        let first_len = self.first_len.min(n);
-        for i in 0..first_len {
-            // SAFETY: The caller must make sure that there are n initialized elements.
-            unsafe { self.first_ptr.add(i).drop_in_place() };
-        }
-        let second_len = self.second_len.min(n - first_len);
-        for i in 0..second_len {
-            // SAFETY: The caller must make sure that there are n initialized elements.
-            unsafe { self.second_ptr.add(i).drop_in_place() };
-        }
-        let c = self.consumer;
-        let head = c.buffer.increment(c.cached_head.get(), n);
-        c.buffer.head.store(head, Ordering::Release);
-        c.cached_head.set(head);
-        n
+        self.0.commit_all()
     }
 
     /// Returns the number of slots in the chunk.
     #[must_use]
+    #[inline(always)]
     pub fn len(&self) -> usize {
-        self.first_len + self.second_len
+        self.0.len()
     }
 
     /// Returns `true` if the chunk contains no slots.
     #[must_use]
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.first_len == 0
+        self.0.is_empty()
     }
 }
 
@@ -769,10 +607,7 @@ impl<'a, T> IntoIterator for ReadChunk<'a, T> {
     /// When the iterator is dropped, all iterated slots are made available for writing again.
     /// Non-iterated items remain in the ring buffer.
     fn into_iter(self) -> Self::IntoIter {
-        Self::IntoIter {
-            chunk: self,
-            iterated: 0,
-        }
+        ReadChunkIntoIter(self.0.into_iter())
     }
 }
 
@@ -783,51 +618,30 @@ impl<'a, T> IntoIterator for ReadChunk<'a, T> {
 ///
 /// When this `struct` is dropped, the iterated slots are made available for writing again.
 /// Non-iterated items remain in the ring buffer.
-#[derive(Debug)]
-pub struct ReadChunkIntoIter<'a, T> {
-    chunk: ReadChunk<'a, T>,
-    iterated: usize,
-}
+pub struct ReadChunkIntoIter<'a, T>(
+    crate::diy::chunks::ReadChunkIntoIter<
+        'a,
+        Ptr<DynamicStorage<T, { Addressing::Tight as u8 }, CachePaddedIndices>>,
+    >,
+);
 
-impl<T> Drop for ReadChunkIntoIter<'_, T> {
-    /// Makes all iterated slots available for writing again.
-    ///
-    /// Non-iterated items remain in the ring buffer and are *not* dropped.
-    fn drop(&mut self) {
-        let c = &self.chunk.consumer;
-        let head = c.buffer.increment(c.cached_head.get(), self.iterated);
-        c.buffer.head.store(head, Ordering::Release);
-        c.cached_head.set(head);
+impl<T> fmt::Debug for ReadChunkIntoIter<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad("ReadChunkIntoIter")
     }
 }
 
 impl<T> Iterator for ReadChunkIntoIter<'_, T> {
     type Item = T;
 
-    #[inline]
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
-        let ptr = if self.iterated < self.chunk.first_len {
-            // SAFETY: first_len is valid.
-            unsafe { self.chunk.first_ptr.add(self.iterated) }
-        } else if self.iterated < self.chunk.first_len + self.chunk.second_len {
-            // SAFETY: first_len and second_len are valid.
-            unsafe {
-                self.chunk
-                    .second_ptr
-                    .add(self.iterated - self.chunk.first_len)
-            }
-        } else {
-            return None;
-        };
-        self.iterated += 1;
-        // SAFETY: ptr points to an initialized slot.
-        Some(unsafe { ptr.read() })
+        self.0.next()
     }
 
-    #[inline]
+    #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining = self.chunk.first_len + self.chunk.second_len - self.iterated;
-        (remaining, Some(remaining))
+        self.0.size_hint()
     }
 }
 
