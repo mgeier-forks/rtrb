@@ -46,17 +46,17 @@ codegen-units = 1
 [lib]
 bench = false # Don't disturb criterion command line parsing
 
-#[[bench]]
-#name = "single_thread_single_byte"
-#harness = false
+[[bench]]
+name = "single_thread_single_byte"
+harness = false
 
-#[[bench]]
-#name = "single_thread_two_bytes"
-#harness = false
+[[bench]]
+name = "single_thread_two_bytes"
+harness = false
 
-#[[bench]]
-#name = "single_thread_with_chunks"
-#harness = false
+[[bench]]
+name = "single_thread_with_chunks"
+harness = false
 
 [[bench]]
 name = "two_threads"
