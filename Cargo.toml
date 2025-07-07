@@ -19,7 +19,7 @@ exclude = [
 ]
 
 [workspace]
-exclude = ["crossbeam"]
+exclude = ["crossbeam", "performance-comparison"]
 
 [features]
 default = ["std"]
