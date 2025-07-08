@@ -76,12 +76,12 @@ criterion_main!(benches);
     };
 }
 
-pub const SIZE: usize = 1024;
+pub const SIZE: usize = 32;
 
 create_two_threads_static_benchmark!(
-    "static-rtrb",
+    "rtrb::array",
     || {
-        static RB: rtrb::StaticRingBuffer<u8, SIZE> = rtrb::StaticRingBuffer::new();
+        static RB: rtrb::array::RingBuffer<u8, SIZE> = rtrb::array::RingBuffer::new();
         (RB.producer().unwrap(), RB.consumer().unwrap())
     },
     |p, i| p.push(i).is_ok(),

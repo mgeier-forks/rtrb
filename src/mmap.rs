@@ -5,6 +5,8 @@ use crate::{
     CachePaddedIndices, Ptr,
 };
 
+// TODO: move MmapStorage to "diy" module?
+
 #[derive(Debug)]
 pub struct MmapStorage<T, const A: u8, I: Indices> {
     indices: I,

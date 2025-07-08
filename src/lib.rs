@@ -67,6 +67,9 @@ use cache_padded::CachePadded;
 pub mod chunks;
 pub mod diy;
 
+pub mod array;
+pub mod embedded;
+
 #[cfg(feature = "mmap")]
 pub mod mmap;
 
@@ -74,14 +77,10 @@ pub mod mmap;
 #[allow(unused_imports)]
 use chunks::WriteChunkUninit;
 
-use diy::StaticStorage;
 use diy::{Addressing, Indices, Storage};
 
 // TODO: use errors::* or something?
 pub use diy::{PeekError, PopError, PushError};
-
-// TODO: move here? or to "static" module?
-pub use diy::EmbeddedRingBuffer;
 
 use diy::IS_ABANDONED;
 
@@ -776,18 +775,7 @@ impl<T: Copy> CopyToUninit<T> for [T] {
 // TODO: change to newtype, add docs
 pub type RingBuffer2<T> = DynamicStorage<T, { Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;
 
-/// ...
-///
-/// no dynamic allocation, but cache-padded indices
-// TODO: change to newtype, add docs
-pub type StaticRingBuffer<T, const N: usize> =
-    StaticStorage<T, N, { Addressing::Tight as u8 }, CachePaddedIndices>;
-
 // TODO: Remove because power-of-two optimizations? Might be done automatically by the compiler?
 // TODO: verify
 pub type StaticRingBuffer2<T, const N: usize> =
-    StaticStorage<T, N, { Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;
-pub type StaticProducer2<'a, T, const N: usize> =
-    diy::Producer<&'a StaticStorage<T, N, { Addressing::PowerOfTwo as u8 }, CachePaddedIndices>>;
-pub type StaticConsumer2<'a, T, const N: usize> =
-    diy::Consumer<&'a StaticStorage<T, N, { Addressing::PowerOfTwo as u8 }, CachePaddedIndices>>;
+    diy::ArrayStorage<T, N, { Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;

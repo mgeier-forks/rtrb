@@ -529,12 +529,12 @@ impl<T> fmt::Display for PushError<T> {
     }
 }
 
-/// Static storage.
+/// Storage in a (compile-time sized) array.
 // Once the `adt_const_params` feature has been stabilized
 // (https://github.com/rust-lang/rust/issues/95174),
 // `u8` can be replaced by `Addressing`.
 #[derive(Debug)]
-pub struct StaticStorage<T, const N: usize, const A: u8, I: Indices> {
+pub struct ArrayStorage<T, const N: usize, const A: u8, I: Indices> {
     indices: I,
 
     /// Indicates whether a producer and/or a consumer is connected.
@@ -550,16 +550,16 @@ pub struct StaticStorage<T, const N: usize, const A: u8, I: Indices> {
 
 /// `T` is not `Sync` because we never share it across threads.
 unsafe impl<T: Send, const N: usize, const A: u8, I: Indices + Sync> Sync
-    for StaticStorage<T, N, A, I>
+    for ArrayStorage<T, N, A, I>
 {
 }
 
 unsafe impl<T: Send, const N: usize, const A: u8, I: Indices + Send> Send
-    for StaticStorage<T, N, A, I>
+    for ArrayStorage<T, N, A, I>
 {
 }
 
-impl<T, const N: usize, const A: u8, I: Indices> StaticStorage<T, N, A, I> {
+impl<T, const N: usize, const A: u8, I: Indices> ArrayStorage<T, N, A, I> {
     #[must_use]
     pub const fn new() -> Self {
         const {
@@ -598,31 +598,29 @@ impl<T, const N: usize, const A: u8, I: Indices> StaticStorage<T, N, A, I> {
     }
 }
 
-impl<T, const N: usize, const A: u8, I: Indices> Drop for StaticStorage<T, N, A, I> {
+impl<T, const N: usize, const A: u8, I: Indices> Drop for ArrayStorage<T, N, A, I> {
     fn drop(&mut self) {
         // SAFETY: this is called exactly once, no references to any elements exist anymore.
         unsafe { self.drop_all_elements() };
     }
 }
 
-impl<T, const N: usize, const A: u8, I: Indices> Default for StaticStorage<T, N, A, I> {
+impl<T, const N: usize, const A: u8, I: Indices> Default for ArrayStorage<T, N, A, I> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/*
-impl<T, A: Addressing, I: Indices> PartialEq for StaticStorage<T, A, I> {
+impl<T, const N: usize, const A: u8, I: Indices> PartialEq for ArrayStorage<T, N, A, I> {
     fn eq(&self, other: &Self) -> bool {
         core::ptr::eq(self, other)
     }
 }
 
-impl<T, A: Addressing, I: Indices> Eq for StaticStorage<T, A, I> {}
-*/
+impl<T, const N: usize, const A: u8, I: Indices> Eq for ArrayStorage<T, N, A, I> {}
 
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound
-unsafe impl<T, const N: usize, const A: u8, I: Indices> Storage for StaticStorage<T, N, A, I> {
+unsafe impl<T, const N: usize, const A: u8, I: Indices> Storage for ArrayStorage<T, N, A, I> {
     type Item = T;
     type Indices = I;
     const ADDR: Addressing = Addressing::from_u8(A);
@@ -692,29 +690,3 @@ unsafe impl Indices for TightIndices {
         &self.tail
     }
 }
-
-/// ...
-///
-/// no cache padding, no dynamic allocation
-/// power-of-two optimizations might be done automatically by the compiler? TODO: verify
-///
-/// TODO: move this to producer()/consumer() docs?
-///
-/// Only one producer and one consumer can exist at once,
-/// but once a producer/consumer has been dropped, a new one can be created:
-/// ```
-/// # use rtrb::EmbeddedRingBuffer;
-/// let rb = EmbeddedRingBuffer::<i32, 64>::new();
-/// let mut producer = rb.producer().unwrap();
-/// let mut consumer = rb.consumer().unwrap();
-/// assert!(rb.consumer().is_none());
-/// assert_eq!(producer.push(10), Ok(()));
-/// drop(producer);
-/// let mut producer = rb.producer().unwrap();
-/// assert_eq!(producer.push(20), Ok(()));
-/// assert_eq!(consumer.pop(), Ok(10));
-/// assert_eq!(consumer.pop(), Ok(20));
-/// ```
-// TODO: change to newtype, add more docs
-pub type EmbeddedRingBuffer<T, const N: usize> =
-    StaticStorage<T, N, { Addressing::Tight as u8 }, TightIndices>;
