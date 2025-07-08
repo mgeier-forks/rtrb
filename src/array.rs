@@ -13,7 +13,6 @@ type Inner<T, const N: usize> = ArrayStorage<T, N, { Addressing::Tight as u8 }, 
 pub struct RingBuffer<T, const N: usize>(Inner<T, N>);
 
 impl<T, const N: usize> RingBuffer<T, N> {
-    #[must_use]
     #[inline(always)]
     pub const fn new() -> Self {
         Self(Inner::<T, N>::new())

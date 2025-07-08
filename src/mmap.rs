@@ -33,7 +33,6 @@ unsafe impl<T: Send, const A: u8, I: Indices + Sync> Sync for MmapStorage<T, A, 
 // so `PowerOfTwoAddressing` probably makes most sense.
 impl<T, const A: u8, I: Indices> MmapStorage<T, A, I> {
     #[allow(clippy::new_ret_no_self)]
-    #[must_use]
     pub fn new(
         capacity: usize,
     ) -> (

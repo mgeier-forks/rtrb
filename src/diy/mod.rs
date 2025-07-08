@@ -560,7 +560,6 @@ unsafe impl<T: Send, const N: usize, const A: u8, I: Indices + Send> Send
 }
 
 impl<T, const N: usize, const A: u8, I: Indices> ArrayStorage<T, N, A, I> {
-    #[must_use]
     pub const fn new() -> Self {
         const {
             // assert!() in const since Rust 1.57
