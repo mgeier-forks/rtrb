@@ -303,10 +303,11 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
     /// For performance, this special case is implemented separately.
     #[inline]
     fn next_tail(&self) -> Option<usize> {
+        let head = self.cached_head.get();
         let tail = self.cached_tail.get();
         let capacity = self.buffer.capacity();
         // Check if the queue is *possibly* full.
-        if S::ADDR.distance(self.cached_head.get(), tail, capacity) == capacity {
+        if S::ADDR.distance(head, tail, capacity) == capacity {
             // Refresh the head ...
             let head = self.buffer.indices().head().load(Ordering::Acquire);
             // ... and check if it's *really* full.
@@ -434,9 +435,10 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
     #[inline]
     fn next_head(&self) -> Option<usize> {
         let head = self.cached_head.get();
+        let tail = self.cached_tail.get();
 
         // Check if the queue is *possibly* empty.
-        if head == self.cached_tail.get() {
+        if head == tail {
             // Refresh the tail ...
             let tail = self.buffer.indices().tail().load(Ordering::Acquire);
             // ... and check if it's *really* empty.
