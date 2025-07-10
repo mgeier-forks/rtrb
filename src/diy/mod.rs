@@ -4,7 +4,7 @@ use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
-pub mod chunks;
+//pub mod chunks;
 
 // TODO: separate module for traits?
 
@@ -13,150 +13,10 @@ pub const HAS_CONSUMER: u8 = 0b01000000;
 // NB: This overlaps with HAS_PRODUCER, they are never used at the same time.
 pub const IS_ABANDONED: u8 = 0b10000000;
 
-/// Indices.
-///
-/// # Safety
-///
-/// The indices must not be changed by anyone else.
-// TODO: this is not really something the implementer can control!
-pub unsafe trait Indices {
-    const INIT: Self;
-
-    fn head(&self) -> &AtomicUsize;
-    fn tail(&self) -> &AtomicUsize;
-}
-
-/// Addressing.
-#[repr(u8)]
-pub enum Addressing {
-    Tight,
-    PowerOfTwo,
-}
-
-impl Addressing {
-    // This is a work-around until the `adt_const_params` feature has been stabilized
-    // (https://github.com/rust-lang/rust/issues/95174):
-    pub const fn from_u8(value: u8) -> Addressing {
-        if value == Addressing::Tight as u8 {
-            Addressing::Tight
-        } else if value == Addressing::PowerOfTwo as u8 {
-            Addressing::PowerOfTwo
-        } else {
-            panic!("Invalid value for Addressing")
-        }
-    }
-
-    pub const fn update_capacity(&self, x: usize) -> usize {
-        // MSRV 1.46: match statements in const fn
-        match self {
-            Addressing::Tight => x,
-            Addressing::PowerOfTwo => x.next_power_of_two(),
-        }
-    }
-
-    #[inline]
-    fn collapse_position(&self, pos: usize, capacity: usize) -> usize {
-        match self {
-            Addressing::Tight => {
-                // Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
-                debug_assert!(pos == 0 || pos < 2 * capacity);
-                if pos < capacity {
-                    pos
-                } else {
-                    pos - capacity
-                }
-            }
-            Addressing::PowerOfTwo => {
-                // Wraps from any number to the range `0 .. capacity`.
-                // TODO: is capacity 0 supported?
-                pos & (capacity - 1)
-            }
-        }
-    }
-
-    /// Increments a position by going `n` slots forward.
-    #[inline]
-    fn increment(&self, pos: usize, n: usize, capacity: usize) -> usize {
-        match self {
-            Addressing::Tight => {
-                debug_assert!(pos == 0 || pos < 2 * capacity);
-                debug_assert!(n <= capacity);
-                let threshold = 2 * capacity - n;
-                if pos < threshold {
-                    pos + n
-                } else {
-                    pos - threshold
-                }
-            }
-            Addressing::PowerOfTwo => pos.wrapping_add(n),
-        }
-    }
-
-    /// Increments a position by going one slot forward.
-    ///
-    /// This might be more efficient than self.increment(..., 1).
-    #[inline]
-    fn increment1(&self, pos: usize, capacity: usize) -> usize {
-        match self {
-            Addressing::Tight => {
-                debug_assert_ne!(capacity, 0);
-                debug_assert!(pos < 2 * capacity);
-                if pos < 2 * capacity - 1 {
-                    pos + 1
-                } else {
-                    0
-                }
-            }
-            Addressing::PowerOfTwo => pos.wrapping_add(1),
-        }
-    }
-
-    /// Returns the distance between two positions.
-    #[inline]
-    fn distance(&self, a: usize, b: usize, capacity: usize) -> usize {
-        match self {
-            Addressing::Tight => {
-                debug_assert!(a == 0 || a < 2 * capacity);
-                debug_assert!(b == 0 || b < 2 * capacity);
-                if a <= b {
-                    b - a
-                } else {
-                    2 * capacity - a + b
-                }
-            }
-            Addressing::PowerOfTwo => b.wrapping_sub(a),
-        }
-    }
-}
-
-/// Storage.
-///
-/// # Safety
-///
-/// Storage must be contiguous.
-///
-/// ...
-///
-/// Several functions must not be exposed to the user: indices(), flags(), ...
-pub unsafe trait Storage {
-    type Item;
-    type Indices: Indices;
-    const ADDR: Addressing;
-
-    // TODO: make sure head/tail are not exposed to the user?
-    fn indices(&self) -> &Self::Indices;
-
-    /// # Safety
-    ///
-    /// ...
-    // This is unsafe because Storage might be exposed to the user.
+pub trait Flags {
     // TODO: make "unsafe"?
     // TODO: make "container" that contains Storage and other traits without exposing them.
     fn flags(&self) -> &AtomicU8;
-
-    fn data_ptr(&self) -> *mut Self::Item;
-
-    fn capacity(&self) -> usize;
 
     /// Do whatever is needed when the `Producer` is dropped.
     ///
@@ -171,6 +31,148 @@ pub unsafe trait Storage {
     ///
     /// This can only be called in `Consumer::drop()`.
     unsafe fn drop_consumer(&self) {}
+}
+
+/// Indices.
+///
+/// # Safety
+///
+/// The indices must not be changed by anyone else.
+// TODO: this is not really something the implementer can control!
+pub unsafe trait Indices {
+    const INIT: Self;
+
+    fn head(&self) -> &AtomicUsize;
+    fn tail(&self) -> &AtomicUsize;
+}
+
+pub trait Capacity {
+    fn capacity(&self) -> usize;
+}
+
+/// Different index calculations.
+#[repr(u8)]
+pub enum Calc {
+    Twice,
+    TwicePowerOfTwo,
+}
+
+/// Some index calculations might need to extend the capacity.
+pub const fn update_capacity<const C: u8>(capacity: usize) -> usize {
+    // MSRV 1.46: match statements in const fn
+    match Calc::from_u8(C) {
+        Calc::Twice => capacity,
+        Calc::TwicePowerOfTwo => capacity.next_power_of_two(),
+    }
+}
+
+impl Calc {
+    // This is a work-around until the `adt_const_params` feature has been stabilized
+    // (https://github.com/rust-lang/rust/issues/95174):
+    pub const fn from_u8(value: u8) -> Calc {
+        if value == Calc::Twice as u8 {
+            Calc::Twice
+        } else if value == Calc::TwicePowerOfTwo as u8 {
+            Calc::TwicePowerOfTwo
+        } else {
+            panic!("Invalid value for Calc")
+        }
+    }
+}
+
+pub trait IndexCalculation<const C: u8>: Capacity {
+    #[inline]
+    fn collapse_position(&self, pos: usize) -> usize {
+        match Calc::from_u8(C) {
+            Calc::Twice => {
+                // Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
+                debug_assert!(pos == 0 || pos < 2 * self.capacity());
+                if pos < self.capacity() {
+                    pos
+                } else {
+                    pos - self.capacity()
+                }
+            }
+            Calc::TwicePowerOfTwo => {
+                // Wraps from any number to the range `0 .. capacity`.
+                // TODO: is capacity 0 supported?
+                pos & (self.capacity() - 1)
+            }
+        }
+    }
+
+    /// Increments a position by going `n` slots forward.
+    #[inline]
+    fn increment(&self, pos: usize, n: usize) -> usize {
+        match Calc::from_u8(C) {
+            Calc::Twice => {
+                debug_assert!(pos == 0 || pos < 2 * self.capacity());
+                debug_assert!(n <= self.capacity());
+                let threshold = 2 * self.capacity() - n;
+                if pos < threshold {
+                    pos + n
+                } else {
+                    pos - threshold
+                }
+            }
+            Calc::TwicePowerOfTwo => pos.wrapping_add(n),
+        }
+    }
+
+    /// Increments a position by going one slot forward.
+    ///
+    /// This might be more efficient than self.increment(..., 1).
+    #[inline]
+    fn increment1(&self, pos: usize) -> usize {
+        match Calc::from_u8(C) {
+            Calc::Twice => {
+                debug_assert_ne!(self.capacity(), 0);
+                debug_assert!(pos < 2 * self.capacity());
+                if pos < 2 * self.capacity() - 1 {
+                    pos + 1
+                } else {
+                    0
+                }
+            }
+            Calc::TwicePowerOfTwo => pos.wrapping_add(1),
+        }
+    }
+
+    /// Returns the distance between two positions.
+    #[inline]
+    fn distance(&self, a: usize, b: usize) -> usize {
+        match Calc::from_u8(C) {
+            Calc::Twice => {
+                debug_assert!(a == 0 || a < 2 * self.capacity());
+                debug_assert!(b == 0 || b < 2 * self.capacity());
+                if a <= b {
+                    b - a
+                } else {
+                    2 * self.capacity() - a + b
+                }
+            }
+            Calc::TwicePowerOfTwo => b.wrapping_sub(a),
+        }
+    }
+}
+
+/// Storage.
+///
+/// # Safety
+///
+/// Storage must be contiguous.
+///
+/// ...
+///
+/// Several functions must not be exposed to the user: indices(), flags(), ...
+pub unsafe trait Storage<const C: u8>: IndexCalculation<C> {
+    type Item;
+    type Indices: Indices;
+
+    // TODO: make sure head/tail are not exposed to the user?
+    fn indices(&self) -> &Self::Indices;
+
+    fn data_ptr(&self) -> *mut Self::Item;
 
     /// Drop all elements that are still in the buffer.
     ///
@@ -192,7 +194,7 @@ pub unsafe trait Storage {
         while head != tail {
             // SAFETY: All slots between head and tail have been initialized.
             unsafe { self.slot_ptr(head).drop_in_place() };
-            head = Self::ADDR.increment1(head, self.capacity());
+            head = self.increment1(head);
         }
     }
 
@@ -206,19 +208,16 @@ pub unsafe trait Storage {
     #[inline]
     unsafe fn slot_ptr(&self, pos: usize) -> *mut Self::Item {
         // SAFETY: See docstring.
-        unsafe {
-            self.data_ptr()
-                .add(Self::ADDR.collapse_position(pos, self.capacity()))
-        }
+        unsafe { self.data_ptr().add(self.collapse_position(pos)) }
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 // NB: this syntax needs MSRV 1.79
 //pub struct Producer<R: Deref<Target: Storage>>
-pub struct Producer<R: Deref>
+pub struct Producer<const C: u8, R: Deref>
 where
-    R::Target: Storage,
+    R::Target: Storage<C>,
 {
     /// A reference to the ring buffer.
     buffer: R,
@@ -246,14 +245,14 @@ where
 /// ```
 // SAFETY: After moving a producer to another thread, there is still only a single thread
 // that can access the producer side of the queue.
-unsafe impl<S: Storage, R: Deref<Target = S>> Send for Producer<R>
+unsafe impl<const C: u8, S: Storage<C>, R: Deref<Target=S>> Send for Producer<C, R>
 where
     S: Sync,
     S::Item: Send,
 {
 }
 
-impl<S: Storage, R: Deref<Target = S>> Producer<R> {
+impl<const C: u8, S: Storage<C>, R: Deref> Producer<C, R> {
     /// Create a new producer.
     ///
     /// # Safety
@@ -271,10 +270,11 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
 
     pub fn push(&mut self, value: S::Item) -> Result<(), PushError<S::Item>> {
         if let Some(tail) = self.next_tail() {
+            let b = self.buffer;
             // SAFETY: tail points to an empty slot.
-            unsafe { self.buffer.slot_ptr(tail).write(value) };
-            let tail = S::ADDR.increment1(tail, self.buffer.capacity());
-            self.buffer.indices().tail().store(tail, Ordering::Release);
+            unsafe { b.slot_ptr(tail).write(value) };
+            let tail = b.increment1(tail);
+            b.indices().tail().store(tail, Ordering::Release);
             self.cached_tail.set(tail);
             Ok(())
         } else {
@@ -283,10 +283,10 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
     }
 
     pub fn slots(&self) -> usize {
-        let head = self.buffer.indices().head().load(Ordering::Acquire);
+        let b = self.buffer;
+        let head = b.indices().head().load(Ordering::Acquire);
         self.cached_head.set(head);
-        let capacity = self.buffer.capacity();
-        capacity - S::ADDR.distance(head, self.cached_tail.get(), capacity)
+        b.capacity() - b.distance(head, self.cached_tail.get())
     }
 
     pub fn is_full(&self) -> bool {
@@ -305,13 +305,13 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
     fn next_tail(&self) -> Option<usize> {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
-        let capacity = self.buffer.capacity();
+        let b = self.buffer;
         // Check if the queue is *possibly* full.
-        if S::ADDR.distance(head, tail, capacity) == capacity {
+        if b.distance(head, tail) == b.capacity() {
             // Refresh the head ...
-            let head = self.buffer.indices().head().load(Ordering::Acquire);
+            let head = b.indices().head().load(Ordering::Acquire);
             // ... and check if it's *really* full.
-            if S::ADDR.distance(head, tail, capacity) == capacity {
+            if b.distance(head, tail) == b.capacity() {
                 // `head` didn't change, queue is full.
                 return None;
             }
@@ -324,7 +324,7 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
 
 impl<R: Deref> Drop for Producer<R>
 where
-    <R as Deref>::Target: Storage,
+    R::Target: Flags,
 {
     fn drop(&mut self) {
         // SAFETY: This is only called in Producer::drop().
@@ -333,9 +333,9 @@ where
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Consumer<R: Deref>
+pub struct Consumer<const C: u8, R: Deref>
 where
-    <R as Deref>::Target: Storage,
+    R::Target: Storage<C>,
 {
     /// A reference to the ring buffer.
     buffer: R,
@@ -363,14 +363,14 @@ where
 /// ```
 // SAFETY: After moving a Consumer to another thread, there is still only a single thread
 // that can access the consumer side of the queue.
-unsafe impl<S: Storage, R: Deref<Target = S>> Send for Consumer<R>
+unsafe impl<const C: u8, S: Storage<C>, R: Deref<Target = S>> Send for Consumer<C, R>
 where
     S: Sync,
     S::Item: Send,
 {
 }
 
-impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
+impl<const C: u8, S: Storage<C>, R: Deref<Target = S>> Consumer<C, R> {
     /// Create a new consumer.
     ///
     /// # Safety
@@ -388,10 +388,11 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
 
     pub fn pop(&mut self) -> Result<S::Item, PopError> {
         if let Some(head) = self.next_head() {
+            let b = self.buffer;
             // SAFETY: head points to an initialized slot.
-            let value = unsafe { self.buffer.slot_ptr(head).read() };
-            let head = S::ADDR.increment1(head, self.buffer.capacity());
-            self.buffer.indices().head().store(head, Ordering::Release);
+            let value = unsafe { b.slot_ptr(head).read() };
+            let head = b.increment1(head);
+            b.indices().head().store(head, Ordering::Release);
             self.cached_head.set(head);
             Ok(value)
         } else {
@@ -409,9 +410,10 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
     }
 
     pub fn slots(&self) -> usize {
-        let tail = self.buffer.indices().tail().load(Ordering::Acquire);
+        let b = self.buffer;
+        let tail = b.indices().tail().load(Ordering::Acquire);
         self.cached_tail.set(tail);
-        S::ADDR.distance(self.cached_head.get(), tail, self.buffer.capacity())
+        b.distance(self.cached_head.get(), tail)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -453,9 +455,9 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
     }
 }
 
-impl<R: Deref> Drop for Consumer<R>
+impl<const C: u8, R: Deref> Drop for Consumer<C, R>
 where
-    <R as Deref>::Target: Storage,
+    R::Target: Storage<C>,
 {
     fn drop(&mut self) {
         // SAFETY: This is only called in Consumer::drop().
@@ -536,7 +538,7 @@ impl<T> fmt::Display for PushError<T> {
 // (https://github.com/rust-lang/rust/issues/95174),
 // `u8` can be replaced by `Addressing`.
 #[derive(Debug)]
-pub struct ArrayStorage<T, const N: usize, const A: u8, I: Indices> {
+pub struct ArrayStorage<T, const N: usize, const C: u8, I: Indices> {
     indices: I,
 
     /// Indicates whether a producer and/or a consumer is connected.
@@ -551,97 +553,18 @@ pub struct ArrayStorage<T, const N: usize, const A: u8, I: Indices> {
 }
 
 /// `T` is not `Sync` because we never share it across threads.
-unsafe impl<T: Send, const N: usize, const A: u8, I: Indices + Sync> Sync
-    for ArrayStorage<T, N, A, I>
+unsafe impl<T: Send, const N: usize, const C: u8, I: Indices + Sync> Sync
+    for ArrayStorage<T, N, C, I>
 {
 }
 
-unsafe impl<T: Send, const N: usize, const A: u8, I: Indices + Send> Send
-    for ArrayStorage<T, N, A, I>
+unsafe impl<T: Send, const N: usize, const C: u8, I: Indices + Send> Send
+    for ArrayStorage<T, N, C, I>
 {
 }
 
-impl<T, const N: usize, const A: u8, I: Indices> ArrayStorage<T, N, A, I> {
-    pub const fn new() -> Self {
-        const {
-            // assert!() in const since Rust 1.57
-            assert!(
-                N == Addressing::from_u8(A).update_capacity(N),
-                // This assumes that only `Addressing::PowerOfTwo` changes capacity.
-                "`capacity` must be a power of two"
-            );
-        }
-        Self {
-            indices: I::INIT,
-            flags: AtomicU8::new(0),
-            slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
-        }
-    }
 
-    pub fn producer(&self) -> Option<Producer<&Self>> {
-        let old_flags = self.flags().fetch_or(HAS_PRODUCER, Ordering::SeqCst);
-        if old_flags & HAS_PRODUCER == 0 {
-            // SAFETY: This is the one and only producer.
-            Some(unsafe { Producer::new(self) })
-        } else {
-            None
-        }
-    }
-
-    pub fn consumer(&self) -> Option<Consumer<&Self>> {
-        let old_flags = self.flags().fetch_or(HAS_CONSUMER, Ordering::SeqCst);
-        if old_flags & HAS_CONSUMER == 0 {
-            // SAFETY: This is the one and only consumer.
-            Some(unsafe { Consumer::new(self) })
-        } else {
-            None
-        }
-    }
-}
-
-impl<T, const N: usize, const A: u8, I: Indices> Drop for ArrayStorage<T, N, A, I> {
-    fn drop(&mut self) {
-        // SAFETY: this is called exactly once, no references to any elements exist anymore.
-        unsafe { self.drop_all_elements() };
-    }
-}
-
-impl<T, const N: usize, const A: u8, I: Indices> Default for ArrayStorage<T, N, A, I> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T, const N: usize, const A: u8, I: Indices> PartialEq for ArrayStorage<T, N, A, I> {
-    fn eq(&self, other: &Self) -> bool {
-        core::ptr::eq(self, other)
-    }
-}
-
-impl<T, const N: usize, const A: u8, I: Indices> Eq for ArrayStorage<T, N, A, I> {}
-
-// SAFETY: all methods must be implemented correctly, or the whole thing is unsound
-unsafe impl<T, const N: usize, const A: u8, I: Indices> Storage for ArrayStorage<T, N, A, I> {
-    type Item = T;
-    type Indices = I;
-    const ADDR: Addressing = Addressing::from_u8(A);
-
-    #[inline(always)]
-    fn data_ptr(&self) -> *mut Self::Item {
-        // TODO: what happens if N == 0?
-        self.slots.get().cast()
-    }
-
-    #[inline(always)]
-    fn capacity(&self) -> usize {
-        N
-    }
-
-    #[inline(always)]
-    fn indices(&self) -> &Self::Indices {
-        &self.indices
-    }
-
+impl<T, const N: usize, const C: u8, I: Indices> Flags for ArrayStorage<T, N, C, I> {
     #[inline(always)]
     fn flags(&self) -> &AtomicU8 {
         &self.flags
@@ -655,6 +578,88 @@ unsafe impl<T, const N: usize, const A: u8, I: Indices> Storage for ArrayStorage
     #[inline(always)]
     unsafe fn drop_consumer(&self) {
         let _ = self.flags().fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
+    }
+}
+
+impl<T, const N: usize, const C: u8, I: Indices> ArrayStorage<T, N, C, I> {
+    pub const fn new() -> Self {
+        const {
+            // assert!() in const since Rust 1.57
+            assert!(
+                update_capacity::<C>(N) == N,
+                "`capacity` must be a power of two"
+            );
+        }
+        Self {
+            indices: I::INIT,
+            flags: AtomicU8::new(0),
+            slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
+        }
+    }
+
+    pub fn producer(&self) -> Option<Producer<C, &Self>> {
+        let old_flags = self.flags().fetch_or(HAS_PRODUCER, Ordering::SeqCst);
+        if old_flags & HAS_PRODUCER == 0 {
+            // SAFETY: This is the one and only producer.
+            Some(unsafe { Producer::new(self) })
+        } else {
+            None
+        }
+    }
+
+    pub fn consumer(&self) -> Option<Consumer<C, &Self>> {
+        let old_flags = self.flags().fetch_or(HAS_CONSUMER, Ordering::SeqCst);
+        if old_flags & HAS_CONSUMER == 0 {
+            // SAFETY: This is the one and only consumer.
+            Some(unsafe { Consumer::new(self) })
+        } else {
+            None
+        }
+    }
+}
+
+impl<T, const N: usize, const C: u8, I: Indices> Drop for ArrayStorage<T, N, C, I> {
+    fn drop(&mut self) {
+        // SAFETY: this is called exactly once, no references to any elements exist anymore.
+        unsafe { self.drop_all_elements() };
+    }
+}
+
+impl<T, const N: usize, const C: u8, I: Indices> Default for ArrayStorage<T, N, C, I> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T, const N: usize, const C: u8, I: Indices> PartialEq for ArrayStorage<T, N, C, I> {
+    fn eq(&self, other: &Self) -> bool {
+        core::ptr::eq(self, other)
+    }
+}
+
+impl<T, const N: usize, const C: u8, I: Indices> Eq for ArrayStorage<T, N, C, I> {}
+
+impl<T, const N: usize, const C: u8, I: Indices> Capacity for ArrayStorage<T, N, C, I> {
+    #[inline(always)]
+    fn capacity(&self) -> usize {
+        N
+    }
+}
+
+// SAFETY: all methods must be implemented correctly, or the whole thing is unsound
+unsafe impl<T, const N: usize, const C: u8, I: Indices> Storage<C> for ArrayStorage<T, N, C, I> {
+    type Item = T;
+    type Indices = I;
+
+    #[inline(always)]
+    fn data_ptr(&self) -> *mut Self::Item {
+        // TODO: what happens if N == 0?
+        self.slots.get().cast()
+    }
+
+    #[inline(always)]
+    fn indices(&self) -> &Self::Indices {
+        &self.indices
     }
 }
 

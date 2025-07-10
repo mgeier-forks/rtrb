@@ -64,20 +64,22 @@ use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 mod cache_padded;
 use cache_padded::CachePadded;
 
-pub mod chunks;
+//pub mod chunks;
 pub mod diy;
 
-pub mod array;
-pub mod embedded;
+//pub mod array;
+//pub mod embedded;
 
 #[cfg(feature = "mmap")]
 pub mod mmap;
 
+/*
 // This is used in the documentation.
 #[allow(unused_imports)]
 use chunks::WriteChunkUninit;
+*/
 
-use diy::{Addressing, Indices, Storage};
+use diy::{update_capacity, Calc, Capacity, Flags, Indices, Storage};
 
 // TODO: use errors::* or something?
 pub use diy::{PeekError, PopError, PushError};
@@ -85,7 +87,7 @@ pub use diy::{PeekError, PopError, PushError};
 use diy::IS_ABANDONED;
 
 // NB: non-public!
-type RingBufferInner<T> = DynamicStorage<T, { Addressing::Tight as u8 }, CachePaddedIndices>;
+type RingBufferInner<T> = DynamicStorage<T, { Calc::Twice as u8 }, CachePaddedIndices>;
 
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
@@ -127,12 +129,13 @@ impl<T> RingBuffer<T> {
 
 // TODO: move to different module?
 #[derive(Debug, PartialEq, Eq)]
-pub struct Ptr<S: Storage> {
+pub struct Ptr<S> {
     ptr: NonNull<S>,
     _marker: PhantomData<S>,
 }
 
-impl<S: Storage> Ptr<S> {
+impl<const C: u8, S: Storage<C>> Ptr<S>
+{
     fn new(storage: S) -> (diy::Producer<Self>, diy::Consumer<Self>) {
         // NB: We are assuming that IS_ABANDONED is unset.
         let ptr = Box::leak(Box::new(storage));
@@ -156,7 +159,7 @@ impl<S: Storage> Ptr<S> {
     }
 }
 
-impl<S: Storage> Drop for Ptr<S> {
+impl<S> Drop for Ptr<S> {
     fn drop(&mut self) {
         // SAFETY: must point to initialized Storage.
         let flags: &AtomicU8 = unsafe { self.ptr.as_ref().flags() };
@@ -199,7 +202,7 @@ unsafe fn drop_slow<S>(ptr: NonNull<S>) {
     }
 }
 
-impl<S: Storage> Deref for Ptr<S> {
+impl<const C: u8, S: Storage<C>> Deref for Ptr<S> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
@@ -213,7 +216,7 @@ impl<S: Storage> Deref for Ptr<S> {
 // (https://github.com/rust-lang/rust/issues/95174),
 // `u8` can be replaced by `Addressing`.
 #[derive(Debug)]
-pub struct DynamicStorage<T, const A: u8, I: Indices> {
+pub struct DynamicStorage<T, const C: u8, I: Indices> {
     indices: I,
 
     flags: AtomicU8,
@@ -229,20 +232,20 @@ pub struct DynamicStorage<T, const A: u8, I: Indices> {
 
 /// `T` is not `Sync` because we never share it across threads.
 // SAFETY: There is not mutable state (except for interior mutability).
-unsafe impl<T: Send, const A: u8, I: Indices + Sync> Sync for DynamicStorage<T, A, I> {}
+unsafe impl<T: Send, const C: u8, I: Indices + Sync> Sync for DynamicStorage<T, C, I> {}
 
 // NB: DynamicStorage doesn't need to be `Send` because it is never moved.
 
-impl<T, const A: u8, I: Indices> DynamicStorage<T, A, I> {
+impl<T, const C: u8, I: Indices> DynamicStorage<T, C, I> {
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     pub fn new(
         capacity: usize,
     ) -> (
-        diy::Producer<Ptr<DynamicStorage<T, A, I>>>,
-        diy::Consumer<Ptr<DynamicStorage<T, A, I>>>,
+        diy::Producer<C, Ptr<C, DynamicStorage<T, C, I>>>,
+        diy::Consumer<C, Ptr<C, DynamicStorage<T, C, I>>>,
     ) {
-        let capacity = Addressing::from_u8(A).update_capacity(capacity);
+        let capacity = update_capacity::<C>(capacity);
         Ptr::new(Self {
             indices: I::INIT,
             flags: AtomicU8::new(0),
@@ -253,19 +256,25 @@ impl<T, const A: u8, I: Indices> DynamicStorage<T, A, I> {
     }
 }
 
-impl<T, const A: u8, I: Indices> PartialEq for DynamicStorage<T, A, I> {
+impl<T, const C: u8, I: Indices> PartialEq for DynamicStorage<T, C, I> {
     fn eq(&self, other: &Self) -> bool {
         core::ptr::eq(self, other)
     }
 }
 
-impl<T, const A: u8, I: Indices> Eq for DynamicStorage<T, A, I> {}
+impl<T, const C: u8, I: Indices> Eq for DynamicStorage<T, C, I> {}
+
+impl<T, const C: u8, I: Indices> Capacity for DynamicStorage<T, C, I> {
+    #[inline(always)]
+    fn capacity(&self) -> usize {
+        self.capacity
+    }
+}
 
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound
-unsafe impl<T, const A: u8, I: Indices> Storage for DynamicStorage<T, A, I> {
+unsafe impl<T, const C: u8, I: Indices> Storage<C> for DynamicStorage<T, C, I> {
     type Item = T;
     type Indices = I;
-    const ADDR: Addressing = Addressing::from_u8(A);
 
     #[inline(always)]
     fn data_ptr(&self) -> *mut Self::Item {
@@ -276,15 +285,12 @@ unsafe impl<T, const A: u8, I: Indices> Storage for DynamicStorage<T, A, I> {
     fn indices(&self) -> &Self::Indices {
         &self.indices
     }
+}
 
+impl<T, const C: u8, I: Indices> Flags for DynamicStorage<T, C, I> {
     #[inline(always)]
     fn flags(&self) -> &AtomicU8 {
         &self.flags
-    }
-
-    #[inline(always)]
-    fn capacity(&self) -> usize {
-        self.capacity
     }
 }
 
@@ -321,7 +327,7 @@ unsafe impl Indices for CachePaddedIndices {
     }
 }
 
-impl<T, const A: u8, I: Indices> Drop for DynamicStorage<T, A, I> {
+impl<T, const C: u8, I: Indices> Drop for DynamicStorage<T, C, I> {
     /// Drops all non-empty slots.
     fn drop(&mut self) {
         // SAFETY: this is called exactly once, no references to any elements exist anymore.
