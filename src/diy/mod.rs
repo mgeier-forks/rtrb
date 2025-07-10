@@ -13,26 +13,6 @@ pub const HAS_CONSUMER: u8 = 0b01000000;
 // NB: This overlaps with HAS_PRODUCER, they are never used at the same time.
 pub const IS_ABANDONED: u8 = 0b10000000;
 
-pub trait Flags {
-    // TODO: make "unsafe"?
-    // TODO: make "container" that contains Storage and other traits without exposing them.
-    fn flags(&self) -> &AtomicU8;
-
-    /// Do whatever is needed when the `Producer` is dropped.
-    ///
-    /// # Safety
-    ///
-    /// This can only be called in `Producer::drop()`.
-    unsafe fn drop_producer(&self) {}
-
-    /// Do whatever is needed when the `Consumer` is dropped.
-    ///
-    /// # Safety
-    ///
-    /// This can only be called in `Consumer::drop()`.
-    unsafe fn drop_consumer(&self) {}
-}
-
 /// Indices.
 ///
 /// # Safety
@@ -172,7 +152,25 @@ pub unsafe trait Storage<const C: u8>: IndexCalculation<C> {
     // TODO: make sure head/tail are not exposed to the user?
     fn indices(&self) -> &Self::Indices;
 
+    // TODO: make "unsafe"?
+    // TODO: make "container" that contains Storage and other traits without exposing them.
+    fn flags(&self) -> &AtomicU8;
+
     fn data_ptr(&self) -> *mut Self::Item;
+
+    /// Do whatever is needed when the `Producer` is dropped.
+    ///
+    /// # Safety
+    ///
+    /// This can only be called in `Producer::drop()`.
+    unsafe fn drop_producer(&self) {}
+
+    /// Do whatever is needed when the `Consumer` is dropped.
+    ///
+    /// # Safety
+    ///
+    /// This can only be called in `Consumer::drop()`.
+    unsafe fn drop_consumer(&self) {}
 
     /// Drop all elements that are still in the buffer.
     ///
@@ -245,14 +243,14 @@ where
 /// ```
 // SAFETY: After moving a producer to another thread, there is still only a single thread
 // that can access the producer side of the queue.
-unsafe impl<const C: u8, S: Storage<C>, R: Deref<Target=S>> Send for Producer<C, R>
+unsafe impl<const C: u8, S: Storage<C>, R: Deref<Target = S>> Send for Producer<C, R>
 where
     S: Sync,
     S::Item: Send,
 {
 }
 
-impl<const C: u8, S: Storage<C>, R: Deref> Producer<C, R> {
+impl<const C: u8, S: Storage<C>, R: Deref<Target=S>> Producer<C, R> {
     /// Create a new producer.
     ///
     /// # Safety
@@ -270,7 +268,7 @@ impl<const C: u8, S: Storage<C>, R: Deref> Producer<C, R> {
 
     pub fn push(&mut self, value: S::Item) -> Result<(), PushError<S::Item>> {
         if let Some(tail) = self.next_tail() {
-            let b = self.buffer;
+            let b = &self.buffer;
             // SAFETY: tail points to an empty slot.
             unsafe { b.slot_ptr(tail).write(value) };
             let tail = b.increment1(tail);
@@ -283,7 +281,7 @@ impl<const C: u8, S: Storage<C>, R: Deref> Producer<C, R> {
     }
 
     pub fn slots(&self) -> usize {
-        let b = self.buffer;
+        let b = &self.buffer;
         let head = b.indices().head().load(Ordering::Acquire);
         self.cached_head.set(head);
         b.capacity() - b.distance(head, self.cached_tail.get())
@@ -305,26 +303,25 @@ impl<const C: u8, S: Storage<C>, R: Deref> Producer<C, R> {
     fn next_tail(&self) -> Option<usize> {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
-        let b = self.buffer;
+        let b = &self.buffer;
         // Check if the queue is *possibly* full.
         if b.distance(head, tail) == b.capacity() {
             // Refresh the head ...
             let head = b.indices().head().load(Ordering::Acquire);
+            self.cached_head.set(head);
             // ... and check if it's *really* full.
             if b.distance(head, tail) == b.capacity() {
                 // `head` didn't change, queue is full.
                 return None;
             }
-            // `head` did change.
-            self.cached_head.set(head);
         }
         Some(tail)
     }
 }
 
-impl<R: Deref> Drop for Producer<R>
+impl<const C: u8, R: Deref> Drop for Producer<C, R>
 where
-    R::Target: Flags,
+    R::Target: Storage<C>,
 {
     fn drop(&mut self) {
         // SAFETY: This is only called in Producer::drop().
@@ -388,7 +385,7 @@ impl<const C: u8, S: Storage<C>, R: Deref<Target = S>> Consumer<C, R> {
 
     pub fn pop(&mut self) -> Result<S::Item, PopError> {
         if let Some(head) = self.next_head() {
-            let b = self.buffer;
+            let b = &self.buffer;
             // SAFETY: head points to an initialized slot.
             let value = unsafe { b.slot_ptr(head).read() };
             let head = b.increment1(head);
@@ -410,7 +407,7 @@ impl<const C: u8, S: Storage<C>, R: Deref<Target = S>> Consumer<C, R> {
     }
 
     pub fn slots(&self) -> usize {
-        let b = self.buffer;
+        let b = &self.buffer;
         let tail = b.indices().tail().load(Ordering::Acquire);
         self.cached_tail.set(tail);
         b.distance(self.cached_head.get(), tail)
@@ -443,13 +440,12 @@ impl<const C: u8, S: Storage<C>, R: Deref<Target = S>> Consumer<C, R> {
         if head == tail {
             // Refresh the tail ...
             let tail = self.buffer.indices().tail().load(Ordering::Acquire);
+            self.cached_tail.set(tail);
             // ... and check if it's *really* empty.
             if head == tail {
                 // `tail` didn't change, queue is empty.
                 return None;
             }
-            // `tail` did change.
-            self.cached_tail.set(tail);
         }
         Some(head)
     }
@@ -563,24 +559,6 @@ unsafe impl<T: Send, const N: usize, const C: u8, I: Indices + Send> Send
 {
 }
 
-
-impl<T, const N: usize, const C: u8, I: Indices> Flags for ArrayStorage<T, N, C, I> {
-    #[inline(always)]
-    fn flags(&self) -> &AtomicU8 {
-        &self.flags
-    }
-
-    #[inline(always)]
-    unsafe fn drop_producer(&self) {
-        let _ = self.flags().fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
-    }
-
-    #[inline(always)]
-    unsafe fn drop_consumer(&self) {
-        let _ = self.flags().fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
-    }
-}
-
 impl<T, const N: usize, const C: u8, I: Indices> ArrayStorage<T, N, C, I> {
     pub const fn new() -> Self {
         const {
@@ -646,10 +624,17 @@ impl<T, const N: usize, const C: u8, I: Indices> Capacity for ArrayStorage<T, N,
     }
 }
 
+impl<T, const N: usize, const C: u8, I: Indices> IndexCalculation<C> for ArrayStorage<T, N, C, I> {}
+
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound
 unsafe impl<T, const N: usize, const C: u8, I: Indices> Storage<C> for ArrayStorage<T, N, C, I> {
     type Item = T;
     type Indices = I;
+
+    #[inline(always)]
+    fn flags(&self) -> &AtomicU8 {
+        &self.flags
+    }
 
     #[inline(always)]
     fn data_ptr(&self) -> *mut Self::Item {
@@ -660,6 +645,16 @@ unsafe impl<T, const N: usize, const C: u8, I: Indices> Storage<C> for ArrayStor
     #[inline(always)]
     fn indices(&self) -> &Self::Indices {
         &self.indices
+    }
+
+    #[inline(always)]
+    unsafe fn drop_producer(&self) {
+        let _ = self.flags().fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
+    }
+
+    #[inline(always)]
+    unsafe fn drop_consumer(&self) {
+        let _ = self.flags().fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
     }
 }
 

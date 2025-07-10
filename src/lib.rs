@@ -79,7 +79,7 @@ pub mod mmap;
 use chunks::WriteChunkUninit;
 */
 
-use diy::{update_capacity, Calc, Capacity, Flags, Indices, Storage};
+use diy::{update_capacity, Calc, Capacity, IndexCalculation, Indices, Storage};
 
 // TODO: use errors::* or something?
 pub use diy::{PeekError, PopError, PushError};
@@ -129,14 +129,14 @@ impl<T> RingBuffer<T> {
 
 // TODO: move to different module?
 #[derive(Debug, PartialEq, Eq)]
-pub struct Ptr<S> {
+pub struct Ptr<const C: u8, S: Storage<C>> {
     ptr: NonNull<S>,
     _marker: PhantomData<S>,
 }
 
-impl<const C: u8, S: Storage<C>> Ptr<S>
+impl<const C: u8, S: Storage<C>> Ptr<C, S>
 {
-    fn new(storage: S) -> (diy::Producer<Self>, diy::Consumer<Self>) {
+    fn new(storage: S) -> (diy::Producer<C, Self>, diy::Consumer<C, Self>) {
         // NB: We are assuming that IS_ABANDONED is unset.
         let ptr = Box::leak(Box::new(storage));
         // SAFETY: Pointer from Box is always non-null.
@@ -159,7 +159,7 @@ impl<const C: u8, S: Storage<C>> Ptr<S>
     }
 }
 
-impl<S> Drop for Ptr<S> {
+impl<const C: u8, S: Storage<C>> Drop for Ptr<C, S> {
     fn drop(&mut self) {
         // SAFETY: must point to initialized Storage.
         let flags: &AtomicU8 = unsafe { self.ptr.as_ref().flags() };
@@ -202,7 +202,7 @@ unsafe fn drop_slow<S>(ptr: NonNull<S>) {
     }
 }
 
-impl<const C: u8, S: Storage<C>> Deref for Ptr<S> {
+impl<const C: u8, S: Storage<C>> Deref for Ptr<C, S> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
@@ -271,6 +271,9 @@ impl<T, const C: u8, I: Indices> Capacity for DynamicStorage<T, C, I> {
     }
 }
 
+// TODO: blanket implementation for T: Capacity?
+impl<T, const C: u8, I: Indices> IndexCalculation<C> for DynamicStorage<T, C, I> {}
+
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound
 unsafe impl<T, const C: u8, I: Indices> Storage<C> for DynamicStorage<T, C, I> {
     type Item = T;
@@ -285,9 +288,7 @@ unsafe impl<T, const C: u8, I: Indices> Storage<C> for DynamicStorage<T, C, I> {
     fn indices(&self) -> &Self::Indices {
         &self.indices
     }
-}
 
-impl<T, const C: u8, I: Indices> Flags for DynamicStorage<T, C, I> {
     #[inline(always)]
     fn flags(&self) -> &AtomicU8 {
         &self.flags
@@ -361,7 +362,9 @@ impl<T, const C: u8, I: Indices> Drop for DynamicStorage<T, C, I> {
 /// When the `Producer` is dropped after the [`Consumer`] has already been dropped,
 /// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Producer<T>(diy::Producer<Ptr<RingBufferInner<T>>>);
+pub struct Producer<T>(diy::Producer<C, Ptr<C, RingBufferInner<T>>>);
+
+const C: u8 = Calc::Twice as u8;
 
 impl<T> Producer<T> {
     /// Attempts to push an element into the queue.
@@ -544,7 +547,7 @@ impl<T> Producer<T> {
 /// When the `Consumer` is dropped after the [`Producer`] has already been dropped,
 /// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Consumer<T>(diy::Consumer<Ptr<RingBufferInner<T>>>);
+pub struct Consumer<T>(diy::Consumer<C, Ptr<C, RingBufferInner<T>>>);
 
 impl<T> Consumer<T> {
     /// Attempts to pop an element from the queue.
@@ -779,9 +782,9 @@ impl<T: Copy> CopyToUninit<T> for [T] {
 
 /// Ring buffer with power-of-two storage.
 // TODO: change to newtype, add docs
-pub type RingBuffer2<T> = DynamicStorage<T, { Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;
+pub type RingBuffer2<T> = DynamicStorage<T, { Calc::TwicePowerOfTwo as u8 }, CachePaddedIndices>;
 
 // TODO: Remove because power-of-two optimizations? Might be done automatically by the compiler?
 // TODO: verify
 pub type StaticRingBuffer2<T, const N: usize> =
-    diy::ArrayStorage<T, N, { Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;
+    diy::ArrayStorage<T, N, { Calc::TwicePowerOfTwo as u8 }, CachePaddedIndices>;
