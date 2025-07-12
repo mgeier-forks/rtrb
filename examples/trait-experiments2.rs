@@ -9,7 +9,6 @@ pub trait Calc {
     //const INIT: Self;
 }
 
-//trait IndexCalculation: Capacity {
 pub trait IndexCalculation {
     fn increment1(&self, pos: usize) -> usize;
 }
@@ -37,10 +36,8 @@ impl Calc for DoubleLengthPowerOfTwo {
     //const INIT: Self = Self;
 }
 
-pub trait CapacityHolder {}
 pub struct ConstCapacity<const N: usize>;
-impl<const N: usize> CapacityHolder for ConstCapacity<N> {}
-impl<const N: usize, C: Calc> Capacity for CalcHolder<C, ConstCapacity<N>> {
+impl<const N: usize> Capacity for ConstCapacity<N> {
     fn capacity(&self) -> usize {
         N
     }
@@ -48,18 +45,23 @@ impl<const N: usize, C: Calc> Capacity for CalcHolder<C, ConstCapacity<N>> {
 pub struct DynamicCapacity {
     capacity: usize,
 }
-impl CapacityHolder for DynamicCapacity {}
-impl<C: Calc> Capacity for CalcHolder<C, DynamicCapacity> {
+impl Capacity for DynamicCapacity {
     fn capacity(&self) -> usize {
-        self.cap.capacity
+        self.capacity
     }
 }
-pub struct CalcHolder<C: Calc, H: CapacityHolder> {
+pub struct CalcHolder<C: Calc, H: Capacity> {
     _phantom: PhantomData<C>,
     cap: H,
 }
 
-impl<H: CapacityHolder> IndexCalculation for CalcHolder<DoubleLength, H>
+impl<C: Calc, H: Capacity> Capacity for CalcHolder<C, H> {
+    fn capacity(&self) -> usize {
+        self.cap.capacity()
+    }
+}
+
+impl<H: Capacity> IndexCalculation for CalcHolder<DoubleLength, H>
 where
     Self: Capacity,
 {
@@ -73,7 +75,7 @@ where
     }
 }
 
-impl<H: CapacityHolder> IndexCalculation for CalcHolder<DoubleLengthPowerOfTwo, H> {
+impl<H: Capacity> IndexCalculation for CalcHolder<DoubleLengthPowerOfTwo, H> {
     #[inline]
     fn increment1(&self, pos: usize) -> usize {
         pos.wrapping_add(1)
