@@ -22,18 +22,16 @@ const fn update_capacity<C: Calc>(capacity: usize) -> usize {
     }
 }
 
-struct DoubleLength;
+struct DoubleRange;
 
-impl Calc for DoubleLength {
+impl Calc for DoubleRange {
     const POW2: bool = false;
-    //const INIT: Self = Self;
 }
 
-struct DoubleLengthPowerOfTwo;
+struct DoubleRangePowerOfTwo;
 
-impl Calc for DoubleLengthPowerOfTwo {
+impl Calc for DoubleRangePowerOfTwo {
     const POW2: bool = true;
-    //const INIT: Self = Self;
 }
 
 pub struct ConstCapacity<const N: usize>;
@@ -42,26 +40,38 @@ impl<const N: usize> Capacity for ConstCapacity<N> {
         N
     }
 }
-pub struct DynamicCapacity {
-    capacity: usize,
+pub struct DynamicCapacity(usize);
+impl DynamicCapacity {
+    pub fn new(capacity: usize) -> Self {
+        Self(capacity)
+    }
 }
 impl Capacity for DynamicCapacity {
     fn capacity(&self) -> usize {
-        self.capacity
+        self.0
     }
 }
-pub struct CalcHolder<C: Calc, H: Capacity> {
+pub struct Calculator<C: Calc, H: Capacity> {
     _phantom: PhantomData<C>,
-    cap: H,
+    c: H,
 }
 
-impl<C: Calc, H: Capacity> Capacity for CalcHolder<C, H> {
-    fn capacity(&self) -> usize {
-        self.cap.capacity()
+impl<C: Calc, H: Capacity> Calculator<C, H> {
+    pub const fn new(c: H) -> Self {
+        Self {
+            _phantom: PhantomData,
+            c,
+        }
     }
 }
 
-impl<H: Capacity> IndexCalculation for CalcHolder<DoubleLength, H>
+impl<C: Calc, H: Capacity> Capacity for Calculator<C, H> {
+    fn capacity(&self) -> usize {
+        self.c.capacity()
+    }
+}
+
+impl<H: Capacity> IndexCalculation for Calculator<DoubleRange, H>
 where
     Self: Capacity,
 {
@@ -75,7 +85,7 @@ where
     }
 }
 
-impl<H: Capacity> IndexCalculation for CalcHolder<DoubleLengthPowerOfTwo, H> {
+impl<H: Capacity> IndexCalculation for Calculator<DoubleRangePowerOfTwo, H> {
     #[inline]
     fn increment1(&self, pos: usize) -> usize {
         pos.wrapping_add(1)
@@ -83,9 +93,9 @@ impl<H: Capacity> IndexCalculation for CalcHolder<DoubleLengthPowerOfTwo, H> {
 }
 
 pub trait Storage {
-    type Calc: IndexCalculation + Capacity;
+    type Calculator: IndexCalculation + Capacity;
 
-    fn calc(&self) -> &Self::Calc;
+    fn calc(&self) -> &Self::Calculator;
 
     fn drop_all_elements(&self, value: usize) -> usize {
         self.calc().increment1(value)
@@ -93,35 +103,31 @@ pub trait Storage {
 }
 
 pub struct DynamicStorage<C: Calc> {
-    calc: CalcHolder<C, DynamicCapacity>,
+    calc: Calculator<C, DynamicCapacity>,
 }
 
 impl<C: Calc> DynamicStorage<C> {
     fn new(capacity: usize) -> Self {
         let capacity = update_capacity::<C>(capacity);
         Self {
-            // TODO: use CalcHolder::new()?
-            calc: CalcHolder {
-                cap: DynamicCapacity { capacity },
-                _phantom: PhantomData,
-            },
+            calc: Calculator::new(DynamicCapacity::new(capacity)),
         }
     }
 }
 
 impl<C: Calc> Storage for DynamicStorage<C>
 where
-    CalcHolder<C, DynamicCapacity>: IndexCalculation,
+    Calculator<C, DynamicCapacity>: IndexCalculation,
 {
-    type Calc = CalcHolder<C, DynamicCapacity>;
+    type Calculator = Calculator<C, DynamicCapacity>;
 
-    fn calc(&self) -> &Self::Calc {
+    fn calc(&self) -> &Self::Calculator {
         &self.calc
     }
 }
 
 pub struct ArrayStorage<const N: usize, C: Calc> {
-    calc: CalcHolder<C, ConstCapacity<N>>,
+    calc: Calculator<C, ConstCapacity<N>>,
 }
 
 impl<const N: usize, C: Calc> ArrayStorage<N, C> {
@@ -133,21 +139,18 @@ impl<const N: usize, C: Calc> ArrayStorage<N, C> {
             );
         }
         Self {
-            calc: CalcHolder {
-                cap: ConstCapacity,
-                _phantom: PhantomData,
-            },
+            calc: Calculator::new(ConstCapacity),
         }
     }
 }
 
 impl<const N: usize, C: Calc> Storage for ArrayStorage<N, C>
 where
-    CalcHolder<C, ConstCapacity<N>>: IndexCalculation,
+    Calculator<C, ConstCapacity<N>>: IndexCalculation,
 {
-    type Calc = CalcHolder<C, ConstCapacity<N>>;
+    type Calculator = Calculator<C, ConstCapacity<N>>;
 
-    fn calc(&self) -> &Self::Calc {
+    fn calc(&self) -> &Self::Calculator {
         &self.calc
     }
 }
@@ -169,10 +172,20 @@ impl<S: Storage> Producer<S> {
 }
 
 fn main() {
-    let p = Producer::new(DynamicStorage::<DoubleLength>::new(14));
+    let p = Producer::new(DynamicStorage::<DoubleRange>::new(14));
     let n = 27;
-    println!("increment {} (capacity {}) -> {}", n, p.capacity(), p.push(n));
+    println!(
+        "increment {} (capacity {}) -> {}",
+        n,
+        p.capacity(),
+        p.push(n)
+    );
 
-    let p = Producer::new(ArrayStorage::<16, DoubleLengthPowerOfTwo>::new());
-    println!("increment {} (capacity {}) -> {}", n, p.capacity(), p.push(n));
+    let p = Producer::new(ArrayStorage::<16, DoubleRangePowerOfTwo>::new());
+    println!(
+        "increment {} (capacity {}) -> {}",
+        n,
+        p.capacity(),
+        p.push(n)
+    );
 }
