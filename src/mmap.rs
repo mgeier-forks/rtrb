@@ -32,7 +32,7 @@ unsafe impl<T: Send, const A: u8, I: Indices + Sync> Sync for MmapStorage<T, A, 
 // (a multiple of (page size / size of `T`)),
 // so `PowerOfTwoAddressing` probably makes most sense.
 impl<T, const A: u8, I: Indices> MmapStorage<T, A, I> {
-    #[allow(clippy::new_ret_no_self)]
+    #[allow(clippy::new_ret_no_self, clippy::type_complexity)]
     pub fn new(
         capacity: usize,
     ) -> (
@@ -40,6 +40,7 @@ impl<T, const A: u8, I: Indices> MmapStorage<T, A, I> {
         crate::diy::Consumer<Ptr<MmapStorage<T, A, I>>>,
     ) {
         // TODO: what if capacity is 0?
+        // SAFETY: If `libc` is not buggy, this should be safe.
         let pagesize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
         assert_ne!(pagesize, -1);
         let size_of_t = core::mem::size_of::<T>();
@@ -51,6 +52,9 @@ impl<T, const A: u8, I: Indices> MmapStorage<T, A, I> {
         assert_eq!(capacity, Calc::from_u8(A).update_capacity(capacity));
         assert_eq!(capacity, capacity.next_power_of_two());
         let len = capacity * core::mem::size_of::<T>();
+        // SAFETY:
+        // - string is null-terminated
+        // - pointers, lengths and other arguments are valid
         let data_ptr: *mut T = unsafe {
             use libc::*;
             let fd = memfd_create(
@@ -93,7 +97,9 @@ impl<T, const A: u8, I: Indices> MmapStorage<T, A, I> {
             assert_eq!(r, 0); // TODO: check for errno?
             ptr_one.cast()
         };
-        assert!(data_ptr.is_aligned());
+        #[allow(clippy::incompatible_msrv)] // Rust 1.79
+        let is_aligned = data_ptr.is_aligned();
+        assert!(is_aligned);
         Ptr::new(Self {
             indices: I::INIT,
             flags: AtomicU8::new(0),

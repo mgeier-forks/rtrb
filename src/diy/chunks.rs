@@ -29,16 +29,9 @@ where
 // It is therefore safe to move it to another thread.
 unsafe impl<S: Storage, R: Deref<Target = S>> Send for WriteChunkUninit<'_, R> where S::Item: Send {}
 
-impl<R: Deref> WriteChunkUninit<'_, R>
-where
-    R::Target: Storage,
-{
-    pub fn as_mut_slices(
-        &mut self,
-    ) -> (
-        &mut [MaybeUninit<<R::Target as Storage>::Item>],
-        &mut [MaybeUninit<<R::Target as Storage>::Item>],
-    ) {
+impl<S: Storage + ?Sized, R: Deref<Target = S>> WriteChunkUninit<'_, R> {
+    #[allow(clippy::type_complexity)]
+    pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<S::Item>], &mut [MaybeUninit<S::Item>]) {
         // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit().
         unsafe {
             (
@@ -48,12 +41,18 @@ where
         }
     }
 
+    /// # Safety
+    ///
+    /// TODO: refer to rtrb::RingBuffer
     pub unsafe fn commit(self, n: usize) {
         assert!(n <= self.len(), "cannot commit more than chunk size");
         // SAFETY: Delegated to the caller.
         unsafe { self.commit_unchecked(n) };
     }
 
+    /// # Safety
+    ///
+    /// TODO: refer to rtrb::RingBuffer
     pub unsafe fn commit_all(self) {
         let slots = self.len();
         // SAFETY: Delegated to the caller.
@@ -125,10 +124,7 @@ pub struct WriteChunk<'a, R: Deref>(Option<WriteChunkUninit<'a, R>>)
 where
     R::Target: Storage;
 
-impl<R: Deref> Drop for WriteChunk<'_, R>
-where
-    R::Target: Storage,
-{
+impl<S: Storage + ?Sized, R: Deref<Target = S>> Drop for WriteChunk<'_, R> {
     fn drop(&mut self) {
         // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
         if let Some(mut chunk) = self.0.take() {

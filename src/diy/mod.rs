@@ -550,11 +550,13 @@ pub struct ArrayStorage<T, const N: usize, const C: u8, I: Indices> {
 }
 
 /// `T` is not `Sync` because we never share it across threads.
+// SAFETY: Storage can be shared, Producer/Consumer make sure that T is not shared.
 unsafe impl<T: Send, const N: usize, const C: u8, I: Indices + Sync> Sync
     for ArrayStorage<T, N, C, I>
 {
 }
 
+// SAFETY: Producer/Consumer make sure that access to slots is mutually exclusive.
 unsafe impl<T: Send, const N: usize, const C: u8, I: Indices + Send> Send
     for ArrayStorage<T, N, C, I>
 {

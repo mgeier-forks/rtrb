@@ -233,7 +233,7 @@ unsafe impl<T: Send, const C: u8, I: Indices + Sync> Sync for DynamicStorage<T, 
 // NB: DynamicStorage doesn't need to be `Send` because it is never moved.
 
 impl<T, const C: u8, I: Indices> DynamicStorage<T, C, I> {
-    #[allow(clippy::new_ret_no_self)]
+    #[allow(clippy::new_ret_no_self, clippy::type_complexity)]
     #[must_use]
     pub fn new(
         capacity: usize,
