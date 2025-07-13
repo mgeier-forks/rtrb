@@ -166,7 +166,7 @@
 
 use core::{fmt, mem::MaybeUninit};
 
-use crate::{diy::Addressing, CachePaddedIndices, Consumer, DynamicStorage, Producer, Ptr};
+use crate::{diy::Calc, CachePaddedIndices, Consumer, DynamicStorage, Producer, Ptr};
 
 // This is used in the documentation.
 #[allow(unused_imports)]
@@ -275,7 +275,7 @@ impl<T> Consumer<T> {
 pub struct WriteChunk<'a, T>(
     crate::diy::chunks::WriteChunk<
         'a,
-        Ptr<DynamicStorage<T, { Addressing::Tight as u8 }, CachePaddedIndices>>,
+        Ptr<DynamicStorage<T, { Calc::DoubleSize as u8 }, CachePaddedIndices>>,
     >,
 );
 
@@ -348,7 +348,7 @@ where
 pub struct WriteChunkUninit<'a, T>(
     crate::diy::chunks::WriteChunkUninit<
         'a,
-        Ptr<DynamicStorage<T, { Addressing::Tight as u8 }, CachePaddedIndices>>,
+        Ptr<DynamicStorage<T, { Calc::DoubleSize as u8 }, CachePaddedIndices>>,
     >,
 );
 
@@ -481,7 +481,7 @@ impl<T> WriteChunkUninit<'_, T> {
 pub struct ReadChunk<'a, T>(
     crate::diy::chunks::ReadChunk<
         'a,
-        Ptr<DynamicStorage<T, { Addressing::Tight as u8 }, CachePaddedIndices>>,
+        Ptr<DynamicStorage<T, { Calc::DoubleSize as u8 }, CachePaddedIndices>>,
     >,
 );
 
@@ -621,7 +621,7 @@ impl<'a, T> IntoIterator for ReadChunk<'a, T> {
 pub struct ReadChunkIntoIter<'a, T>(
     crate::diy::chunks::ReadChunkIntoIter<
         'a,
-        Ptr<DynamicStorage<T, { Addressing::Tight as u8 }, CachePaddedIndices>>,
+        Ptr<DynamicStorage<T, { Calc::DoubleSize as u8 }, CachePaddedIndices>>,
     >,
 );
 

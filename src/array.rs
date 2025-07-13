@@ -3,11 +3,11 @@
 //! no dynamic allocation, but cache-padded indices
 
 use crate::{
-    diy::{Addressing, ArrayStorage},
+    diy::{Calc, ArrayStorage},
     CachePaddedIndices, PeekError, PopError, PushError,
 };
 
-type Inner<T, const N: usize> = ArrayStorage<T, N, { Addressing::Tight as u8 }, CachePaddedIndices>;
+type Inner<T, const N: usize> = ArrayStorage<T, N, { Calc::DoubleSize as u8 }, CachePaddedIndices>;
 
 #[derive(Debug)]
 pub struct RingBuffer<T, const N: usize>(Inner<T, N>);

@@ -1,14 +1,14 @@
 use core::{convert::TryInto, marker::PhantomData, sync::atomic::AtomicU8};
 
 use crate::{
-    diy::{Addressing, Indices, Storage},
+    diy::{Calc, IndexCalculation, Indices, Storage},
     CachePaddedIndices, Ptr,
 };
 
 // TODO: move MmapStorage to "diy" module?
 
 #[derive(Debug)]
-pub struct MmapStorage<T, const A: u8, I: Indices> {
+pub struct MmapStorage<T, const C: u8, I: Indices> {
     indices: I,
 
     flags: AtomicU8,
@@ -48,7 +48,7 @@ impl<T, const A: u8, I: Indices> MmapStorage<T, A, I> {
         assert_eq!(rem, 0);
         let pages = (capacity / elements_per_page) + (capacity % elements_per_page > 0) as usize;
         let capacity = pages * elements_per_page;
-        assert_eq!(capacity, Addressing::from_u8(A).update_capacity(capacity));
+        assert_eq!(capacity, Calc::from_u8(A).update_capacity(capacity));
         assert_eq!(capacity, capacity.next_power_of_two());
         let len = capacity * core::mem::size_of::<T>();
         let data_ptr: *mut T = unsafe {
@@ -122,13 +122,19 @@ impl<T, const A: u8, I: Indices> Drop for MmapStorage<T, A, I> {
     }
 }
 
+impl<T, const C: u8, I: Indices> IndexCalculation for MmapStorage<T, C, I> {
+    const CALC: Calc = Calc::from_u8(C);
+
+    fn capacity(&self) -> usize {
+        self.capacity
+    }
+}
+
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound
-unsafe impl<T, const A: u8, I: Indices> Storage for MmapStorage<T, A, I> {
+unsafe impl<T, const C: u8, I: Indices> Storage for MmapStorage<T, C, I> {
     type Item = T;
     type Indices = I;
-    const ADDR: Addressing = Addressing::from_u8(A);
 
-    #[inline]
     fn indices(&self) -> &Self::Indices {
         &self.indices
     }
@@ -137,15 +143,9 @@ unsafe impl<T, const A: u8, I: Indices> Storage for MmapStorage<T, A, I> {
         &self.flags
     }
 
-    #[inline]
     fn data_ptr(&self) -> *mut Self::Item {
         self.data_ptr
     }
-
-    #[inline]
-    fn capacity(&self) -> usize {
-        self.capacity
-    }
 }
 
-pub type MmapRingBuffer<T> = MmapStorage<T, { Addressing::PowerOfTwo as u8 }, CachePaddedIndices>;
+pub type MmapRingBuffer<T> = MmapStorage<T, { Calc::PowerOfTwo as u8 }, CachePaddedIndices>;

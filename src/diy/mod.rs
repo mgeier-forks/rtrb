@@ -4,7 +4,7 @@ use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
-//pub mod chunks;
+pub mod chunks;
 
 // TODO: separate module for traits?
 

@@ -64,20 +64,18 @@ use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 mod cache_padded;
 use cache_padded::CachePadded;
 
-//pub mod chunks;
+pub mod chunks;
 pub mod diy;
 
-//pub mod array;
-//pub mod embedded;
+pub mod array;
+pub mod embedded;
 
 #[cfg(feature = "mmap")]
 pub mod mmap;
 
-/*
 // This is used in the documentation.
 #[allow(unused_imports)]
 use chunks::WriteChunkUninit;
-*/
 
 use diy::{Calc, IndexCalculation, Indices, Storage};
 
@@ -779,9 +777,9 @@ impl<T: Copy> CopyToUninit<T> for [T] {
 
 /// Ring buffer with power-of-two storage.
 // TODO: change to newtype, add docs
-pub type RingBuffer2<T> = DynamicStorage<T, { Calc::TwicePowerOfTwo as u8 }, CachePaddedIndices>;
+pub type RingBuffer2<T> = DynamicStorage<T, { Calc::PowerOfTwo as u8 }, CachePaddedIndices>;
 
 // TODO: Remove because power-of-two optimizations? Might be done automatically by the compiler?
 // TODO: verify
 pub type StaticRingBuffer2<T, const N: usize> =
-    diy::ArrayStorage<T, N, { Calc::TwicePowerOfTwo as u8 }, CachePaddedIndices>;
+    diy::ArrayStorage<T, N, { Calc::PowerOfTwo as u8 }, CachePaddedIndices>;

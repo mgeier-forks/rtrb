@@ -3,7 +3,7 @@
 //! no cache padding, no dynamic allocation
 //! power-of-two optimizations might be done automatically by the compiler? TODO: verify
 
-use crate::diy::{Addressing, ArrayStorage, TightIndices};
+use crate::diy::{Calc, ArrayStorage, TightIndices};
 
 /// TODO: move this to producer()/consumer() docs?
 ///
@@ -23,4 +23,4 @@ use crate::diy::{Addressing, ArrayStorage, TightIndices};
 /// ```
 // TODO: change to newtype, add more docs
 pub type RingBuffer<T, const N: usize> =
-    ArrayStorage<T, N, { Addressing::Tight as u8 }, TightIndices>;
+    ArrayStorage<T, N, { Calc::DoubleSize as u8 }, TightIndices>;

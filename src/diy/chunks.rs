@@ -1,6 +1,6 @@
 use core::{marker::PhantomData, mem::MaybeUninit, ops::Deref, sync::atomic::Ordering};
 
-use super::{Consumer, Indices, Producer, Storage};
+use super::{Consumer, IndexCalculation as _, Indices, Producer, Storage};
 use crate::chunks::ChunkError;
 
 #[derive(PartialEq, Eq)]
@@ -62,7 +62,7 @@ where
 
     unsafe fn commit_unchecked(self, n: usize) -> usize {
         let p = self.producer;
-        let tail = R::Target::ADDR.increment(p.cached_tail.get(), n, p.buffer.capacity());
+        let tail = p.buffer.increment(p.cached_tail.get(), n);
         p.buffer.indices().tail().store(tail, Ordering::Release);
         p.cached_tail.set(tail);
         n
@@ -284,7 +284,7 @@ impl<S: Storage, R: Deref<Target = S>> ReadChunk<'_, R> {
             unsafe { self.second_ptr.add(i).drop_in_place() };
         }
         let c = self.consumer;
-        let head = S::ADDR.increment(c.cached_head.get(), n, c.buffer.capacity());
+        let head = c.buffer.increment(c.cached_head.get(), n);
         c.buffer.indices().head().store(head, Ordering::Release);
         c.cached_head.set(head);
         n
@@ -329,7 +329,7 @@ where
     fn drop(&mut self) {
         let c = self.chunk.consumer;
         let head =
-            R::Target::ADDR.increment(c.cached_head.get(), self.iterated, c.buffer.capacity());
+            c.buffer.increment(c.cached_head.get(), self.iterated);
         c.buffer.indices().head().store(head, Ordering::Release);
         c.cached_head.set(head);
     }
@@ -371,26 +371,27 @@ impl<S: Storage, R: Deref<Target = S>> core::iter::FusedIterator for ReadChunkIn
 
 impl<S: Storage, R: Deref<Target = S>> Producer<R> {
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, R>, ChunkError> {
+        let head = self.cached_head.get();
         let tail = self.cached_tail.get();
-        let capacity = self.buffer.capacity();
+        let b = &self.buffer;
         // Check if the queue has *possibly* not enough slots.
-        if capacity - S::ADDR.distance(self.cached_head.get(), tail, capacity) < n {
+        if b.capacity() - b.distance(head, tail) < n {
             // Refresh the head ...
-            let head = self.buffer.indices().head().load(Ordering::Acquire);
+            let head = b.indices().head().load(Ordering::Acquire);
             self.cached_head.set(head);
             // ... and check if there *really* are not enough slots.
-            let slots = capacity - S::ADDR.distance(head, tail, capacity);
+            let slots = b.capacity() - b.distance(head, tail);
             if slots < n {
                 return Err(ChunkError::TooFewSlots(slots));
             }
         }
-        let tail = S::ADDR.collapse_position(tail, capacity);
-        let first_len = n.min(capacity - tail);
+        let tail = b.collapse_position(tail);
+        let first_len = n.min(b.capacity() - tail);
         Ok(WriteChunkUninit {
             // SAFETY: tail has been updated to a valid position.
-            first_ptr: unsafe { self.buffer.data_ptr().add(tail) },
+            first_ptr: unsafe { b.data_ptr().add(tail) },
             first_len,
-            second_ptr: self.buffer.data_ptr(),
+            second_ptr: b.data_ptr(),
             second_len: n - first_len,
             producer: self,
         })
@@ -407,25 +408,26 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
 impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
     pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, R>, ChunkError> {
         let head = self.cached_head.get();
-        let capacity = self.capacity();
+        let tail = self.cached_tail.get();
+        let b = &self.buffer;
         // Check if the queue has *possibly* not enough slots.
-        if S::ADDR.distance(head, self.cached_tail.get(), capacity) < n {
+        if b.distance(head, tail) < n {
             // Refresh the tail ...
-            let tail = self.buffer.indices().tail().load(Ordering::Acquire);
+            let tail = b.indices().tail().load(Ordering::Acquire);
             self.cached_tail.set(tail);
             // ... and check if there *really* are not enough slots.
-            let slots = S::ADDR.distance(head, tail, capacity);
+            let slots = b.distance(head, tail);
             if slots < n {
                 return Err(ChunkError::TooFewSlots(slots));
             }
         }
-        let head = S::ADDR.collapse_position(head, capacity);
-        let first_len = n.min(capacity - head);
+        let head = b.collapse_position(head);
+        let first_len = n.min(b.capacity() - head);
         Ok(ReadChunk {
             // SAFETY: head has been updated to a valid position.
-            first_ptr: unsafe { self.buffer.data_ptr().add(head) },
+            first_ptr: unsafe { b.data_ptr().add(head) },
             first_len,
-            second_ptr: self.buffer.data_ptr(),
+            second_ptr: b.data_ptr(),
             second_len: n - first_len,
             consumer: self,
             _marker: PhantomData,
