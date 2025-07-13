@@ -84,7 +84,7 @@ pub use diy::{PeekError, PopError, PushError};
 use diy::IS_ABANDONED;
 
 // NB: non-public!
-type RingBufferInner<T> = DynamicStorage<T, { Calc::DoubleSize as u8 }, CachePaddedIndices>;
+type Inner<T> = DynamicStorage<T, { Calc::DoubleSize as u8 }, CachePaddedIndices>;
 
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
@@ -93,7 +93,7 @@ type RingBufferInner<T> = DynamicStorage<T, { Calc::DoubleSize as u8 }, CachePad
 ///
 /// *See also the [crate-level documentation](crate).*
 #[derive(Debug)]
-pub struct RingBuffer<T>(PhantomData<T>);
+pub struct RingBuffer<T>(PhantomData<Inner<T>>);
 
 impl<T> RingBuffer<T> {
     /// Creates a ring buffer with the given `capacity` and returns [`Producer`] and [`Consumer`].
@@ -116,9 +116,8 @@ impl<T> RingBuffer<T> {
     /// assert_eq!(producer.push(0.0f32), Ok(()));
     /// ```
     #[allow(clippy::new_ret_no_self)]
-    #[must_use]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
-        let (p, c) = RingBufferInner::<T>::new(capacity);
+        let (p, c) = Inner::<T>::new(capacity);
         (Producer(p), Consumer(c))
     }
 }
@@ -234,7 +233,6 @@ unsafe impl<T: Send, const C: u8, I: Indices + Sync> Sync for DynamicStorage<T, 
 impl<T, const C: u8, I: Indices> DynamicStorage<T, C, I> {
     // TODO: make unsafe? indices and flags must not be manipulated (via Storage trait).
     #[allow(clippy::new_ret_no_self, clippy::type_complexity)]
-    #[must_use]
     pub fn new(
         capacity: usize,
     ) -> (
@@ -352,7 +350,7 @@ impl<T, const C: u8, I: Indices> Drop for DynamicStorage<T, C, I> {
 /// all items remaining in the ring buffer will be dropped and the allocated memory
 /// will be deallocated.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Producer<T>(diy::Producer<Ptr<RingBufferInner<T>>>);
+pub struct Producer<T>(diy::Producer<Ptr<Inner<T>>>);
 
 impl<T> Producer<T> {
     /// Attempts to push an element into the queue.
@@ -532,7 +530,7 @@ impl<T> Producer<T> {
 /// all items remaining in the ring buffer will be dropped and the allocated memory
 /// will be deallocated.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Consumer<T>(diy::Consumer<Ptr<RingBufferInner<T>>>);
+pub struct Consumer<T>(diy::Consumer<Ptr<Inner<T>>>);
 
 impl<T> Consumer<T> {
     /// Attempts to pop an element from the queue.
