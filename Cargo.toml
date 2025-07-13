@@ -12,7 +12,7 @@ categories = ["concurrency", "data-structures", "no-std"]
 keywords = ["lock-free", "wait-free", "spsc", "queue"]
 license = "MIT OR Apache-2.0"
 edition = "2021"
-rust-version = "1.56"
+rust-version = "1.60"
 
 exclude = [
     ".*",
@@ -24,9 +24,7 @@ exclude = ["crossbeam", "performance-comparison"]
 [features]
 default = ["std"]
 std = []
-# "dep:" since Rust 1.60
-#mmap = ["dep:libc"]
-mmap = ["libc"]
+mmap = ["dep:libc"]
 
 [dependencies]
 libc = { version = "0.2", optional = true }

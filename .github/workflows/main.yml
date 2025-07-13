@@ -42,7 +42,7 @@ jobs:
   msrv:
     strategy:
       matrix:
-        rust-version: ["1.56"]
+        rust-version: ["1.60"]
     runs-on: ubuntu-latest
     steps:
       - name: Clone Git repository

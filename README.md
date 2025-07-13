@@ -107,7 +107,7 @@ You might have to adapt the `--target` option to your system (see e.g. `rustup s
 Minimum Supported `rustc` Version
 ---------------------------------
 
-This crate's minimum supported `rustc` version (MSRV) is `1.56`.
+This crate's minimum supported `rustc` version (MSRV) is `1.60`.
 The MSRV is not expected to be updated frequently, but if it is,
 there will be (at least) a *minor* version bump.
 
