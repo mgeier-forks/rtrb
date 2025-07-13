@@ -26,10 +26,6 @@ pub unsafe trait Indices {
     fn tail(&self) -> &AtomicUsize;
 }
 
-pub trait Capacity {
-    fn capacity(&self) -> usize;
-}
-
 /// Different index calculations.
 #[repr(u8)]
 pub enum Calc {
@@ -60,8 +56,10 @@ impl Calc {
     }
 }
 
-pub trait IndexCalculation: Capacity {
+pub trait IndexCalculation {
     const CALC: Calc;
+
+    fn capacity(&self) -> usize;
 
     #[inline]
     fn collapse_position(&self, pos: usize) -> usize {
@@ -252,7 +250,7 @@ where
 {
 }
 
-impl<S: Storage, R: Deref<Target=S>> Producer<R> {
+impl<S: Storage, R: Deref<Target = S>> Producer<R> {
     /// Create a new producer.
     ///
     /// # Safety
@@ -619,15 +617,13 @@ impl<T, const N: usize, const C: u8, I: Indices> PartialEq for ArrayStorage<T, N
 
 impl<T, const N: usize, const C: u8, I: Indices> Eq for ArrayStorage<T, N, C, I> {}
 
-impl<T, const N: usize, const C: u8, I: Indices> Capacity for ArrayStorage<T, N, C, I> {
+impl<T, const N: usize, const C: u8, I: Indices> IndexCalculation for ArrayStorage<T, N, C, I> {
+    const CALC: Calc = Calc::from_u8(C);
+
     #[inline(always)]
     fn capacity(&self) -> usize {
         N
     }
-}
-
-impl<T, const N: usize, const C: u8, I: Indices> IndexCalculation for ArrayStorage<T, N, C, I> {
-    const CALC: Calc = Calc::from_u8(C);
 }
 
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound

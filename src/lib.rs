@@ -79,7 +79,7 @@ pub mod mmap;
 use chunks::WriteChunkUninit;
 */
 
-use diy::{update_capacity, Calc, Capacity, IndexCalculation, Indices, Storage};
+use diy::{update_capacity, Calc, IndexCalculation, Indices, Storage};
 
 // TODO: use errors::* or something?
 pub use diy::{PeekError, PopError, PushError};
@@ -264,16 +264,13 @@ impl<T, const C: u8, I: Indices> PartialEq for DynamicStorage<T, C, I> {
 
 impl<T, const C: u8, I: Indices> Eq for DynamicStorage<T, C, I> {}
 
-impl<T, const C: u8, I: Indices> Capacity for DynamicStorage<T, C, I> {
+impl<T, const C: u8, I: Indices> IndexCalculation for DynamicStorage<T, C, I> {
+    const CALC: Calc = Calc::from_u8(C);
+
     #[inline(always)]
     fn capacity(&self) -> usize {
         self.capacity
     }
-}
-
-// TODO: blanket implementation for T: Capacity?
-impl<T, const C: u8, I: Indices> IndexCalculation for DynamicStorage<T, C, I> {
-    const CALC: Calc = Calc::from_u8(C);
 }
 
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound
