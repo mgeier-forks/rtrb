@@ -24,7 +24,9 @@ exclude = ["crossbeam", "performance-comparison"]
 [features]
 default = ["std"]
 std = []
-mmap = ["dep:libc"]
+# "dep:" since Rust 1.60
+#mmap = ["dep:libc"]
+mmap = ["libc"]
 
 [dependencies]
 libc = { version = "0.2", optional = true }

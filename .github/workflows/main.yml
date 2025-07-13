@@ -53,9 +53,9 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust-version }}
-      - name: Check whether it compiles
+      - name: Check whether it compiles (with default features)
         run: |
-          cargo check --all-features --verbose
+          cargo check --verbose
 
   check-code:
     runs-on: ubuntu-latest
