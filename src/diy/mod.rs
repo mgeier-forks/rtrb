@@ -29,18 +29,22 @@ pub unsafe trait Indices {
 /// Different index calculations.
 #[repr(u8)]
 pub enum Calc {
-    Twice,
-    TwicePowerOfTwo,
+    /// Indices are wrapped at twice the buffer size.
+    DoubleSize,
+    /// Indices are wrapped at [`usize::MAX`].
+    PowerOfTwo,
+    // TODO: SingleSize, reduce capacity by 1
+    // TODO: SingleSizePowerOfTwo?
 }
 
 impl Calc {
     // This is a work-around until the `adt_const_params` feature has been stabilized
     // (https://github.com/rust-lang/rust/issues/95174):
     pub const fn from_u8(value: u8) -> Calc {
-        if value == Calc::Twice as u8 {
-            Calc::Twice
-        } else if value == Calc::TwicePowerOfTwo as u8 {
-            Calc::TwicePowerOfTwo
+        if value == Calc::DoubleSize as u8 {
+            Calc::DoubleSize
+        } else if value == Calc::PowerOfTwo as u8 {
+            Calc::PowerOfTwo
         } else {
             panic!("Invalid value for Calc")
         }
@@ -48,10 +52,12 @@ impl Calc {
 
     /// Some index calculations need to extend the capacity.
     pub const fn update_capacity(&self, capacity: usize) -> usize {
+        // TODO: check whether number range is large enough for twice the buffer size
+
         // MSRV 1.46: match statements in const fn
         match self {
-            Calc::Twice => capacity,
-            Calc::TwicePowerOfTwo => capacity.next_power_of_two(),
+            Calc::DoubleSize => capacity,
+            Calc::PowerOfTwo => capacity.next_power_of_two(),
         }
     }
 }
@@ -64,7 +70,7 @@ pub trait IndexCalculation {
     #[inline]
     fn collapse_position(&self, pos: usize) -> usize {
         match Self::CALC {
-            Calc::Twice => {
+            Calc::DoubleSize => {
                 // Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
                 debug_assert!(pos == 0 || pos < 2 * self.capacity());
                 if pos < self.capacity() {
@@ -73,7 +79,7 @@ pub trait IndexCalculation {
                     pos - self.capacity()
                 }
             }
-            Calc::TwicePowerOfTwo => {
+            Calc::PowerOfTwo => {
                 // Wraps from any number to the range `0 .. capacity`.
                 // TODO: is capacity 0 supported?
                 pos & (self.capacity() - 1)
@@ -85,7 +91,7 @@ pub trait IndexCalculation {
     #[inline]
     fn increment(&self, pos: usize, n: usize) -> usize {
         match Self::CALC {
-            Calc::Twice => {
+            Calc::DoubleSize => {
                 debug_assert!(pos == 0 || pos < 2 * self.capacity());
                 debug_assert!(n <= self.capacity());
                 let threshold = 2 * self.capacity() - n;
@@ -95,7 +101,7 @@ pub trait IndexCalculation {
                     pos - threshold
                 }
             }
-            Calc::TwicePowerOfTwo => pos.wrapping_add(n),
+            Calc::PowerOfTwo => pos.wrapping_add(n),
         }
     }
 
@@ -105,7 +111,7 @@ pub trait IndexCalculation {
     #[inline]
     fn increment1(&self, pos: usize) -> usize {
         match Self::CALC {
-            Calc::Twice => {
+            Calc::DoubleSize => {
                 debug_assert_ne!(self.capacity(), 0);
                 debug_assert!(pos < 2 * self.capacity());
                 if pos < 2 * self.capacity() - 1 {
@@ -114,7 +120,7 @@ pub trait IndexCalculation {
                     0
                 }
             }
-            Calc::TwicePowerOfTwo => pos.wrapping_add(1),
+            Calc::PowerOfTwo => pos.wrapping_add(1),
         }
     }
 
@@ -122,7 +128,7 @@ pub trait IndexCalculation {
     #[inline]
     fn distance(&self, a: usize, b: usize) -> usize {
         match Self::CALC {
-            Calc::Twice => {
+            Calc::DoubleSize => {
                 debug_assert!(a == 0 || a < 2 * self.capacity());
                 debug_assert!(b == 0 || b < 2 * self.capacity());
                 if a <= b {
@@ -131,7 +137,7 @@ pub trait IndexCalculation {
                     2 * self.capacity() - a + b
                 }
             }
-            Calc::TwicePowerOfTwo => b.wrapping_sub(a),
+            Calc::PowerOfTwo => b.wrapping_sub(a),
         }
     }
 }

@@ -87,7 +87,7 @@ pub use diy::{PeekError, PopError, PushError};
 use diy::IS_ABANDONED;
 
 // NB: non-public!
-type RingBufferInner<T> = DynamicStorage<T, { Calc::Twice as u8 }, CachePaddedIndices>;
+type RingBufferInner<T> = DynamicStorage<T, { Calc::DoubleSize as u8 }, CachePaddedIndices>;
 
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
