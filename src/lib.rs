@@ -79,7 +79,7 @@ pub mod mmap;
 use chunks::WriteChunkUninit;
 */
 
-use diy::{update_capacity, Calc, IndexCalculation, Indices, Storage};
+use diy::{Calc, IndexCalculation, Indices, Storage};
 
 // TODO: use errors::* or something?
 pub use diy::{PeekError, PopError, PushError};
@@ -245,7 +245,7 @@ impl<T, const C: u8, I: Indices> DynamicStorage<T, C, I> {
         diy::Producer<Ptr<DynamicStorage<T, C, I>>>,
         diy::Consumer<Ptr<DynamicStorage<T, C, I>>>,
     ) {
-        let capacity = update_capacity::<C>(capacity);
+        let capacity = Calc::from_u8(C).update_capacity(capacity);
         Ptr::new(Self {
             indices: I::INIT,
             flags: AtomicU8::new(0),

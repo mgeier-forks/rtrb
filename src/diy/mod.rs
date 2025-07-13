@@ -33,15 +33,6 @@ pub enum Calc {
     TwicePowerOfTwo,
 }
 
-/// Some index calculations might need to extend the capacity.
-pub const fn update_capacity<const C: u8>(capacity: usize) -> usize {
-    // MSRV 1.46: match statements in const fn
-    match Calc::from_u8(C) {
-        Calc::Twice => capacity,
-        Calc::TwicePowerOfTwo => capacity.next_power_of_two(),
-    }
-}
-
 impl Calc {
     // This is a work-around until the `adt_const_params` feature has been stabilized
     // (https://github.com/rust-lang/rust/issues/95174):
@@ -52,6 +43,15 @@ impl Calc {
             Calc::TwicePowerOfTwo
         } else {
             panic!("Invalid value for Calc")
+        }
+    }
+
+    /// Some index calculations need to extend the capacity.
+    pub const fn update_capacity(&self, capacity: usize) -> usize {
+        // MSRV 1.46: match statements in const fn
+        match self {
+            Calc::Twice => capacity,
+            Calc::TwicePowerOfTwo => capacity.next_power_of_two(),
         }
     }
 }
@@ -564,7 +564,7 @@ impl<T, const N: usize, const C: u8, I: Indices> ArrayStorage<T, N, C, I> {
         const {
             // assert!() in const since Rust 1.57
             assert!(
-                update_capacity::<C>(N) == N,
+                Calc::from_u8(C).update_capacity(N) == N,
                 "`capacity` must be a power of two"
             );
         }
