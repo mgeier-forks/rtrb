@@ -124,7 +124,10 @@ pub struct WriteChunk<'a, R: Deref>(Option<WriteChunkUninit<'a, R>>)
 where
     R::Target: Storage;
 
-impl<S: Storage + ?Sized, R: Deref<Target = S>> Drop for WriteChunk<'_, R> {
+impl<R: Deref> Drop for WriteChunk<'_, R>
+where
+    R::Target: Storage,
+{
     fn drop(&mut self) {
         // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
         if let Some(mut chunk) = self.0.take() {
