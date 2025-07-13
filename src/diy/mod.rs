@@ -56,7 +56,6 @@ impl Calc {
     pub const fn update_capacity(&self, capacity: usize) -> usize {
         // TODO: check whether number range is large enough for twice the buffer size
 
-        // MSRV 1.46: match statements in const fn
         match self {
             Calc::DoubleSize => capacity,
             Calc::PowerOfTwo => capacity.next_power_of_two(),

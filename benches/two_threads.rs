@@ -131,7 +131,6 @@ $(
                     let start = std::time::Instant::now();
                     for i in 0..iters {
                         while !push(&mut p, i as u8) {
-                            #[allow(clippy::incompatible_msrv)] // stable since 1.49
                             std::hint::spin_loop();
                         }
                     }
@@ -145,7 +144,6 @@ $(
                         assert_eq!(x, i as u8);
                         break;
                     }
-                    #[allow(clippy::incompatible_msrv)] // stable since 1.49
                     std::hint::spin_loop();
                 }
             }
