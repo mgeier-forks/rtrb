@@ -1,6 +1,7 @@
 use core::{convert::TryInto, marker::PhantomData, sync::atomic::AtomicU8};
 
 use crate::{
+    chunks::ChunkError,
     diy::{Calc, IndexCalculation, Indices, Storage},
     CachePaddedIndices, Ptr,
 };
@@ -148,4 +149,42 @@ unsafe impl<T, const C: u8, I: Indices> Storage for MmapStorage<T, C, I> {
     }
 }
 
-pub type MmapRingBuffer<T> = MmapStorage<T, { Calc::PowerOfTwo as u8 }, CachePaddedIndices>;
+// code above should go to "diy", code below should stay here.
+
+type Inner<T> = MmapStorage<T, { Calc::PowerOfTwo as u8 }, CachePaddedIndices>;
+
+#[derive(Debug)]
+pub struct RingBuffer<T>(PhantomData<Inner<T>>);
+
+impl<T> RingBuffer<T> {
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
+        let (p, c) = Inner::<T>::new(capacity);
+        (Producer(p), Consumer(c))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Producer<T>(crate::diy::Producer<Ptr<Inner<T>>>);
+
+impl<T> Producer<T> {}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Consumer<T>(crate::diy::Consumer<Ptr<Inner<T>>>);
+
+impl<T> Consumer<T> {
+    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
+        self.0.read_chunk(n).map(ReadChunk)
+    }
+}
+
+// TODO: rename? ReadChunkSingleSlice? Or add policy trait?
+#[derive(Debug, PartialEq, Eq)]
+pub struct ReadChunk<'a, T>(crate::diy::chunks::ReadChunk<'a, Ptr<Inner<T>>>);
+
+impl<T> ReadChunk<'_, T> {
+    #[must_use]
+    pub fn as_slice(&self) -> &[T] {
+        self.0.as_slices()
+    }
+}

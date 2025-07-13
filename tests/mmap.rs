@@ -1,10 +1,10 @@
 #![cfg(feature = "mmap")]
 
-use rtrb::mmap::MmapRingBuffer;
+use rtrb::mmap::RingBuffer;
 
 #[test]
 fn basic() {
-    let (mut p, mut c) = MmapRingBuffer::<usize>::new(1);
+    let (mut p, mut c) = RingBuffer::<usize>::new(1);
     println!("capacity: {}", p.capacity());
     for round in 0..3 {
         println!("round {round}");
