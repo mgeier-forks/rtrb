@@ -45,7 +45,6 @@
 //! and read multiple items with [`Consumer::read_chunk()`].
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![warn(rust_2018_idioms)]
 //#![deny(missing_docs, missing_debug_implementations)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::undocumented_unsafe_blocks, clippy::unnecessary_safety_comment)]
