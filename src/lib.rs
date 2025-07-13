@@ -233,6 +233,7 @@ unsafe impl<T: Send, const C: u8, I: Indices + Sync> Sync for DynamicStorage<T, 
 // NB: DynamicStorage doesn't need to be `Send` because it is never moved.
 
 impl<T, const C: u8, I: Indices> DynamicStorage<T, C, I> {
+    // TODO: make unsafe? indices and flags must not be manipulated (via Storage trait).
     #[allow(clippy::new_ret_no_self, clippy::type_complexity)]
     #[must_use]
     pub fn new(
@@ -349,7 +350,8 @@ impl<T, const C: u8, I: Indices> Drop for DynamicStorage<T, C, I> {
 /// This can be used as a crude way to communicate to the receiving thread
 /// that no more data will be produced.
 /// When the `Producer` is dropped after the [`Consumer`] has already been dropped,
-/// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
+/// all items remaining in the ring buffer will be dropped and the allocated memory
+/// will be deallocated.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Producer<T>(diy::Producer<Ptr<RingBufferInner<T>>>);
 
@@ -380,7 +382,7 @@ impl<T> Producer<T> {
     /// Returns the number of slots available for writing.
     ///
     /// Since items can be concurrently consumed on another thread, the actual number
-    /// of available slots may increase at any time (up to the [`RingBuffer::capacity()`]).
+    /// of available slots may increase at any time (up to the [`Producer::capacity()`]).
     ///
     /// To check for a single available slot,
     /// using [`Producer::is_full()`] is often quicker
@@ -528,7 +530,8 @@ impl<T> Producer<T> {
 /// This can be used as a crude way to communicate to the sending thread
 /// that no more data will be consumed.
 /// When the `Consumer` is dropped after the [`Producer`] has already been dropped,
-/// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
+/// all items remaining in the ring buffer will be dropped and the allocated memory
+/// will be deallocated.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<T>(diy::Consumer<Ptr<RingBufferInner<T>>>);
 
@@ -591,7 +594,7 @@ impl<T> Consumer<T> {
     /// Returns the number of slots available for reading.
     ///
     /// Since items can be concurrently produced on another thread, the actual number
-    /// of available slots may increase at any time (up to the [`RingBuffer::capacity()`]).
+    /// of available slots may increase at any time (up to the [`Consumer::capacity()`]).
     ///
     /// To check for a single available slot,
     /// using [`Consumer::is_empty()`] is often quicker
