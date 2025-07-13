@@ -3,7 +3,7 @@
 //! no cache padding, no dynamic allocation
 //! power-of-two optimizations might be done automatically by the compiler? TODO: verify
 
-use crate::diy::{Calc, ArrayStorage, TightIndices};
+use crate::diy::{ArrayStorage, Calc, TightIndices};
 
 /// TODO: move this to producer()/consumer() docs?
 ///

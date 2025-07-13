@@ -3,7 +3,7 @@
 //! no dynamic allocation, but cache-padded indices
 
 use crate::{
-    diy::{Calc, ArrayStorage},
+    diy::{ArrayStorage, Calc},
     CachePaddedIndices, PeekError, PopError, PushError,
 };
 

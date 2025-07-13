@@ -328,8 +328,7 @@ where
     /// Non-iterated items remain in the ring buffer and are *not* dropped.
     fn drop(&mut self) {
         let c = self.chunk.consumer;
-        let head =
-            c.buffer.increment(c.cached_head.get(), self.iterated);
+        let head = c.buffer.increment(c.cached_head.get(), self.iterated);
         c.buffer.indices().head().store(head, Ordering::Release);
         c.cached_head.set(head);
     }

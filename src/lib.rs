@@ -131,8 +131,7 @@ pub struct Ptr<S: Storage> {
     _marker: PhantomData<S>,
 }
 
-impl<S: Storage> Ptr<S>
-{
+impl<S: Storage> Ptr<S> {
     fn new(storage: S) -> (diy::Producer<Self>, diy::Consumer<Self>) {
         // NB: We are assuming that IS_ABANDONED is unset.
         let ptr = Box::leak(Box::new(storage));
