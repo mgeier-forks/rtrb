@@ -564,7 +564,6 @@ unsafe impl<T: Send, const N: usize, const C: u8, I: Indices + Send> Send
 impl<T, const N: usize, const C: u8, I: Indices> ArrayStorage<T, N, C, I> {
     pub const fn new() -> Self {
         const {
-            // assert!() in const since Rust 1.57
             assert!(
                 Calc::from_u8(C).update_capacity(N) == N,
                 "`capacity` must be a power of two"

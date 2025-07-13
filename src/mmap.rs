@@ -57,12 +57,7 @@ impl<T, const A: u8, I: Indices> MmapStorage<T, A, I> {
         // - pointers, lengths and other arguments are valid
         let data_ptr: *mut T = unsafe {
             use libc::*;
-            let fd = memfd_create(
-                core::ffi::CStr::from_bytes_with_nul(b"rtrb-buffer\0")
-                    .unwrap()
-                    .as_ptr(),
-                0,
-            );
+            let fd = memfd_create(c"rtrb-buffer".as_ptr(), 0);
             ftruncate(fd, TryInto::<off_t>::try_into(len).unwrap());
             // Get an address with twice the capacity available
             let ptr_one = mmap(
@@ -97,7 +92,6 @@ impl<T, const A: u8, I: Indices> MmapStorage<T, A, I> {
             assert_eq!(r, 0); // TODO: check for errno?
             ptr_one.cast()
         };
-        #[allow(clippy::incompatible_msrv)] // Rust 1.79
         let is_aligned = data_ptr.is_aligned();
         assert!(is_aligned);
         Ptr::new(Self {

@@ -42,7 +42,7 @@ jobs:
   msrv:
     strategy:
       matrix:
-        rust-version: ["1.60"]
+        rust-version: ["1.79"]
     runs-on: ubuntu-latest
     steps:
       - name: Clone Git repository
@@ -53,9 +53,9 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust-version }}
-      - name: Check whether it compiles (with default features)
+      - name: Check whether it compiles
         run: |
-          cargo check --verbose
+          cargo check --all-features --verbose
 
   check-code:
     runs-on: ubuntu-latest
