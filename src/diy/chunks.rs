@@ -338,7 +338,6 @@ where
 impl<S: Storage, R: Deref<Target = S>> Iterator for ReadChunkIntoIter<'_, R> {
     type Item = S::Item;
 
-    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let ptr = if self.iterated < self.chunk.first_len {
             // SAFETY: first_len is valid.
@@ -358,7 +357,6 @@ impl<S: Storage, R: Deref<Target = S>> Iterator for ReadChunkIntoIter<'_, R> {
         Some(unsafe { ptr.read() })
     }
 
-    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let remaining = self.chunk.first_len + self.chunk.second_len - self.iterated;
         (remaining, Some(remaining))

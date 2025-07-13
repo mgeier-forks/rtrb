@@ -40,6 +40,7 @@ pub enum Calc {
 impl Calc {
     // This is a work-around until the `adt_const_params` feature has been stabilized
     // (https://github.com/rust-lang/rust/issues/95174):
+    #[inline]
     pub const fn from_u8(value: u8) -> Calc {
         if value == Calc::DoubleSize as u8 {
             Calc::DoubleSize
@@ -51,6 +52,7 @@ impl Calc {
     }
 
     /// Some index calculations need to extend the capacity.
+    #[inline]
     pub const fn update_capacity(&self, capacity: usize) -> usize {
         // TODO: check whether number range is large enough for twice the buffer size
 
@@ -67,7 +69,6 @@ pub trait IndexCalculation {
 
     fn capacity(&self) -> usize;
 
-    #[inline]
     fn collapse_position(&self, pos: usize) -> usize {
         match Self::CALC {
             Calc::DoubleSize => {
@@ -88,7 +89,6 @@ pub trait IndexCalculation {
     }
 
     /// Increments a position by going `n` slots forward.
-    #[inline]
     fn increment(&self, pos: usize, n: usize) -> usize {
         match Self::CALC {
             Calc::DoubleSize => {
@@ -108,7 +108,6 @@ pub trait IndexCalculation {
     /// Increments a position by going one slot forward.
     ///
     /// This might be more efficient than self.increment(..., 1).
-    #[inline]
     fn increment1(&self, pos: usize) -> usize {
         match Self::CALC {
             Calc::DoubleSize => {
@@ -125,7 +124,6 @@ pub trait IndexCalculation {
     }
 
     /// Returns the distance between two positions.
-    #[inline]
     fn distance(&self, a: usize, b: usize) -> usize {
         match Self::CALC {
             Calc::DoubleSize => {
@@ -209,7 +207,6 @@ pub unsafe trait Storage: IndexCalculation {
     /// `pos` must be valid.
     ///
     /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
-    #[inline]
     unsafe fn slot_ptr(&self, pos: usize) -> *mut Self::Item {
         // SAFETY: See docstring.
         unsafe { self.data_ptr().add(self.collapse_position(pos)) }
@@ -305,7 +302,6 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
     ///
     /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
     /// For performance, this special case is implemented separately.
-    #[inline]
     fn next_tail(&self) -> Option<usize> {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
@@ -437,7 +433,6 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
     ///
     /// This is a strict subset of the functionality implemented in `read_chunk()`.
     /// For performance, this special case is implemented separately.
-    #[inline]
     fn next_head(&self) -> Option<usize> {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
@@ -626,7 +621,6 @@ impl<T, const N: usize, const C: u8, I: Indices> Eq for ArrayStorage<T, N, C, I>
 impl<T, const N: usize, const C: u8, I: Indices> IndexCalculation for ArrayStorage<T, N, C, I> {
     const CALC: Calc = Calc::from_u8(C);
 
-    #[inline(always)]
     fn capacity(&self) -> usize {
         N
     }
@@ -637,28 +631,23 @@ unsafe impl<T, const N: usize, const C: u8, I: Indices> Storage for ArrayStorage
     type Item = T;
     type Indices = I;
 
-    #[inline(always)]
+    fn indices(&self) -> &Self::Indices {
+        &self.indices
+    }
+
     fn flags(&self) -> &AtomicU8 {
         &self.flags
     }
 
-    #[inline(always)]
     fn data_ptr(&self) -> *mut Self::Item {
         // TODO: what happens if N == 0?
         self.slots.get().cast()
     }
 
-    #[inline(always)]
-    fn indices(&self) -> &Self::Indices {
-        &self.indices
-    }
-
-    #[inline(always)]
     unsafe fn drop_producer(&self) {
         let _ = self.flags().fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
     }
 
-    #[inline(always)]
     unsafe fn drop_consumer(&self) {
         let _ = self.flags().fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
     }
@@ -687,12 +676,10 @@ unsafe impl Indices for TightIndices {
         tail: AtomicUsize::new(0),
     };
 
-    #[inline]
     fn head(&self) -> &AtomicUsize {
         &self.head
     }
 
-    #[inline]
     fn tail(&self) -> &AtomicUsize {
         &self.tail
     }

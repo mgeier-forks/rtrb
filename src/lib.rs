@@ -116,7 +116,6 @@ impl<T> RingBuffer<T> {
     /// let (mut producer, consumer) = RingBuffer::new(100);
     /// assert_eq!(producer.push(0.0f32), Ok(()));
     /// ```
-    #[inline(always)]
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
@@ -265,7 +264,6 @@ impl<T, const C: u8, I: Indices> Eq for DynamicStorage<T, C, I> {}
 impl<T, const C: u8, I: Indices> IndexCalculation for DynamicStorage<T, C, I> {
     const CALC: Calc = Calc::from_u8(C);
 
-    #[inline(always)]
     fn capacity(&self) -> usize {
         self.capacity
     }
@@ -276,17 +274,14 @@ unsafe impl<T, const C: u8, I: Indices> Storage for DynamicStorage<T, C, I> {
     type Item = T;
     type Indices = I;
 
-    #[inline(always)]
     fn data_ptr(&self) -> *mut Self::Item {
         self.data_ptr
     }
 
-    #[inline(always)]
     fn indices(&self) -> &Self::Indices {
         &self.indices
     }
 
-    #[inline(always)]
     fn flags(&self) -> &AtomicU8 {
         &self.flags
     }
@@ -314,12 +309,10 @@ unsafe impl Indices for CachePaddedIndices {
         tail: CachePadded::new(AtomicUsize::new(0)),
     };
 
-    #[inline]
     fn head(&self) -> &AtomicUsize {
         &self.head
     }
 
-    #[inline]
     fn tail(&self) -> &AtomicUsize {
         &self.tail
     }
@@ -381,7 +374,6 @@ impl<T> Producer<T> {
     /// assert_eq!(p.push(10), Ok(()));
     /// assert_eq!(p.push(20), Err(PushError::Full(20)));
     /// ```
-    #[inline(always)]
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
         self.0.push(value)
     }
@@ -404,7 +396,6 @@ impl<T> Producer<T> {
     ///
     /// assert_eq!(p.slots(), 1024);
     /// ```
-    #[inline(always)]
     pub fn slots(&self) -> usize {
         self.0.slots()
     }
@@ -445,7 +436,6 @@ impl<T> Producer<T> {
     ///     // At least one slot is guaranteed to be available for writing.
     /// }
     /// ```
-    #[inline(always)]
     pub fn is_full(&self) -> bool {
         self.0.is_full()
     }
@@ -465,7 +455,6 @@ impl<T> Producer<T> {
     /// assert_eq!(producer.capacity(), 100);
     /// assert_eq!(consumer.capacity(), 100);
     /// ```
-    #[inline(always)]
     pub fn capacity(&self) -> usize {
         self.0.capacity()
     }
@@ -574,7 +563,6 @@ impl<T> Consumer<T> {
     /// assert_eq!(p.push(20), Ok(()));
     /// assert_eq!(c.pop().ok(), Some(20));
     /// ```
-    #[inline(always)]
     pub fn pop(&mut self) -> Result<T, PopError> {
         self.0.pop()
     }
@@ -597,7 +585,6 @@ impl<T> Consumer<T> {
     /// assert_eq!(c.peek(), Ok(&10));
     /// assert_eq!(c.peek(), Ok(&10));
     /// ```
-    #[inline(always)]
     pub fn peek(&self) -> Result<&T, PeekError> {
         self.0.peek()
     }
@@ -620,7 +607,6 @@ impl<T> Consumer<T> {
     ///
     /// assert_eq!(c.slots(), 0);
     /// ```
-    #[inline(always)]
     pub fn slots(&self) -> usize {
         self.0.slots()
     }
@@ -661,7 +647,6 @@ impl<T> Consumer<T> {
     ///     // At least one slot is guaranteed to be available for reading.
     /// }
     /// ```
-    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -710,7 +695,6 @@ impl<T> Consumer<T> {
     ///     // The producer does definitely not exist anymore.
     /// }
     /// ```
-    #[inline(always)]
     pub fn is_abandoned(&self) -> bool {
         self.0.is_abandoned()
     }
@@ -731,7 +715,6 @@ impl<T> Consumer<T> {
     /// assert_eq!(producer.capacity(), 100);
     /// assert_eq!(consumer.capacity(), 100);
     /// ```
-    #[inline(always)]
     pub fn capacity(&self) -> usize {
         self.0.capacity()
     }

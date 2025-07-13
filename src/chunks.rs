@@ -196,7 +196,6 @@ impl<T> Producer<T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
-    #[inline(always)]
     pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T>, ChunkError>
     where
         T: Default,
@@ -231,7 +230,6 @@ impl<T> Producer<T> {
     ///
     /// For a safe alternative that provides mutable slices of [`Default`]-initialized slots,
     /// see [`Producer::write_chunk()`].
-    #[inline(always)]
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
         self.0.write_chunk_uninit(n).map(WriteChunkUninit)
     }
@@ -259,7 +257,6 @@ impl<T> Consumer<T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
-    #[inline(always)]
     pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
         self.0.read_chunk(n).map(ReadChunk)
     }
@@ -303,7 +300,6 @@ where
     /// If items are written but *not* committed afterwards,
     /// they will *not* become available for reading and
     /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
-    #[inline(always)]
     pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
         self.0.as_mut_slices()
     }
@@ -315,27 +311,23 @@ where
     /// # Panics
     ///
     /// Panics if `n` is greater than the number of slots in the chunk.
-    #[inline(always)]
     pub fn commit(self, n: usize) {
         self.0.commit(n)
     }
 
     /// Makes the whole chunk available for reading.
-    #[inline(always)]
     pub fn commit_all(self) {
         self.0.commit_all()
     }
 
     /// Returns the number of slots in the chunk.
     #[must_use]
-    #[inline(always)]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
     /// Returns `true` if the chunk contains no slots.
     #[must_use]
-    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -373,7 +365,6 @@ impl<T> WriteChunkUninit<'_, T> {
     /// If items are written but *not* committed afterwards,
     /// they will *not* become available for reading and
     /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
-    #[inline(always)]
     pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
         self.0.as_mut_slices()
     }
@@ -387,7 +378,6 @@ impl<T> WriteChunkUninit<'_, T> {
     /// # Safety
     ///
     /// The caller must make sure that the first `n` elements have been initialized.
-    #[inline(always)]
     pub unsafe fn commit(self, n: usize) {
         // SAFETY: See docstring.
         unsafe { self.0.commit(n) }
@@ -398,7 +388,6 @@ impl<T> WriteChunkUninit<'_, T> {
     /// # Safety
     ///
     /// The caller must make sure that all elements have been initialized.
-    #[inline(always)]
     pub unsafe fn commit_all(self) {
         // SAFETY: See docstring.
         unsafe { self.0.commit_all() }
@@ -451,7 +440,6 @@ impl<T> WriteChunkUninit<'_, T> {
     /// assert_eq!(c.pop(), Err(PopError::Empty));
     /// assert_eq!(it.next(), Some(30));
     /// ```
-    #[inline(always)]
     pub fn fill_from_iter<I>(self, iter: I) -> usize
     where
         I: IntoIterator<Item = T>,
@@ -461,14 +449,12 @@ impl<T> WriteChunkUninit<'_, T> {
 
     /// Returns the number of slots in the chunk.
     #[must_use]
-    #[inline(always)]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
     /// Returns `true` if the chunk contains no slots.
     #[must_use]
-    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -498,7 +484,6 @@ impl<T> ReadChunk<'_, T> {
     /// Note that this runs the destructor of the committed items (if `T` implements [`Drop`]).
     /// You can "peek" at the contained values by simply not calling any of the "commit" methods.
     #[must_use]
-    #[inline(always)]
     pub fn as_slices(&self) -> (&[T], &[T]) {
         self.0.as_slices()
     }
@@ -515,7 +500,6 @@ impl<T> ReadChunk<'_, T> {
     /// operations on the data in-place without copying it to a separate buffer
     /// (e.g. streaming decryption), in which case this version can be used.
     #[must_use]
-    #[inline(always)]
     pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
         self.0.as_mut_slices()
     }
@@ -572,27 +556,23 @@ impl<T> ReadChunk<'_, T> {
     /// // ... and it is dropped when the ring buffer goes out of scope:
     /// assert_eq!(unsafe { DROP_COUNT }, 3);
     /// ```
-    #[inline(always)]
     pub fn commit(self, n: usize) {
         self.0.commit(n)
     }
 
     /// Drops all slots of the chunk, making the space available for writing again.
-    #[inline(always)]
     pub fn commit_all(self) {
         self.0.commit_all()
     }
 
     /// Returns the number of slots in the chunk.
     #[must_use]
-    #[inline(always)]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
     /// Returns `true` if the chunk contains no slots.
     #[must_use]
-    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -634,12 +614,10 @@ impl<T> fmt::Debug for ReadChunkIntoIter<'_, T> {
 impl<T> Iterator for ReadChunkIntoIter<'_, T> {
     type Item = T;
 
-    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next()
     }
 
-    #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.0.size_hint()
     }
