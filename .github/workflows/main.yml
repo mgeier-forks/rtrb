@@ -25,12 +25,16 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable${{ matrix.toolchain-suffix }}
-      - name: Run tests (all features)
+      - name: Run tests (default features)
         run: |
-          cargo test --workspace --all-features
+          cargo test --workspace
       - name: Run tests (no features)
         run: |
           cargo test --workspace --no-default-features
+      - name: Run tests (all features, only Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          cargo test --workspace --all-features
       - name: Test benchmarks
         run: |
           cargo test --benches
