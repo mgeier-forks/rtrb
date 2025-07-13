@@ -693,7 +693,7 @@ impl fmt::Display for ChunkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ChunkError::TooFewSlots(n) => {
-                alloc::format!("only {} slots available in ring buffer", n).fmt(f)
+                alloc::format!("only {n} slots available in ring buffer").fmt(f)
             }
         }
     }
