@@ -129,14 +129,14 @@ impl<T> RingBuffer<T> {
 
 // TODO: move to different module?
 #[derive(Debug, PartialEq, Eq)]
-pub struct Ptr<const C: u8, S: Storage<C>> {
+pub struct Ptr<S: Storage> {
     ptr: NonNull<S>,
     _marker: PhantomData<S>,
 }
 
-impl<const C: u8, S: Storage<C>> Ptr<C, S>
+impl<S: Storage> Ptr<S>
 {
-    fn new(storage: S) -> (diy::Producer<C, Self>, diy::Consumer<C, Self>) {
+    fn new(storage: S) -> (diy::Producer<Self>, diy::Consumer<Self>) {
         // NB: We are assuming that IS_ABANDONED is unset.
         let ptr = Box::leak(Box::new(storage));
         // SAFETY: Pointer from Box is always non-null.
@@ -159,7 +159,7 @@ impl<const C: u8, S: Storage<C>> Ptr<C, S>
     }
 }
 
-impl<const C: u8, S: Storage<C>> Drop for Ptr<C, S> {
+impl<S: Storage> Drop for Ptr<S> {
     fn drop(&mut self) {
         // SAFETY: must point to initialized Storage.
         let flags: &AtomicU8 = unsafe { self.ptr.as_ref().flags() };
@@ -202,7 +202,7 @@ unsafe fn drop_slow<S>(ptr: NonNull<S>) {
     }
 }
 
-impl<const C: u8, S: Storage<C>> Deref for Ptr<C, S> {
+impl<S: Storage> Deref for Ptr<S> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
@@ -242,8 +242,8 @@ impl<T, const C: u8, I: Indices> DynamicStorage<T, C, I> {
     pub fn new(
         capacity: usize,
     ) -> (
-        diy::Producer<C, Ptr<C, DynamicStorage<T, C, I>>>,
-        diy::Consumer<C, Ptr<C, DynamicStorage<T, C, I>>>,
+        diy::Producer<Ptr<DynamicStorage<T, C, I>>>,
+        diy::Consumer<Ptr<DynamicStorage<T, C, I>>>,
     ) {
         let capacity = update_capacity::<C>(capacity);
         Ptr::new(Self {
@@ -272,10 +272,12 @@ impl<T, const C: u8, I: Indices> Capacity for DynamicStorage<T, C, I> {
 }
 
 // TODO: blanket implementation for T: Capacity?
-impl<T, const C: u8, I: Indices> IndexCalculation<C> for DynamicStorage<T, C, I> {}
+impl<T, const C: u8, I: Indices> IndexCalculation for DynamicStorage<T, C, I> {
+    const CALC: Calc = Calc::from_u8(C);
+}
 
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound
-unsafe impl<T, const C: u8, I: Indices> Storage<C> for DynamicStorage<T, C, I> {
+unsafe impl<T, const C: u8, I: Indices> Storage for DynamicStorage<T, C, I> {
     type Item = T;
     type Indices = I;
 
@@ -362,9 +364,7 @@ impl<T, const C: u8, I: Indices> Drop for DynamicStorage<T, C, I> {
 /// When the `Producer` is dropped after the [`Consumer`] has already been dropped,
 /// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Producer<T>(diy::Producer<C, Ptr<C, RingBufferInner<T>>>);
-
-const C: u8 = Calc::Twice as u8;
+pub struct Producer<T>(diy::Producer<Ptr<RingBufferInner<T>>>);
 
 impl<T> Producer<T> {
     /// Attempts to push an element into the queue.
@@ -547,7 +547,7 @@ impl<T> Producer<T> {
 /// When the `Consumer` is dropped after the [`Producer`] has already been dropped,
 /// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Consumer<T>(diy::Consumer<C, Ptr<C, RingBufferInner<T>>>);
+pub struct Consumer<T>(diy::Consumer<Ptr<RingBufferInner<T>>>);
 
 impl<T> Consumer<T> {
     /// Attempts to pop an element from the queue.

@@ -60,10 +60,12 @@ impl Calc {
     }
 }
 
-pub trait IndexCalculation<const C: u8>: Capacity {
+pub trait IndexCalculation: Capacity {
+    const CALC: Calc;
+
     #[inline]
     fn collapse_position(&self, pos: usize) -> usize {
-        match Calc::from_u8(C) {
+        match Self::CALC {
             Calc::Twice => {
                 // Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
                 debug_assert!(pos == 0 || pos < 2 * self.capacity());
@@ -84,7 +86,7 @@ pub trait IndexCalculation<const C: u8>: Capacity {
     /// Increments a position by going `n` slots forward.
     #[inline]
     fn increment(&self, pos: usize, n: usize) -> usize {
-        match Calc::from_u8(C) {
+        match Self::CALC {
             Calc::Twice => {
                 debug_assert!(pos == 0 || pos < 2 * self.capacity());
                 debug_assert!(n <= self.capacity());
@@ -104,7 +106,7 @@ pub trait IndexCalculation<const C: u8>: Capacity {
     /// This might be more efficient than self.increment(..., 1).
     #[inline]
     fn increment1(&self, pos: usize) -> usize {
-        match Calc::from_u8(C) {
+        match Self::CALC {
             Calc::Twice => {
                 debug_assert_ne!(self.capacity(), 0);
                 debug_assert!(pos < 2 * self.capacity());
@@ -121,7 +123,7 @@ pub trait IndexCalculation<const C: u8>: Capacity {
     /// Returns the distance between two positions.
     #[inline]
     fn distance(&self, a: usize, b: usize) -> usize {
-        match Calc::from_u8(C) {
+        match Self::CALC {
             Calc::Twice => {
                 debug_assert!(a == 0 || a < 2 * self.capacity());
                 debug_assert!(b == 0 || b < 2 * self.capacity());
@@ -145,7 +147,7 @@ pub trait IndexCalculation<const C: u8>: Capacity {
 /// ...
 ///
 /// Several functions must not be exposed to the user: indices(), flags(), ...
-pub unsafe trait Storage<const C: u8>: IndexCalculation<C> {
+pub unsafe trait Storage: IndexCalculation {
     type Item;
     type Indices: Indices;
 
@@ -213,9 +215,9 @@ pub unsafe trait Storage<const C: u8>: IndexCalculation<C> {
 #[derive(Debug, PartialEq, Eq)]
 // NB: this syntax needs MSRV 1.79
 //pub struct Producer<R: Deref<Target: Storage>>
-pub struct Producer<const C: u8, R: Deref>
+pub struct Producer<R: Deref>
 where
-    R::Target: Storage<C>,
+    R::Target: Storage,
 {
     /// A reference to the ring buffer.
     buffer: R,
@@ -243,14 +245,14 @@ where
 /// ```
 // SAFETY: After moving a producer to another thread, there is still only a single thread
 // that can access the producer side of the queue.
-unsafe impl<const C: u8, S: Storage<C>, R: Deref<Target = S>> Send for Producer<C, R>
+unsafe impl<S: Storage, R: Deref<Target = S>> Send for Producer<R>
 where
     S: Sync,
     S::Item: Send,
 {
 }
 
-impl<const C: u8, S: Storage<C>, R: Deref<Target=S>> Producer<C, R> {
+impl<S: Storage, R: Deref<Target=S>> Producer<R> {
     /// Create a new producer.
     ///
     /// # Safety
@@ -319,9 +321,9 @@ impl<const C: u8, S: Storage<C>, R: Deref<Target=S>> Producer<C, R> {
     }
 }
 
-impl<const C: u8, R: Deref> Drop for Producer<C, R>
+impl<R: Deref> Drop for Producer<R>
 where
-    R::Target: Storage<C>,
+    R::Target: Storage,
 {
     fn drop(&mut self) {
         // SAFETY: This is only called in Producer::drop().
@@ -330,9 +332,9 @@ where
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Consumer<const C: u8, R: Deref>
+pub struct Consumer<R: Deref>
 where
-    R::Target: Storage<C>,
+    R::Target: Storage,
 {
     /// A reference to the ring buffer.
     buffer: R,
@@ -360,14 +362,14 @@ where
 /// ```
 // SAFETY: After moving a Consumer to another thread, there is still only a single thread
 // that can access the consumer side of the queue.
-unsafe impl<const C: u8, S: Storage<C>, R: Deref<Target = S>> Send for Consumer<C, R>
+unsafe impl<S: Storage, R: Deref<Target = S>> Send for Consumer<R>
 where
     S: Sync,
     S::Item: Send,
 {
 }
 
-impl<const C: u8, S: Storage<C>, R: Deref<Target = S>> Consumer<C, R> {
+impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
     /// Create a new consumer.
     ///
     /// # Safety
@@ -451,9 +453,9 @@ impl<const C: u8, S: Storage<C>, R: Deref<Target = S>> Consumer<C, R> {
     }
 }
 
-impl<const C: u8, R: Deref> Drop for Consumer<C, R>
+impl<R: Deref> Drop for Consumer<R>
 where
-    R::Target: Storage<C>,
+    R::Target: Storage,
 {
     fn drop(&mut self) {
         // SAFETY: This is only called in Consumer::drop().
@@ -575,7 +577,7 @@ impl<T, const N: usize, const C: u8, I: Indices> ArrayStorage<T, N, C, I> {
         }
     }
 
-    pub fn producer(&self) -> Option<Producer<C, &Self>> {
+    pub fn producer(&self) -> Option<Producer<&Self>> {
         let old_flags = self.flags().fetch_or(HAS_PRODUCER, Ordering::SeqCst);
         if old_flags & HAS_PRODUCER == 0 {
             // SAFETY: This is the one and only producer.
@@ -585,7 +587,7 @@ impl<T, const N: usize, const C: u8, I: Indices> ArrayStorage<T, N, C, I> {
         }
     }
 
-    pub fn consumer(&self) -> Option<Consumer<C, &Self>> {
+    pub fn consumer(&self) -> Option<Consumer<&Self>> {
         let old_flags = self.flags().fetch_or(HAS_CONSUMER, Ordering::SeqCst);
         if old_flags & HAS_CONSUMER == 0 {
             // SAFETY: This is the one and only consumer.
@@ -624,10 +626,12 @@ impl<T, const N: usize, const C: u8, I: Indices> Capacity for ArrayStorage<T, N,
     }
 }
 
-impl<T, const N: usize, const C: u8, I: Indices> IndexCalculation<C> for ArrayStorage<T, N, C, I> {}
+impl<T, const N: usize, const C: u8, I: Indices> IndexCalculation for ArrayStorage<T, N, C, I> {
+    const CALC: Calc = Calc::from_u8(C);
+}
 
 // SAFETY: all methods must be implemented correctly, or the whole thing is unsound
-unsafe impl<T, const N: usize, const C: u8, I: Indices> Storage<C> for ArrayStorage<T, N, C, I> {
+unsafe impl<T, const N: usize, const C: u8, I: Indices> Storage for ArrayStorage<T, N, C, I> {
     type Item = T;
     type Indices = I;
 
