@@ -1,7 +1,9 @@
 use core::{convert::TryInto, marker::PhantomData, sync::atomic::AtomicU8};
 
 use crate::{
-    chunks::ChunkError, diy::{Calc, IndexCalculation, Indices, Storage}, CachePaddedIndices, PopError, Ptr, PushError
+    chunks::ChunkError,
+    diy::{Calc, IndexCalculation, Indices, Storage},
+    CachePaddedIndices, PopError, Ptr, PushError,
 };
 
 // TODO: move MmapStorage to "diy" module?
