@@ -258,7 +258,8 @@ impl<T> Consumer<T> {
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
     pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
-        self.0.read_chunk(n).map(ReadChunk)
+        // SAFETY: ReadChunkTwoSlices is used.
+        unsafe { self.0.read_chunk(n).map(ReadChunk) }
     }
 }
 
@@ -465,7 +466,7 @@ impl<T> WriteChunkUninit<'_, T> {
 /// This is returned from [`Consumer::read_chunk()`].
 #[derive(Debug, PartialEq, Eq)]
 pub struct ReadChunk<'a, T>(
-    crate::diy::chunks::ReadChunk<
+    crate::diy::chunks::ReadChunkTwoSlices<
         'a,
         Ptr<DynamicStorage<T, { Calc::DoubleSize as u8 }, CachePaddedIndices>>,
     >,
@@ -599,7 +600,7 @@ impl<'a, T> IntoIterator for ReadChunk<'a, T> {
 /// When this `struct` is dropped, the iterated slots are made available for writing again.
 /// Non-iterated items remain in the ring buffer.
 pub struct ReadChunkIntoIter<'a, T>(
-    crate::diy::chunks::ReadChunkIntoIter<
+    crate::diy::chunks::ReadChunkTwoSlicesIntoIter<
         'a,
         Ptr<DynamicStorage<T, { Calc::DoubleSize as u8 }, CachePaddedIndices>>,
     >,

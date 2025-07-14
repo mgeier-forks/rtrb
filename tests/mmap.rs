@@ -5,18 +5,26 @@ use rtrb::mmap::RingBuffer;
 #[test]
 fn basic() {
     let (mut p, mut c) = RingBuffer::<usize>::new(1);
-    println!("capacity: {}", p.capacity());
-    for round in 0..3 {
-        println!("round {round}");
-        for i in 0..p.capacity() {
-            p.push(i).unwrap();
-        }
-        assert!(p.push(42).is_err());
-        for i in 0..p.capacity() {
-            let v = c.pop().unwrap();
-            assert_eq!(v, i);
-        }
-        assert!(c.pop().is_err());
+    // Capacity has been increased to multiple of page size / size of `T`.
+    assert!(p.capacity() > 1);
+    let half = p.capacity() / 2;
+    for i in 0..half {
+        p.push(i).unwrap();
+        let v = c.pop().unwrap();
+        assert_eq!(v, i);
     }
-    // TODO: try chunks!
+    // TODO: use write_chunk() instead of push()
+    for i in half..half + p.capacity() {
+        p.push(i).unwrap();
+    }
+    assert!(p.push(42).is_err());
+    if let Ok(chunk) = c.read_chunk(c.capacity()) {
+        for i in 0..p.capacity() {
+            assert_eq!(half + i, chunk.as_slice()[i]);
+        }
+        chunk.commit_all();
+    } else {
+        unreachable!()
+    }
+    assert!(c.pop().is_err());
 }

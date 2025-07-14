@@ -1,9 +1,7 @@
 use core::{convert::TryInto, marker::PhantomData, sync::atomic::AtomicU8};
 
 use crate::{
-    chunks::ChunkError,
-    diy::{Calc, IndexCalculation, Indices, Storage},
-    CachePaddedIndices, Ptr,
+    chunks::ChunkError, diy::{Calc, IndexCalculation, Indices, Storage}, CachePaddedIndices, PopError, Ptr, PushError
 };
 
 // TODO: move MmapStorage to "diy" module?
@@ -25,20 +23,20 @@ pub struct MmapStorage<T, const C: u8, I: Indices> {
 
 /// `T` is not `Sync` because we never share it across threads.
 // SAFETY: There is not mutable state (except for interior mutability).
-unsafe impl<T: Send, const A: u8, I: Indices + Sync> Sync for MmapStorage<T, A, I> {}
+unsafe impl<T: Send, const C: u8, I: Indices + Sync> Sync for MmapStorage<T, C, I> {}
 
 // NB: MmapStorage doesn't need to be `Send` because it is never moved.
 
-// Any `Addressing` should work, but the capacity will always be a power of two
+// Any `Calc` should work, but the capacity will always be a power of two
 // (a multiple of (page size / size of `T`)),
-// so `PowerOfTwoAddressing` probably makes most sense.
-impl<T, const A: u8, I: Indices> MmapStorage<T, A, I> {
+// so `PowerOfTwo` probably makes most sense.
+impl<T, const C: u8, I: Indices> MmapStorage<T, C, I> {
     #[allow(clippy::new_ret_no_self, clippy::type_complexity)]
     pub fn new(
         capacity: usize,
     ) -> (
-        crate::diy::Producer<Ptr<MmapStorage<T, A, I>>>,
-        crate::diy::Consumer<Ptr<MmapStorage<T, A, I>>>,
+        crate::diy::Producer<Ptr<MmapStorage<T, C, I>>>,
+        crate::diy::Consumer<Ptr<MmapStorage<T, C, I>>>,
     ) {
         // TODO: what if capacity is 0?
         // SAFETY: If `libc` is not buggy, this should be safe.
@@ -50,8 +48,7 @@ impl<T, const A: u8, I: Indices> MmapStorage<T, A, I> {
         assert_eq!(rem, 0);
         let pages = (capacity / elements_per_page) + (capacity % elements_per_page > 0) as usize;
         let capacity = pages * elements_per_page;
-        assert_eq!(capacity, Calc::from_u8(A).update_capacity(capacity));
-        assert_eq!(capacity, capacity.next_power_of_two());
+        assert_eq!(capacity, Calc::from_u8(C).update_capacity(capacity));
         let len = capacity * core::mem::size_of::<T>();
         // SAFETY:
         // - string is null-terminated
@@ -105,7 +102,7 @@ impl<T, const A: u8, I: Indices> MmapStorage<T, A, I> {
     }
 }
 
-impl<T, const A: u8, I: Indices> Drop for MmapStorage<T, A, I> {
+impl<T, const C: u8, I: Indices> Drop for MmapStorage<T, C, I> {
     /// Drops all non-empty slots.
     fn drop(&mut self) {
         // SAFETY: this is called exactly once, no references to any elements exist anymore.
@@ -149,6 +146,14 @@ unsafe impl<T, const C: u8, I: Indices> Storage for MmapStorage<T, C, I> {
     }
 }
 
+impl<T, const C: u8, I: Indices> PartialEq for MmapStorage<T, C, I> {
+    fn eq(&self, other: &Self) -> bool {
+        core::ptr::eq(self, other)
+    }
+}
+
+impl<T, const C: u8, I: Indices> Eq for MmapStorage<T, C, I> {}
+
 // code above should go to "diy", code below should stay here.
 
 type Inner<T> = MmapStorage<T, { Calc::PowerOfTwo as u8 }, CachePaddedIndices>;
@@ -167,24 +172,62 @@ impl<T> RingBuffer<T> {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Producer<T>(crate::diy::Producer<Ptr<Inner<T>>>);
 
-impl<T> Producer<T> {}
+impl<T> Producer<T> {
+    pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
+        self.0.push(value)
+    }
+    pub fn capacity(&self) -> usize {
+        self.0.capacity()
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<T>(crate::diy::Consumer<Ptr<Inner<T>>>);
 
 impl<T> Consumer<T> {
+    pub fn pop(&mut self) -> Result<T, PopError> {
+        self.0.pop()
+    }
     pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
-        self.0.read_chunk(n).map(ReadChunk)
+        // SAFETY: MmapStorage guarantees enough valid data for ReadChunkOneSlice.
+        unsafe { self.0.read_chunk(n).map(ReadChunk) }
+    }
+
+    pub fn slots(&self) -> usize {
+        self.0.slots()
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.0.capacity()
     }
 }
 
-// TODO: rename? ReadChunkSingleSlice? Or add policy trait?
 #[derive(Debug, PartialEq, Eq)]
-pub struct ReadChunk<'a, T>(crate::diy::chunks::ReadChunk<'a, Ptr<Inner<T>>>);
+pub struct ReadChunk<'a, T>(crate::diy::chunks::ReadChunkOneSlice<'a, Ptr<Inner<T>>>);
 
 impl<T> ReadChunk<'_, T> {
     #[must_use]
     pub fn as_slice(&self) -> &[T] {
-        self.0.as_slices()
+        self.0.as_slice()
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [T] {
+        self.0.as_mut_slice()
+    }
+
+    pub fn commit(self, n: usize) {
+        self.0.commit(n)
+    }
+
+    pub fn commit_all(self) {
+        self.0.commit_all()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }

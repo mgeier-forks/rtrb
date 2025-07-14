@@ -205,11 +205,23 @@ where
     }
 }
 
+pub trait ReadChunk<'a, R: Deref>
+where
+    R::Target: Storage,
+{
+    /// Creates a new chunk for reading.
+    ///
+    /// # Safety
+    ///
+    /// The given index and length must point to initialized slots.
+    unsafe fn new(consumer: &'a Consumer<R>, head: usize, len: usize) -> Self;
+}
+
 /// A chunk for reading.
 ///
 ///
 #[derive(Debug, PartialEq, Eq)]
-pub struct ReadChunk<'a, R: Deref>
+pub struct ReadChunkTwoSlices<'a, R: Deref>
 where
     R::Target: Storage,
 {
@@ -220,7 +232,7 @@ where
     second_ptr: *mut <R::Target as Storage>::Item,
     second_len: usize,
     consumer: &'a Consumer<R>,
-    /// Indicates that dropping a `ReadChunk` may drop elements of type `R::Target::Item`.
+    /// Indicates that dropping a `ReadChunkTwoSlices` may drop elements of type `R::Target::Item`.
     _marker: PhantomData<<R::Target as Storage>::Item>,
 }
 
@@ -234,11 +246,32 @@ where
 /// fn assert_sync<X: Sync>() {}
 /// assert_sync::<rtrb::chunks::ReadChunk<u8>>();
 /// ```
-// SAFETY: ReadChunk only exists while a unique reference to the consumer is held.
+// SAFETY: ReadChunkTwoSlices only exists while a unique reference to the consumer is held.
 // It is therefore safe to move it to another thread.
-unsafe impl<S: Storage, R: Deref<Target = S>> Send for ReadChunk<'_, R> where S::Item: Send {}
+unsafe impl<S: Storage, R: Deref<Target = S>> Send for ReadChunkTwoSlices<'_, R> where S::Item: Send {}
 
-impl<S: Storage, R: Deref<Target = S>> ReadChunk<'_, R> {
+impl<'a, S: Storage, R: Deref<Target = S>> ReadChunk<'a, R> for ReadChunkTwoSlices<'a, R> {
+    // ...
+    //
+    // # Safety
+    //
+    // ...
+    unsafe fn new(consumer: &'a Consumer<R>, head: usize, len: usize) -> Self {
+        let b = &consumer.buffer;
+        let first_len = len.min(b.capacity() - head);
+        Self {
+            // SAFETY: Caller has to guarantee correct input values.
+            first_ptr: unsafe { b.data_ptr().add(head) },
+            first_len,
+            second_ptr: b.data_ptr(),
+            second_len: len - first_len,
+            consumer,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<S: Storage, R: Deref<Target = S>> ReadChunkTwoSlices<'_, R> {
     pub fn as_slices(&self) -> (&[S::Item], &[S::Item]) {
         // SAFETY: The pointers and lengths have been computed correctly in read_chunk().
         unsafe {
@@ -298,9 +331,9 @@ impl<S: Storage, R: Deref<Target = S>> ReadChunk<'_, R> {
     }
 }
 
-impl<'a, S: Storage, R: Deref<Target = S>> IntoIterator for ReadChunk<'a, R> {
+impl<'a, S: Storage, R: Deref<Target = S>> IntoIterator for ReadChunkTwoSlices<'a, R> {
     type Item = S::Item;
-    type IntoIter = ReadChunkIntoIter<'a, R>;
+    type IntoIter = ReadChunkTwoSlicesIntoIter<'a, R>;
 
     fn into_iter(self) -> Self::IntoIter {
         Self::IntoIter {
@@ -310,15 +343,15 @@ impl<'a, S: Storage, R: Deref<Target = S>> IntoIterator for ReadChunk<'a, R> {
     }
 }
 
-pub struct ReadChunkIntoIter<'a, R: Deref>
+pub struct ReadChunkTwoSlicesIntoIter<'a, R: Deref>
 where
     R::Target: Storage,
 {
-    chunk: ReadChunk<'a, R>,
+    chunk: ReadChunkTwoSlices<'a, R>,
     iterated: usize,
 }
 
-impl<R: Deref> Drop for ReadChunkIntoIter<'_, R>
+impl<R: Deref> Drop for ReadChunkTwoSlicesIntoIter<'_, R>
 where
     R::Target: Storage,
 {
@@ -333,7 +366,7 @@ where
     }
 }
 
-impl<S: Storage, R: Deref<Target = S>> Iterator for ReadChunkIntoIter<'_, R> {
+impl<S: Storage, R: Deref<Target = S>> Iterator for ReadChunkTwoSlicesIntoIter<'_, R> {
     type Item = S::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -361,9 +394,155 @@ impl<S: Storage, R: Deref<Target = S>> Iterator for ReadChunkIntoIter<'_, R> {
     }
 }
 
-impl<S: Storage, R: Deref<Target = S>> ExactSizeIterator for ReadChunkIntoIter<'_, R> {}
+impl<S: Storage, R: Deref<Target = S>> ExactSizeIterator for ReadChunkTwoSlicesIntoIter<'_, R> {}
 
-impl<S: Storage, R: Deref<Target = S>> core::iter::FusedIterator for ReadChunkIntoIter<'_, R> {}
+impl<S: Storage, R: Deref<Target = S>> core::iter::FusedIterator
+    for ReadChunkTwoSlicesIntoIter<'_, R>
+{
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ReadChunkOneSlice<'a, R: Deref>
+where
+    R::Target: Storage,
+{
+    // Must be "mut" for drop_in_place()
+    ptr: *mut <R::Target as Storage>::Item,
+    len: usize,
+    consumer: &'a Consumer<R>,
+    /// Indicates that dropping a `ReadChunkOneSlice` may drop elements of type `R::Target::Item`.
+    _marker: PhantomData<<R::Target as Storage>::Item>,
+}
+
+// SAFETY: ReadChunkOneSlice only exists while a unique reference to the consumer is held.
+// It is therefore safe to move it to another thread.
+unsafe impl<S: Storage, R: Deref<Target = S>> Send for ReadChunkOneSlice<'_, R> where S::Item: Send {}
+
+impl<'a, S: Storage, R: Deref<Target = S>> ReadChunk<'a, R> for ReadChunkOneSlice<'a, R> {
+    // ...
+    //
+    // # Safety
+    //
+    // ...
+    unsafe fn new(consumer: &'a Consumer<R>, head: usize, len: usize) -> Self {
+        let b = &consumer.buffer;
+        Self {
+            // SAFETY: Caller has to guarantee correct input values.
+            ptr: unsafe { b.data_ptr().add(head) },
+            len,
+            consumer,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<S: Storage, R: Deref<Target = S>> ReadChunkOneSlice<'_, R> {
+    pub fn as_slice(&self) -> &[S::Item] {
+        // SAFETY: The correct pointer and length have been provided by ReadChunkOneSlice::new().
+        unsafe { core::slice::from_raw_parts(self.ptr, self.len) }
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [S::Item] {
+        // SAFETY: The correct pointer and length have been provided by ReadChunkOneSlice::new().
+        unsafe { core::slice::from_raw_parts_mut(self.ptr, self.len) }
+    }
+
+    pub fn commit(self, n: usize) {
+        assert!(n <= self.len(), "cannot commit more than chunk size");
+        // SAFETY: self.len() initialized elements have been obtained in read_chunk().
+        unsafe { self.commit_unchecked(n) };
+    }
+
+    pub fn commit_all(self) {
+        let slots = self.len();
+        // SAFETY: self.len() initialized elements have been obtained in read_chunk().
+        unsafe { self.commit_unchecked(slots) };
+    }
+
+    unsafe fn commit_unchecked(self, n: usize) -> usize {
+        let len = self.len.min(n);
+        for i in 0..len {
+            // SAFETY: The caller must make sure that there are n initialized elements.
+            unsafe { self.ptr.add(i).drop_in_place() };
+        }
+        let c = self.consumer;
+        let head = c.buffer.increment(c.cached_head.get(), n);
+        c.buffer.indices().head().store(head, Ordering::Release);
+        c.cached_head.set(head);
+        n
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+}
+
+impl<'a, S: Storage, R: Deref<Target = S>> IntoIterator for ReadChunkOneSlice<'a, R> {
+    type Item = S::Item;
+    type IntoIter = ReadChunkOneSliceIntoIter<'a, R>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Self::IntoIter {
+            chunk: self,
+            iterated: 0,
+        }
+    }
+}
+
+pub struct ReadChunkOneSliceIntoIter<'a, R: Deref>
+where
+    R::Target: Storage,
+{
+    chunk: ReadChunkOneSlice<'a, R>,
+    iterated: usize,
+}
+
+impl<R: Deref> Drop for ReadChunkOneSliceIntoIter<'_, R>
+where
+    R::Target: Storage,
+{
+    /// Makes all iterated slots available for writing again.
+    ///
+    /// Non-iterated items remain in the ring buffer and are *not* dropped.
+    fn drop(&mut self) {
+        let c = self.chunk.consumer;
+        let head = c.buffer.increment(c.cached_head.get(), self.iterated);
+        c.buffer.indices().head().store(head, Ordering::Release);
+        c.cached_head.set(head);
+    }
+}
+
+impl<S: Storage, R: Deref<Target = S>> Iterator for ReadChunkOneSliceIntoIter<'_, R> {
+    type Item = S::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let ptr = if self.iterated < self.chunk.len {
+            // SAFETY: len is valid.
+            unsafe { self.chunk.ptr.add(self.iterated) }
+        } else {
+            return None;
+        };
+        self.iterated += 1;
+        // SAFETY: ptr points to an initialized slot.
+        Some(unsafe { ptr.read() })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.chunk.len - self.iterated;
+        (remaining, Some(remaining))
+    }
+}
+
+impl<S: Storage, R: Deref<Target = S>> ExactSizeIterator for ReadChunkOneSliceIntoIter<'_, R> {}
+
+impl<S: Storage, R: Deref<Target = S>> core::iter::FusedIterator
+    for ReadChunkOneSliceIntoIter<'_, R>
+{
+}
 
 impl<S: Storage, R: Deref<Target = S>> Producer<R> {
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, R>, ChunkError> {
@@ -402,7 +581,15 @@ impl<S: Storage, R: Deref<Target = S>> Producer<R> {
 }
 
 impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
-    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, R>, ChunkError> {
+    /// Prepares a chunk for reading.
+    ///
+    /// # Safety
+    ///
+    /// The type `C` must be appropriate.
+    pub unsafe fn read_chunk<'a, C: ReadChunk<'a, R>>(
+        &'a mut self,
+        n: usize,
+    ) -> Result<C, ChunkError> {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
         let b = &self.buffer;
@@ -418,15 +605,8 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
             }
         }
         let head = b.collapse_position(head);
-        let first_len = n.min(b.capacity() - head);
-        Ok(ReadChunk {
-            // SAFETY: head has been updated to a valid position.
-            first_ptr: unsafe { b.data_ptr().add(head) },
-            first_len,
-            second_ptr: b.data_ptr(),
-            second_len: n - first_len,
-            consumer: self,
-            _marker: PhantomData,
-        })
+        // SAFETY: Index and size have been calculated correctly,
+        // the caller must make sure that an appropriate `C` type is used.
+        Ok(unsafe { C::new(self, head, n) })
     }
 }

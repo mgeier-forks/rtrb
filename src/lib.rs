@@ -64,7 +64,7 @@ mod cache_padded;
 use cache_padded::CachePadded;
 
 pub mod chunks;
-pub mod diy;
+mod diy;
 
 pub mod array;
 pub mod embedded;
