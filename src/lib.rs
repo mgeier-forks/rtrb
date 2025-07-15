@@ -51,13 +51,10 @@
 
 extern crate alloc;
 
-use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
-use core::ops::Deref;
-use core::ptr::NonNull;
-use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU8, AtomicUsize};
 
 #[allow(dead_code, clippy::undocumented_unsafe_blocks)]
 mod cache_padded;
@@ -76,12 +73,10 @@ pub mod mmap;
 #[allow(unused_imports)]
 use chunks::WriteChunkUninit;
 
-use diy::{Calc, IndexCalculation, Indices, Storage};
+use diy::{Calc, IndexCalculation, Indices, Ptr, Storage};
 
 // TODO: use errors::* or something?
 pub use diy::{PeekError, PopError, PushError};
-
-use diy::IS_ABANDONED;
 
 // NB: non-public!
 type Inner<T> = DynamicStorage<T, { Calc::DoubleSize as u8 }, CachePaddedIndices>;
@@ -122,89 +117,6 @@ impl<T> RingBuffer<T> {
     }
 }
 
-// TODO: move to different module?
-#[derive(Debug, PartialEq, Eq)]
-pub struct Ptr<S: Storage> {
-    ptr: NonNull<S>,
-    _marker: PhantomData<S>,
-}
-
-impl<S: Storage> Ptr<S> {
-    fn new(storage: S) -> (diy::Producer<Self>, diy::Consumer<Self>) {
-        // NB: We are assuming that IS_ABANDONED is unset.
-        let ptr = Box::leak(Box::new(storage));
-        // SAFETY: Pointer from Box is always non-null.
-        let ptr = unsafe { NonNull::new_unchecked(ptr) };
-        // SAFETY: Only a single instance of Producer is allowed.
-        let p = unsafe {
-            diy::Producer::new(Self {
-                ptr,
-                _marker: PhantomData,
-            })
-        };
-        // SAFETY: Only a single instance of Consumer is allowed.
-        let c = unsafe {
-            diy::Consumer::new(Self {
-                ptr,
-                _marker: PhantomData,
-            })
-        };
-        (p, c)
-    }
-}
-
-impl<S: Storage> Drop for Ptr<S> {
-    fn drop(&mut self) {
-        // SAFETY: must point to initialized Storage.
-        let flags: &AtomicU8 = unsafe { self.ptr.as_ref().flags() };
-        // The "store" part of `fetch_or()` has to use `Release` to make sure that any previous writes
-        // to the ring buffer happen before it (in the thread that drops first).
-        // The "load" part can be `Relaxed` for the first thread,
-        // but it must be `Acquire` for the second one (see below).
-        if flags.fetch_or(IS_ABANDONED, Ordering::Release) & IS_ABANDONED == 0 {
-            // The flag wasn't set before, so we are the first to drop our
-            // producer/consumer and it should not be dropped yet.
-        } else {
-            // The flag was already set, i.e. the other thread has already dropped its
-            // consumer/producer and it can be dropped now.
-
-            // However, since the load of `flags` was `Relaxed`,
-            // we have to use `Acquire` here to make sure that reading `head` and `tail`
-            // in the destructor happens after this point.
-
-            // Ideally, we would use a memory fence like this:
-            //core::sync::atomic::fence(Ordering::Acquire);
-            // ... but as long as ThreadSanitizer doesn't support fences,
-            // we use load(Acquire) as a work-around to avoid false positives:
-            let _ = flags.load(Ordering::Acquire);
-            // SAFETY: RingBuffer has been allocated with `Box`.
-            unsafe {
-                drop_slow(self.ptr);
-            }
-        }
-    }
-}
-
-/// Non-inlined part of `Ptr::drop()`.
-#[inline(never)]
-unsafe fn drop_slow<S>(ptr: NonNull<S>) {
-    // SAFETY: This is allowed because the storage has been allocated with `Box::new()`.
-    unsafe {
-        // Turn the pointer back into a `Box` and immediately drop it,
-        // which deallocates the memory allocated in `Ptr::new()`.
-        drop(Box::from_raw(ptr.as_ptr()));
-    }
-}
-
-impl<S: Storage> Deref for Ptr<S> {
-    type Target = S;
-
-    fn deref(&self) -> &Self::Target {
-        // SAFETY: There are no mutable references.
-        unsafe { self.ptr.as_ref() }
-    }
-}
-
 /// Dynamic storage on the heap.
 // Once the `adt_const_params` feature has been stabilized
 // (https://github.com/rust-lang/rust/issues/95174),
@@ -225,7 +137,7 @@ pub struct DynamicStorage<T, const C: u8, I: Indices> {
 }
 
 /// `T` is not `Sync` because we never share it across threads.
-// SAFETY: There is not mutable state (except for interior mutability).
+// SAFETY: There is no mutable state (except for interior mutability).
 unsafe impl<T: Send, const C: u8, I: Indices + Sync> Sync for DynamicStorage<T, C, I> {}
 
 // NB: DynamicStorage doesn't need to be `Send` because it is never moved.

@@ -36,6 +36,7 @@ criterion = "0.3"
 crossbeam-utils = { version = "0.8", default-features = false }
 crossbeam-queue-pr338 = { git = "https://github.com/mgeier/crossbeam", branch = "spsc", package = "crossbeam-queue" }
 npnc = "0.2"
+shared_memory = "0.12"
 
 # aggressive optimization for benchmarks
 [profile.bench]

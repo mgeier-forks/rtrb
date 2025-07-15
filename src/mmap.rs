@@ -2,8 +2,8 @@ use core::{convert::TryInto, marker::PhantomData, sync::atomic::AtomicU8};
 
 use crate::{
     chunks::ChunkError,
-    diy::{Calc, IndexCalculation, Indices, Storage},
-    CachePaddedIndices, PopError, Ptr, PushError,
+    diy::{Calc, IndexCalculation, Indices, Ptr, Storage},
+    CachePaddedIndices, PopError, PushError,
 };
 
 // TODO: move MmapStorage to "diy" module?
@@ -24,7 +24,7 @@ pub struct MmapStorage<T, const C: u8, I: Indices> {
 }
 
 /// `T` is not `Sync` because we never share it across threads.
-// SAFETY: There is not mutable state (except for interior mutability).
+// SAFETY: There is no mutable state (except for interior mutability).
 unsafe impl<T: Send, const C: u8, I: Indices + Sync> Sync for MmapStorage<T, C, I> {}
 
 // NB: MmapStorage doesn't need to be `Send` because it is never moved.

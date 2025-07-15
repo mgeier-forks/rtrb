@@ -52,11 +52,9 @@ impl<T, const N: usize> Producer<'_, T, N> {
         self.0.capacity()
     }
 
-    /*
-    pub fn is_abandoned(&self) -> bool {
-        Arc::strong_count(&self.buffer) < 2
+    pub fn has_consumer(&self) -> bool {
+        self.0.has_consumer()
     }
-    */
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -79,13 +77,11 @@ impl<T, const N: usize> Consumer<'_, T, N> {
         self.0.is_empty()
     }
 
-    /*
-    pub fn is_abandoned(&self) -> bool {
-        self.0.is_abandoned()
-    }
-    */
-
     pub fn capacity(&self) -> usize {
         self.0.capacity()
+    }
+
+    pub fn has_producer(&self) -> bool {
+        self.0.has_producer()
     }
 }

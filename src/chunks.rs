@@ -166,7 +166,10 @@
 
 use core::{fmt, mem::MaybeUninit};
 
-use crate::{diy::Calc, CachePaddedIndices, Consumer, DynamicStorage, Producer, Ptr};
+use crate::{
+    diy::{Calc, Ptr},
+    CachePaddedIndices, Consumer, DynamicStorage, Producer,
+};
 
 // This is used in the documentation.
 #[allow(unused_imports)]
