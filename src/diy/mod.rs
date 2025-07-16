@@ -641,7 +641,7 @@ impl<T> fmt::Display for PushError<T> {
 /// Storage in a (compile-time sized) array.
 // Once the `adt_const_params` feature has been stabilized
 // (https://github.com/rust-lang/rust/issues/95174),
-// `u8` can be replaced by `Addressing`.
+// `u8` can be replaced by `Calc`.
 #[derive(Debug)]
 pub struct ArrayStorage<T, const N: usize, const C: u8, I: Indices> {
     indices: I,
