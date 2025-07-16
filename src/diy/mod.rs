@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use core::cell::{Cell, UnsafeCell};
 use core::fmt;
 use core::marker::PhantomData;
