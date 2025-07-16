@@ -515,12 +515,6 @@ impl<S: Storage, R: Deref<Target = S>> Consumer<R> {
         self.next_head().is_none()
     }
 
-    /*
-    pub fn is_abandoned(&self) -> bool {
-        S::is_abandoned(&self.buffer)
-    }
-    */
-
     pub fn capacity(&self) -> usize {
         self.buffer.capacity()
     }
@@ -570,17 +564,15 @@ where
     }
 }
 
-/// Error type for [`Consumer::pop()`].
+/// Error type for [`Consumer::pop()`](crate::Consumer::pop).
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PopError {
     /// The queue was empty.
     Empty,
 }
 
-/*
 #[cfg(feature = "std")]
 impl std::error::Error for PopError {}
-*/
 
 impl fmt::Display for PopError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -590,17 +582,15 @@ impl fmt::Display for PopError {
     }
 }
 
-/// Error type for [`Consumer::peek()`].
+/// Error type for [`Consumer::peek()`](crate::Consumer::peek).
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PeekError {
     /// The queue was empty.
     Empty,
 }
 
-/*
 #[cfg(feature = "std")]
 impl std::error::Error for PeekError {}
-*/
 
 impl fmt::Display for PeekError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -610,17 +600,15 @@ impl fmt::Display for PeekError {
     }
 }
 
-/// Error type for [`Producer::push()`].
+/// Error type for [`Producer::push()`](crate::Producer::push)].
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum PushError<T> {
     /// The queue was full.
     Full(T),
 }
 
-/*
 #[cfg(feature = "std")]
 impl<T> std::error::Error for PushError<T> {}
-*/
 
 impl<T> fmt::Debug for PushError<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

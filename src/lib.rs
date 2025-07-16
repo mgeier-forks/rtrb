@@ -369,8 +369,9 @@ impl<T> Producer<T> {
         self.0.capacity()
     }
 
-    /*
     /// Returns `true` if the corresponding [`Consumer`] has been destroyed.
+    ///
+    /// TODO: update this note:
     ///
     /// Note that since Rust version 1.74.0, this is not synchronizing with the consumer thread
     /// anymore, see <https://github.com/mgeier/rtrb/issues/114>.
@@ -415,9 +416,8 @@ impl<T> Producer<T> {
     /// }
     /// ```
     pub fn is_abandoned(&self) -> bool {
-        Arc::strong_count(&self.buffer) < 2
+        self.0.is_abandoned()
     }
-    */
 }
 
 /// The consumer side of a [`RingBuffer`].
@@ -562,8 +562,9 @@ impl<T> Consumer<T> {
         self.0.is_empty()
     }
 
-    /*
     /// Returns `true` if the corresponding [`Producer`] has been destroyed.
+    ///
+    /// TODO: update this note:
     ///
     /// Note that since Rust version 1.74.0, this is not synchronizing with the producer thread
     /// anymore, see <https://github.com/mgeier/rtrb/issues/114>.
@@ -609,7 +610,6 @@ impl<T> Consumer<T> {
     pub fn is_abandoned(&self) -> bool {
         self.0.is_abandoned()
     }
-    */
 
     /// Returns the total capacity of the queue.
     ///
