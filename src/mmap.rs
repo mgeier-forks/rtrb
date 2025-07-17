@@ -1,3 +1,16 @@
+//!
+//! Phil Howard is maybe the inventor (2001?):
+//! http://web.archive.org/web/20190208212054/http://freshmeat.sourceforge.net/projects/vrb/
+//!
+//! http://web.archive.org/web/20140705114711/http://vrb.sourceforge.net/
+//!
+//! code available here (as part of LIBH): https://web.archive.org/web/20140625200016/http://libh.slashusr.org/
+//! some version of the code?
+//! https://github.com/cpjreynolds/vrb
+//!
+//! Potential Windows solution:
+//! https://fgiesen.wordpress.com/2012/07/21/the-magic-ring-buffer/
+
 use core::{convert::TryInto, marker::PhantomData, sync::atomic::AtomicU8};
 
 use crate::{
