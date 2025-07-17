@@ -65,6 +65,7 @@ mod diy;
 
 pub mod array;
 pub mod embedded;
+pub mod bip;
 
 #[cfg(feature = "mmap")]
 pub mod mmap;
