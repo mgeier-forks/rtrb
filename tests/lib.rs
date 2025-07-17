@@ -149,7 +149,6 @@ fn trait_impls() {
     assert_ne!(c, another_c);
 }
 
-/*
 #[test]
 fn no_race_with_is_abandoned() {
     static mut V: u32 = 0;
@@ -163,10 +162,11 @@ fn no_race_with_is_abandoned() {
         });
         std::thread::yield_now();
         if c.is_abandoned() {
-            std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
             unsafe { V = 20 };
+        } else {
+            // This is not synchronized, both Miri and ThreadSanitizer should detect a data race:
+            //unsafe { V = 30 };
         }
         t.join().unwrap();
     }
 }
-*/
