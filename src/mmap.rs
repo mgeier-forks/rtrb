@@ -70,8 +70,14 @@ impl<T, const C: u8, I: Indices> MmapStorage<T, C, I> {
         // - pointers, lengths and other arguments are valid
         let data_ptr: *mut T = unsafe {
             use libc::*;
-            let fd = memfd_create(c"rtrb-buffer".as_ptr(), 0);
-            ftruncate(fd, TryInto::<off_t>::try_into(len).unwrap());
+            let mut filename = *b"/dev/shm/rtrb-buffer-XXXXXX\0";
+            let filename = filename.as_mut_ptr().cast();
+            let fd = mkstemp(filename);
+            assert!(fd >= 0);
+            let r = unlink(filename);
+            assert_eq!(r, 0);
+            let r = ftruncate(fd, TryInto::<off_t>::try_into(len).unwrap());
+            assert_eq!(r, 0);
             // Get an address with twice the capacity available
             let ptr_one = mmap(
                 core::ptr::null_mut(),
