@@ -70,7 +70,7 @@ impl<T, const C: u8, I: Indices> MmapStorage<T, C, I> {
         // - pointers, lengths and other arguments are valid
         let data_ptr: *mut T = unsafe {
             use libc::*;
-            let mut filename = *b"/dev/shm/rtrb-buffer-XXXXXX\0";
+            let mut filename = *b"/tmp/rtrb-buffer-XXXXXX\0";
             let filename = filename.as_mut_ptr().cast();
             let fd = mkstemp(filename);
             assert!(fd >= 0);
