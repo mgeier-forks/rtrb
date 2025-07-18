@@ -2,8 +2,10 @@
 //!
 //! no dynamic allocation, but cache-padded indices
 
+use core::sync::atomic::Ordering;
+
 use crate::{
-    diy::{ArrayStorage, Calc},
+    diy::{ArrayStorage, Calc, Storage as _, HAS_CONSUMER, HAS_PRODUCER},
     CachePaddedIndices, PeekError, PopError, PushError,
 };
 
@@ -23,6 +25,14 @@ impl<T, const N: usize> RingBuffer<T, N> {
 
     pub fn consumer(&self) -> Option<Consumer<'_, T, N>> {
         self.0.consumer().map(Consumer)
+    }
+
+    pub fn has_producer(&self) -> bool {
+        self.0.flags().load(Ordering::SeqCst) & HAS_PRODUCER != 0
+    }
+
+    pub fn has_consumer(&self) -> bool {
+        self.0.flags().load(Ordering::SeqCst) & HAS_CONSUMER != 0
     }
 }
 
