@@ -5,13 +5,11 @@
 //! http://web.archive.org/web/20140705114711/http://vrb.sourceforge.net/
 //!
 //! code available here (as part of LIBH): https://web.archive.org/web/20140625200016/http://libh.slashusr.org/
-//! some version of the code?
-//! https://github.com/cpjreynolds/vrb
 //!
 //! Potential Windows solution:
 //! https://fgiesen.wordpress.com/2012/07/21/the-magic-ring-buffer/
 
-use core::{convert::TryInto, marker::PhantomData, sync::atomic::AtomicU8};
+use core::{marker::PhantomData, mem, sync::atomic::AtomicU8};
 
 use crate::{
     chunks::ChunkError,
@@ -53,18 +51,27 @@ impl<T, const C: u8, I: Indices> MmapStorage<T, C, I> {
         crate::diy::Producer<Ptr<MmapStorage<T, C, I>>>,
         crate::diy::Consumer<Ptr<MmapStorage<T, C, I>>>,
     ) {
+        const {
+            // NB: This also disallows zero-sized types:
+            assert!(
+                mem::size_of::<T>().is_power_of_two(),
+                "size of T must be a power of 2"
+            );
+        }
         // TODO: what if capacity is 0?
         // SAFETY: If `libc` is not buggy, this should be safe.
         let pagesize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
         assert_ne!(pagesize, -1);
-        let size_of_t = core::mem::size_of::<T>();
-        let elements_per_page = TryInto::<usize>::try_into(pagesize).unwrap() / size_of_t;
-        let rem = TryInto::<usize>::try_into(pagesize).unwrap() % size_of_t;
-        assert_eq!(rem, 0);
-        let pages = (capacity / elements_per_page) + (capacity % elements_per_page > 0) as usize;
+        let pagesize = usize::try_from(pagesize).unwrap();
+        assert!(pagesize.is_power_of_two());
+        assert!(pagesize >= mem::size_of::<T>());
+        assert_eq!(pagesize % mem::size_of::<T>(), 0);
+        let elements_per_page = pagesize / mem::size_of::<T>();
+        let pages = capacity.div_ceil(elements_per_page);
         let capacity = pages * elements_per_page;
         assert_eq!(capacity, Calc::from_u8(C).update_capacity(capacity));
-        let len = capacity * core::mem::size_of::<T>();
+        let len = capacity * mem::size_of::<T>();
+
         // SAFETY:
         // - string is null-terminated
         // - pointers, lengths and other arguments are valid
@@ -76,7 +83,7 @@ impl<T, const C: u8, I: Indices> MmapStorage<T, C, I> {
             assert!(fd >= 0);
             let r = unlink(filename);
             assert_eq!(r, 0);
-            let r = ftruncate(fd, TryInto::<off_t>::try_into(len).unwrap());
+            let r = ftruncate(fd, off_t::try_from(len).unwrap());
             assert_eq!(r, 0);
             // Get an address with twice the capacity available
             let ptr_one = mmap(
@@ -111,8 +118,8 @@ impl<T, const C: u8, I: Indices> MmapStorage<T, C, I> {
             assert_eq!(r, 0); // TODO: check for errno?
             ptr_one.cast()
         };
-        let is_aligned = data_ptr.is_aligned();
-        assert!(is_aligned);
+        // Alignments larger than the page size are not supported.
+        assert!(data_ptr.is_aligned());
         Ptr::new(Self {
             indices: I::INIT,
             flags: AtomicU8::new(0),
