@@ -34,7 +34,7 @@ use core::{
     sync::atomic::{AtomicU8, AtomicUsize, Ordering},
 };
 
-use crate::{cache_padded::CachePadded, diy::IS_ABANDONED, PeekError, PopError, PushError};
+use crate::{cache_padded::CachePadded, chunks::ChunkError, diy::IS_ABANDONED, PeekError, PopError, PushError};
 
 /// Bi-partite ring buffer.
 #[derive(Debug)]
@@ -156,8 +156,6 @@ struct BoxedRingBuffer<T> {
 }
 
 impl<T> BoxedRingBuffer<T> {
-    // NB: This takes ownership of the ring buffer, which makes sure that there is only one
-    // Producer/Consumer in the end.
     #[allow(clippy::new_ret_no_self)]
     fn new(rb: RingBuffer<T>) -> (Producer<T>, Consumer<T>) {
         debug_assert_eq!(rb.flags.load(Ordering::Relaxed) & IS_ABANDONED, 0);
@@ -227,7 +225,49 @@ impl<T> core::ops::Deref for BoxedRingBuffer<T> {
     type Target = RingBuffer<T>;
 
     fn deref(&self) -> &Self::Target {
-        // SAFETY: There are no mutable references.
+        // SAFETY: There are never any mutable references.
         unsafe { self.ptr.as_ref() }
     }
+}
+
+// "chunks" stuff. make separate module or not?
+
+// TODO: provide both types of chunk? ReadChunkContiguous, ReadChunkOnePiece
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ReadChunk<'a, T> {
+}
+
+impl<T> ReadChunk<'_, T> {
+    pub fn as_slice(&self) -> &[T] {
+        todo!()
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [T] {
+        todo!()
+    }
+
+    pub fn commit(self, n: usize) {
+        todo!()
+    }
+
+    pub fn commit_all(self) {
+        todo!()
+    }
+
+    pub fn len(&self) -> usize {
+        todo!()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        todo!()
+    }
+}
+
+impl<T> Consumer<T> {
+    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
+        todo!()
+    }
+
+    // TODO: different kinds of slots() functions? first and second, only first?
 }

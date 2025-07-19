@@ -292,7 +292,7 @@ impl<S: Storage> Deref for Ptr<S> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
-        // SAFETY: There are no mutable references.
+        // SAFETY: There are never any mutable references.
         unsafe { self.ptr.as_ref() }
     }
 }

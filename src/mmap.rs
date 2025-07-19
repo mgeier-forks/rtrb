@@ -234,7 +234,6 @@ impl<T> Consumer<T> {
 pub struct ReadChunk<'a, T>(crate::diy::chunks::ReadChunkOneSlice<'a, Ptr<Inner<T>>>);
 
 impl<T> ReadChunk<'_, T> {
-    #[must_use]
     pub fn as_slice(&self) -> &[T] {
         self.0.as_slice()
     }
