@@ -269,7 +269,7 @@ impl<S: Storage> Drop for Ptr<S> {
             // ... but as long as ThreadSanitizer doesn't support fences,
             // we use load(Acquire) as a work-around to avoid false positives:
             let _ = flags.load(Ordering::Acquire);
-            // SAFETY: RingBuffer has been allocated with `Box`.
+            // SAFETY: RingBuffer has been allocated with `Box::new()`.
             unsafe {
                 drop_slow(self.ptr);
             }
