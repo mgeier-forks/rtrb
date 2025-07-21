@@ -34,16 +34,21 @@ use core::{
     sync::atomic::{AtomicU8, AtomicUsize, Ordering},
 };
 
-use crate::{cache_padded::CachePadded, chunks::ChunkError, diy::IS_ABANDONED, PeekError, PopError, PushError};
+use crate::{
+    cache_padded::CachePadded, chunks::ChunkError, diy::IS_ABANDONED, PeekError, PopError,
+    PushError,
+};
+
+// Disable skipping (0 is an impossible value for `skip`).
+const NO_SKIP: usize = 0;
 
 /// Bi-partite ring buffer.
 #[derive(Debug)]
 pub struct RingBuffer<T> {
     head: CachePadded<AtomicUsize>,
     tail: CachePadded<AtomicUsize>,
-    // TODO: 4-letter word? brim, line, clip, jump, muck, bump, tack, skip, trim, crop, wrap, high
     // TODO: measure whether CachePadded helps
-    unused: CachePadded<AtomicUsize>,
+    skip: CachePadded<AtomicUsize>,
     flags: AtomicU8,
     data_ptr: *mut T,
     capacity: usize,
@@ -57,7 +62,7 @@ impl<T> RingBuffer<T> {
         BoxedRingBuffer::new(Self {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
-            unused: CachePadded::new(AtomicUsize::new(capacity)),
+            skip: CachePadded::new(AtomicUsize::new(NO_SKIP)),
             flags: AtomicU8::new(0),
             data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
             capacity,
@@ -76,6 +81,57 @@ impl<T> RingBuffer<T> {
 
     fn flags(&self) -> &AtomicU8 {
         &self.flags
+    }
+
+    fn collapse_position(&self, pos: usize) -> usize {
+        // Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
+        debug_assert!(pos == 0 || pos < 2 * self.capacity());
+        if pos < self.capacity() {
+            pos
+        } else {
+            pos - self.capacity()
+        }
+    }
+
+    /// Increments a position by going `n` slots forward.
+    fn increment(&self, pos: usize, n: usize) -> usize {
+        debug_assert!(pos == 0 || pos < 2 * self.capacity());
+        debug_assert!(n <= self.capacity());
+        let threshold = 2 * self.capacity() - n;
+        if pos < threshold {
+            pos + n
+        } else {
+            pos - threshold
+        }
+    }
+
+    /// Increments a position by going one slot forward.
+    ///
+    /// This might be more efficient than self.increment(..., 1).
+    fn increment1(&self, pos: usize) -> usize {
+        debug_assert_ne!(self.capacity(), 0);
+        debug_assert!(pos < 2 * self.capacity());
+        if pos < 2 * self.capacity() - 1 {
+            pos + 1
+        } else {
+            0
+        }
+    }
+
+    /// Returns the distance between two positions.
+    fn distance(&self, a: usize, b: usize) -> usize {
+        debug_assert!(a == 0 || a < 2 * self.capacity());
+        debug_assert!(b == 0 || b < 2 * self.capacity());
+        if a <= b {
+            b - a
+        } else {
+            2 * self.capacity() - a + b
+        }
+    }
+
+    unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
+        // SAFETY: See docstring.
+        unsafe { self.data_ptr().add(self.collapse_position(pos)) }
     }
 }
 
@@ -98,19 +154,63 @@ pub struct Producer<T> {
     buffer: BoxedRingBuffer<T>,
     cached_head: Cell<usize>,
     cached_tail: Cell<usize>,
-    // TODO: cached_unused?
+    // NB: caching `skip` doesn't help, because it can jump to any position.
 }
 
 impl<T> Producer<T> {
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
-        todo!()
+        if let Some(tail) = self.next_tail() {
+            let b = &self.buffer;
+            // SAFETY: tail points to an empty slot.
+            unsafe { b.slot_ptr(tail).write(value) };
+            let tail = b.increment1(tail);
+            b.tail.store(tail, Ordering::Release);
+            self.cached_tail.set(tail);
+            Ok(())
+        } else {
+            Err(PushError::Full(value))
+        }
+    }
+    /// Get the tail position for writing the next slot, if available.
+    ///
+    /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
+    /// For performance, this special case is implemented separately.
+    fn next_tail(&self) -> Option<usize> {
+        let head = self.cached_head.get();
+        let tail = self.cached_tail.get();
+        let b = &self.buffer;
+
+        if head < tail {
+            // TODO: skip is not read here
+
+            // TODO: if wrap-around -> reset skip
+        } else {
+            // TODO: don't touch skip?
+        }
+
+        /*
+        // Check if the queue is *possibly* full.
+        if b.distance(head, tail) == b.capacity() {
+            // Refresh the head ...
+            let head = b.indices().head().load(Ordering::Acquire);
+            self.cached_head.set(head);
+            // ... and check if it's *really* full.
+            if b.distance(head, tail) == b.capacity() {
+                // `head` didn't change, queue is full.
+                return None;
+            }
+        }
+        */
+        Some(tail)
     }
     pub fn slots(&self) -> usize {
         todo!()
     }
+    // TODO: disable public is_full for bip?
     pub fn is_full(&self) -> bool {
         todo!()
     }
+    // TODO: disable public capacity for bip?
     pub fn capacity(&self) -> usize {
         todo!()
     }
@@ -125,25 +225,85 @@ pub struct Consumer<T> {
     buffer: BoxedRingBuffer<T>,
     cached_head: Cell<usize>,
     cached_tail: Cell<usize>,
-    // TODO: cached_unused?
+    // TODO: cached_skip?
 }
 
 impl<T> Consumer<T> {
     pub fn pop(&mut self) -> Result<T, PopError> {
-        todo!()
+        if let Some(head) = self.next_head() {
+            let b = &self.buffer;
+            // SAFETY: head points to an initialized slot.
+            let value = unsafe { b.slot_ptr(head).read() };
+            let head = b.increment1(head);
+            b.head.store(head, Ordering::Release);
+            self.cached_head.set(head);
+            Ok(value)
+        } else {
+            Err(PopError::Empty)
+        }
     }
+
+    /// Get the `head` position for reading the next slot, if available.
+    ///
+    /// This is a strict subset of the functionality implemented in `read_chunk()`.
+    /// For performance, this special case is implemented separately.
+    fn next_head(&self) -> Option<usize> {
+        let mut head = self.cached_head.get();
+        let mut tail = self.cached_tail.get();
+        let b = &self.buffer;
+
+        let mut tail_has_been_refreshed = false;
+        // Check if the queue is *possibly* empty.
+        if head == tail {
+            // Refresh the tail ...
+            tail = b.tail.load(Ordering::Acquire);
+            self.cached_tail.set(tail);
+            tail_has_been_refreshed = true;
+            // ... and check if it's *really* empty.
+            if head == tail {
+                // `tail` didn't change, queue is empty.
+                return None;
+            } else if b.collapse_position(head) < b.collapse_position(tail) {
+                // `tail` did change, but it didn't wrap around.
+                return Some(head);
+            }
+        }
+        // `tail` potentially wrapped around, so we have to check `skip`.
+        let mut skip = b.skip.load(Ordering::Acquire);
+        if skip != NO_SKIP && head == skip {
+            head = b.increment(head, b.capacity() - b.collapse_position(skip));
+            b.head.store(head, Ordering::Release);
+            self.cached_head.set(head);
+            skip = NO_SKIP;
+            b.skip.store(skip, Ordering::Release);
+            if head == tail {
+                if tail_has_been_refreshed {
+                    return None;
+                }
+                tail = b.tail.load(Ordering::Acquire);
+                self.cached_tail.set(tail);
+                if head == tail {
+                    return None;
+                }
+            }
+        }
+        Some(head)
+    }
+
     pub fn peek(&self) -> Result<&T, PeekError> {
         todo!()
     }
     pub fn slots(&self) -> usize {
         todo!()
     }
+    // TODO: disable public is_empty for bip?
     pub fn is_empty(&self) -> bool {
         todo!()
     }
     pub fn is_abandoned(&self) -> bool {
         todo!()
     }
+    // TODO: disable public capacity for bip?
     pub fn capacity(&self) -> usize {
         todo!()
     }
@@ -232,13 +392,34 @@ impl<T> core::ops::Deref for BoxedRingBuffer<T> {
 
 // "chunks" stuff. make separate module or not?
 
-// TODO: provide both types of chunk? ReadChunkContiguous, ReadChunkOnePiece
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct ReadChunk<'a, T> {
+//#[derive(Debug, PartialEq, Eq)]
+pub struct ContiguousWriteChunkUninit<'a, T> {
+    ptr: *mut T,
+    len: usize,
+    producer: &'a Producer<T>,
 }
 
-impl<T> ReadChunk<'_, T> {
+impl<T> ContiguousWriteChunkUninit<'_, T> {
+    unsafe fn commit_unchecked(self, n: usize) -> usize {
+        let p = self.producer;
+
+        // TODO: if area at beginning has been used, but n == 0 -> reset skip, reset tail?
+
+        let tail = p.buffer.increment(p.cached_tail.get(), n);
+        p.buffer.tail.store(tail, Ordering::Release);
+        p.cached_tail.set(tail);
+        n
+    }
+}
+
+//#[derive(Debug, PartialEq, Eq)]
+pub struct ContiguousReadChunk<'a, T> {
+    ptr: *mut T,
+    len: usize,
+    consumer: &'a Consumer<T>,
+}
+
+impl<T> ContiguousReadChunk<'_, T> {
     pub fn as_slice(&self) -> &[T] {
         todo!()
     }
@@ -262,11 +443,105 @@ impl<T> ReadChunk<'_, T> {
     pub fn is_empty(&self) -> bool {
         todo!()
     }
+
+    unsafe fn commit_unchecked(self, n: usize) -> usize {
+        // TODO: if skip is reached -> reset skip? set head to beginning
+
+        let len = self.len.min(n);
+        for i in 0..len {
+            // SAFETY: The caller must make sure that there are n initialized elements.
+            unsafe { self.ptr.add(i).drop_in_place() };
+        }
+        let c = self.consumer;
+        let head = c.buffer.increment(c.cached_head.get(), n);
+        c.buffer.head.store(head, Ordering::Release);
+        c.cached_head.set(head);
+        n
+    }
+}
+
+impl<T> Producer<T> {
+    pub fn write_chunk_uninit(
+        &mut self,
+        n: usize,
+    ) -> Result<ContiguousWriteChunkUninit<'_, T>, ChunkError> {
+        let head = self.cached_head.get();
+        let tail = self.cached_tail.get();
+        let b = &self.buffer;
+
+        //if head <= tail {
+        if head < tail {
+            // TODO: has skip been reset? it is not read here?
+
+            // TODO: check space between tail and capacity/skip
+
+            // TODO: is not enough, check beginning to head
+
+            // TODO: load head, check again
+
+            // TODO: if area at the beginning is used, set skip
+        } else {
+            // TODO: check space between tail and head
+
+            // TODO: load head, check again
+
+            // TODO: don't touch skip here?
+        }
+
+        // Check if the queue has *possibly* not enough slots.
+        if b.capacity() - b.distance(head, tail) < n {
+            // Refresh the head ...
+            let head = b.head.load(Ordering::Acquire);
+            self.cached_head.set(head);
+            // ... and check if there *really* are not enough slots.
+            let slots = b.capacity() - b.distance(head, tail);
+            if slots < n {
+                return Err(ChunkError::TooFewSlots(slots));
+            }
+        }
+        let tail = b.collapse_position(tail);
+        Ok(ContiguousWriteChunkUninit {
+            // SAFETY: tail has been updated to a valid position.
+            ptr: unsafe { b.data_ptr().add(tail) },
+            len: n,
+            producer: self,
+        })
+    }
 }
 
 impl<T> Consumer<T> {
-    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
-        todo!()
+    pub fn read_chunk(&mut self, n: usize) -> Result<ContiguousReadChunk<'_, T>, ChunkError> {
+        let head = self.cached_head.get();
+        let tail = self.cached_tail.get();
+        let b = &self.buffer;
+
+        //if head <= tail {
+        if head < tail {
+            // TODO: check space between head and tail
+        } else {
+            // TODO: check space between head and skip
+        }
+        // TODO: load tail, if necessary
+        // TODO: load skip, if necessary?
+
+        // Check if the queue has *possibly* not enough slots.
+        if b.distance(head, tail) < n {
+            // Refresh the tail ...
+            let tail = b.tail.load(Ordering::Acquire);
+            self.cached_tail.set(tail);
+            // ... and check if there *really* are not enough slots.
+            let slots = b.distance(head, tail);
+            if slots < n {
+                return Err(ChunkError::TooFewSlots(slots));
+            }
+        }
+        let head = b.collapse_position(head);
+        Ok(ContiguousReadChunk {
+            // SAFETY: ...
+            ptr: unsafe { b.data_ptr().add(head) },
+            len: n,
+            consumer: self,
+        })
     }
 
     // TODO: different kinds of slots() functions? first and second, only first?
