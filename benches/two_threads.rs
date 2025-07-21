@@ -179,6 +179,11 @@ create_two_threads_benchmark!(
     |q, i| q.push(i).is_ok(),
     |q| q.pop().ok(),
     ::
+    "rtrb-bip",
+    rtrb::bip::RingBuffer::new,
+    |p, i| p.push(i).is_ok(),
+    |c| c.pop().ok(),
+    ::
     "npnc",
     |capacity| npnc::bounded::spsc::channel(capacity.next_power_of_two()),
     |p, i| p.produce(i).is_ok(),

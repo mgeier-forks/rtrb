@@ -171,6 +171,7 @@ impl<T> Producer<T> {
             Err(PushError::Full(value))
         }
     }
+
     /// Get the tail position for writing the next slot, if available.
     ///
     /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
@@ -180,19 +181,12 @@ impl<T> Producer<T> {
         let tail = self.cached_tail.get();
         let b = &self.buffer;
 
-        if head < tail {
-            // TODO: skip is not read here
+        // NB: `b.skip` is never set. One element can always be inserted without skipping.
 
-            // TODO: if wrap-around -> reset skip
-        } else {
-            // TODO: don't touch skip?
-        }
-
-        /*
         // Check if the queue is *possibly* full.
         if b.distance(head, tail) == b.capacity() {
             // Refresh the head ...
-            let head = b.indices().head().load(Ordering::Acquire);
+            let head = b.head.load(Ordering::Acquire);
             self.cached_head.set(head);
             // ... and check if it's *really* full.
             if b.distance(head, tail) == b.capacity() {
@@ -200,7 +194,6 @@ impl<T> Producer<T> {
                 return None;
             }
         }
-        */
         Some(tail)
     }
     pub fn slots(&self) -> usize {
@@ -314,6 +307,8 @@ impl<T> Consumer<T> {
 struct BoxedRingBuffer<T> {
     ptr: NonNull<RingBuffer<T>>,
 }
+
+unsafe impl<T: Send> Send for BoxedRingBuffer<T> {}
 
 impl<T> BoxedRingBuffer<T> {
     #[allow(clippy::new_ret_no_self)]
@@ -465,40 +460,49 @@ impl<T> Producer<T> {
         &mut self,
         n: usize,
     ) -> Result<ContiguousWriteChunkUninit<'_, T>, ChunkError> {
-        let head = self.cached_head.get();
+        let mut head = self.cached_head.get();
         let tail = self.cached_tail.get();
         let b = &self.buffer;
 
-        //if head <= tail {
-        if head < tail {
-            // TODO: has skip been reset? it is not read here?
+        // TODO: check if everything is compatible with power-of-2 addressing.
+        let mut slots = 0;
+        // TODO: what happens when queue is empty/full at this point?
+        // TODO: <= vs <
+        if b.collapse_position(tail) <= b.collapse_position(head) {
+            // TODO: switch if/else blocks?
 
-            // TODO: check space between tail and capacity/skip
-
-            // TODO: is not enough, check beginning to head
-
-            // TODO: load head, check again
-
-            // TODO: if area at the beginning is used, set skip
-        } else {
-            // TODO: check space between tail and head
-
-            // TODO: load head, check again
-
-            // TODO: don't touch skip here?
-        }
-
-        // Check if the queue has *possibly* not enough slots.
-        if b.capacity() - b.distance(head, tail) < n {
-            // Refresh the head ...
-            let head = b.head.load(Ordering::Acquire);
-            self.cached_head.set(head);
-            // ... and check if there *really* are not enough slots.
-            let slots = b.capacity() - b.distance(head, tail);
+            // TODO: use distance()?
+            slots = head - tail;
             if slots < n {
-                return Err(ChunkError::TooFewSlots(slots));
+                // Refresh head and try again.
+                head = b.head.load(Ordering::Acquire);
+                self.cached_head.set(head);
+                // TODO: head may have wrapped around!
+                slots = head - tail;
+                if slots < n {
+                    return Err(ChunkError::TooFewSlots(slots));
+                }
+            }
+        } else {
+            slots = b.capacity() - b.collapse_position(tail);
+            if slots < n {
+                // No need to refresh `head` at this point, it cannot overtake `tail`.
+                // Instead, we check if there is space at the beginning of the buffer.
+                slots = b.collapse_position(head);
+                if slots < n {
+                    // Now we might get more space by refreshing `head`.
+                    head = b.head.load(Ordering::Acquire);
+                    self.cached_head.set(head);
+                    slots = b.collapse_position(head);
+                    if slots < n {
+                        return Err(ChunkError::TooFewSlots(slots));
+                    }
+                }
+
+                // TODO: reset tail, set skip
             }
         }
+
         let tail = b.collapse_position(tail);
         Ok(ContiguousWriteChunkUninit {
             // SAFETY: tail has been updated to a valid position.
@@ -511,26 +515,39 @@ impl<T> Producer<T> {
 
 impl<T> Consumer<T> {
     pub fn read_chunk(&mut self, n: usize) -> Result<ContiguousReadChunk<'_, T>, ChunkError> {
-        let head = self.cached_head.get();
-        let tail = self.cached_tail.get();
         let b = &self.buffer;
-
-        //if head <= tail {
-        if head < tail {
-            // TODO: check space between head and tail
+        let head = self.cached_head.get();
+        let mut tail = self.cached_tail.get();
+        let mut slots = 0;
+        // TODO: what happens when queue is empty/full at this point?
+        if b.collapse_position(head) <= b.collapse_position(tail) {
+            slots = tail - head;
+            if slots < n {
+                // Refresh the tail ...
+                tail = b.tail.load(Ordering::Acquire);
+                self.cached_tail.set(tail);
+                // ... and check again.
+                if b.collapse_position(head) < b.collapse_position(tail) {
+                    // `tail` did not wrap around.
+                    slots = tail - head;
+                    if slots < n {
+                        return Err(ChunkError::TooFewSlots(slots));
+                    }
+                } else {
+                    // `tail` did wrap around, we'll continue below.
+                }
+            }
         } else {
-            // TODO: check space between head and skip
+            // No need to refresh `tail`, it cannot overtake `head`.
         }
-        // TODO: load tail, if necessary
-        // TODO: load skip, if necessary?
-
-        // Check if the queue has *possibly* not enough slots.
-        if b.distance(head, tail) < n {
-            // Refresh the tail ...
-            let tail = b.tail.load(Ordering::Acquire);
-            self.cached_tail.set(tail);
-            // ... and check if there *really* are not enough slots.
-            let slots = b.distance(head, tail);
+        if slots < n {
+            let mut skip = b.skip.load(Ordering::Acquire);
+            if skip == NO_SKIP {
+                // TODO: does this work at wrap-around with power-of-2 addressing?
+                skip = b.increment(head, b.capacity() - b.collapse_position(head));
+            }
+            // TODO: maybe use wrapping_sub()? use distance()? see also subtractions above!
+            slots = skip - head;
             if slots < n {
                 return Err(ChunkError::TooFewSlots(slots));
             }
