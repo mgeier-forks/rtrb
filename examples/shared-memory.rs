@@ -13,7 +13,7 @@ fn cast_ptr(shmem: &Shmem) -> NonNull<Buffer> {
     assert!(shmem.len() >= std::mem::size_of::<Buffer>());
     let ptr = NonNull::new(shmem.as_ptr()).unwrap().cast();
     // NB: ptr.align_offset() could be used to guarantee alignment,
-    //     but this would potentially need larger shared memory.
+    //     but this would need some more careful considerations.
     assert!(ptr.is_aligned());
     ptr
 }
@@ -143,11 +143,18 @@ fn main() -> Result<(), Error> {
             }
             println!();
 
-            // NB: Waiting for the other process is not strictly necessary.
-            // The shared memory will be available until the last process exits.
-            // Remove the remaining lines in this block to try it out!
-
             drop(p); // This signals to the other process that no more data is coming.
+
+            // NB: We are now waiting for the other process to finish
+            // before we let the ring buffer go out of scope.
+            //
+            // However, in this very case this is not strictly necessary
+            // because the payload type `i32` does not implement `Drop`.
+            // So even if the `RingBuffer` object is dropped, the numbers in it will remain
+            // in the shared memory, which will be available until the last process exits.
+            //
+            // Remove the remaining lines in this clode block to try it out!
+
             print!("waiting for disconnection ...");
             while owner.buffer().has_consumer() {
                 sleep();
