@@ -27,6 +27,7 @@
 //! Implementations in other languages:
 //! https://github.com/willemt/bipbuffer (C)
 
+use alloc::{boxed::Box, vec::Vec};
 use core::{
     cell::Cell,
     mem::ManuallyDrop,
@@ -129,6 +130,8 @@ impl<T> RingBuffer<T> {
         }
     }
 
+    // Storage
+
     unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
         // SAFETY: See docstring.
         unsafe { self.data_ptr().add(self.collapse_position(pos)) }
@@ -158,6 +161,7 @@ pub struct Producer<T> {
 }
 
 impl<T> Producer<T> {
+    // TODO: same as rtrb::Producer?
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
         if let Some(tail) = self.next_tail() {
             let b = &self.buffer;
@@ -176,6 +180,7 @@ impl<T> Producer<T> {
     ///
     /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
     /// For performance, this special case is implemented separately.
+    // TODO: same as rtrb::Producer? (except for comment)
     fn next_tail(&self) -> Option<usize> {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
@@ -199,7 +204,27 @@ impl<T> Producer<T> {
     pub fn slots(&self) -> usize {
         todo!()
     }
+    /// The maximum number of slots for contiguous writing.
+    // TODO: return a pair? or the max?
+    pub fn slots_contiguous(&self) -> usize {
+        todo!()
+    }
+    // TODO: different kinds of slots() functions? first and second, only first?
+    pub fn slots_contiguous1(&self) -> usize {
+        todo!()
+    }
+    // TODO: this is probably not meaningful? only "first" and "max"?
+    pub fn slots_contiguous2(&self) -> usize {
+        todo!()
+    }
+    pub fn slots_one(&self) -> usize {
+        todo!()
+    }
+    pub fn slots_two(&self) -> usize {
+        todo!()
+    }
     // TODO: disable public is_full for bip?
+    // not useful for contiguous chunks!?!
     pub fn is_full(&self) -> bool {
         todo!()
     }
@@ -222,6 +247,7 @@ pub struct Consumer<T> {
 }
 
 impl<T> Consumer<T> {
+    // TODO: same as rtrb::Consumer?
     pub fn pop(&mut self) -> Result<T, PopError> {
         if let Some(head) = self.next_head() {
             let b = &self.buffer;
@@ -396,13 +422,26 @@ pub struct ContiguousWriteChunkUninit<'a, T> {
 
 impl<T> ContiguousWriteChunkUninit<'_, T> {
     unsafe fn commit_unchecked(self, n: usize) -> usize {
-        let p = self.producer;
-
-        // TODO: if area at beginning has been used, but n == 0 -> reset skip, reset tail?
-
-        let tail = p.buffer.increment(p.cached_tail.get(), n);
-        p.buffer.tail.store(tail, Ordering::Release);
-        p.cached_tail.set(tail);
+        if n == 0 {
+            // NB: No slots will be skipped, `tail` and `skip` remain unchanged.
+            return n;
+        }
+        let b = &self.producer.buffer;
+        let mut tail = self.producer.cached_tail.get();
+        if self.ptr == b.data_ptr() && b.collapse_position(tail) != 0 {
+            b.skip.store(tail, Ordering::Release);
+            // TODO: make this a reusable function?
+            tail = b.increment(tail, b.capacity() - b.collapse_position(tail));
+            // NB: It is safe to store `skip` before `tail`, because the consumer
+            // will potentially only read between `head` and (the old) `tail`,
+            // without looking at `skip`.
+            // Storing `tail` before `skip` would be problematic, however, because
+            // the consumer would see new data at the beginning of the buffer,
+            // but wouldn't know that the end has to be skipped.
+        }
+        tail = b.increment(tail, n);
+        b.tail.store(tail, Ordering::Release);
+        self.producer.cached_tail.set(tail);
         n
     }
 }
@@ -463,50 +502,66 @@ impl<T> Producer<T> {
         let mut head = self.cached_head.get();
         let tail = self.cached_tail.get();
         let b = &self.buffer;
-
         // TODO: check if everything is compatible with power-of-2 addressing.
         let mut slots = 0;
+        let mut head_has_been_refreshed = false;
         // TODO: what happens when queue is empty/full at this point?
         // TODO: <= vs <
         if b.collapse_position(tail) <= b.collapse_position(head) {
-            // TODO: switch if/else blocks?
-
+            // Is there enough space between `tail` and `head`?
             // TODO: use distance()?
             slots = head - tail;
             if slots < n {
-                // Refresh head and try again.
+                // Refresh head ...
                 head = b.head.load(Ordering::Acquire);
                 self.cached_head.set(head);
-                // TODO: head may have wrapped around!
-                slots = head - tail;
-                if slots < n {
-                    return Err(ChunkError::TooFewSlots(slots));
+                head_has_been_refreshed = true;
+                // ... and try again.
+                if b.collapse_position(tail) <= b.collapse_position(head) {
+                    // `head` did not wrap around.
+                    // TODO: use distance()?
+                    slots = head - tail;
+                    if slots < n {
+                        return Err(ChunkError::TooFewSlots(slots));
+                    }
+                } else {
+                    // `head` did wrap around, we'll continue below.
                 }
             }
-        } else {
+        }
+        let offset;
+        if slots < n {
+            // Is there is enough space at the end of the buffer?
             slots = b.capacity() - b.collapse_position(tail);
             if slots < n {
-                // No need to refresh `head` at this point, it cannot overtake `tail`.
-                // Instead, we check if there is space at the beginning of the buffer.
-                slots = b.collapse_position(head);
+                // Nope, let's check the beginning.
+
+                // TODO: interaction/reuse with slots() et al.?
+
+                slots = slots.max(head);
                 if slots < n {
-                    // Now we might get more space by refreshing `head`.
+                    // TODO: check if this early return/local variable is an actual optimization?
+                    if head_has_been_refreshed {
+                        return Err(ChunkError::TooFewSlots(slots));
+                    }
                     head = b.head.load(Ordering::Acquire);
                     self.cached_head.set(head);
-                    slots = b.collapse_position(head);
+                    slots = slots.max(head);
                     if slots < n {
                         return Err(ChunkError::TooFewSlots(slots));
                     }
                 }
-
-                // TODO: reset tail, set skip
+                // NB: `tail` will be (conditionally) reset in `commit_unchecked()`.
+                offset = 0;
+            } else {
+                offset = b.collapse_position(tail);
             }
+        } else {
+            offset = b.collapse_position(tail);
         }
-
-        let tail = b.collapse_position(tail);
         Ok(ContiguousWriteChunkUninit {
             // SAFETY: tail has been updated to a valid position.
-            ptr: unsafe { b.data_ptr().add(tail) },
+            ptr: unsafe { b.data_ptr().add(offset) },
             len: n,
             producer: self,
         })
@@ -560,6 +615,4 @@ impl<T> Consumer<T> {
             consumer: self,
         })
     }
-
-    // TODO: different kinds of slots() functions? first and second, only first?
 }
