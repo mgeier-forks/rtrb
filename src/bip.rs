@@ -444,6 +444,77 @@ impl<T> ContiguousWriteChunkUninit<'_, T> {
         self.producer.cached_tail.set(tail);
         n
     }
+
+    /// Drops all elements starting from index `n`.
+    ///
+    /// #Safety
+    ///
+    /// All of those slots must be initialized.
+    unsafe fn drop_suffix(&mut self, n: usize) {
+        // NB: If n >= self.len(), the loop is not entered.
+        for i in n..self.len {
+            // SAFETY: The caller must make sure that all slots are initialized.
+            unsafe { self.ptr.add(i).drop_in_place() };
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+}
+
+// TODO: same as non-contiguous
+impl<T> ContiguousWriteChunkUninit<'_, T> {
+    pub unsafe fn commit_all(self) {
+        let slots = self.len();
+        // SAFETY: Delegated to the caller.
+        unsafe { self.commit_unchecked(slots) };
+    }
+}
+
+// TODO: same as non-contiguous?
+//#[derive(Debug, PartialEq, Eq)]
+pub struct ContiguousWriteChunk<'a, T>(Option<ContiguousWriteChunkUninit<'a, T>>);
+
+// TODO: same as non-contiguous?
+impl<T> Drop for ContiguousWriteChunk<'_, T>
+{
+    fn drop(&mut self) {
+        // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
+        if let Some(mut chunk) = self.0.take() {
+            // No part of the chunk has been committed, all slots are dropped.
+            // SAFETY: All slots have been initialized in From::from().
+            unsafe { chunk.drop_suffix(0) };
+        }
+    }
+}
+
+impl<'a, T> From<ContiguousWriteChunkUninit<'a, T>> for ContiguousWriteChunk<'a, T>
+where
+    T: Default,
+{
+    /// Fills all slots with the [`Default`] value.
+    fn from(chunk: ContiguousWriteChunkUninit<'a, T>) -> Self {
+        for i in 0..chunk.len {
+            // SAFETY: i is in a valid range.
+            unsafe { chunk.ptr.add(i).write(Default::default()) };
+        }
+        ContiguousWriteChunk(Some(chunk))
+    }
+}
+
+// TODO: same as non-contiguous
+impl<T> ContiguousWriteChunk<'_, T>
+where
+    T: Default,
+{
+    pub fn commit_all(mut self) {
+        // self.0 is always Some(chunk).
+        let chunk = self.0.take().unwrap();
+        // SAFETY: All slots have been initialized in From::from().
+        unsafe { chunk.commit_all() };
+        // `self` is dropped here, with `self.0` being set to `None`.
+    }
 }
 
 //#[derive(Debug, PartialEq, Eq)]
@@ -495,6 +566,15 @@ impl<T> ContiguousReadChunk<'_, T> {
 }
 
 impl<T> Producer<T> {
+    pub fn write_chunk(
+        &mut self,
+        n: usize,
+    ) -> Result<ContiguousWriteChunk<'_, T>, ChunkError>
+    where
+        T: Default,
+    {
+        self.write_chunk_uninit(n).map(ContiguousWriteChunk::from)
+    }
     pub fn write_chunk_uninit(
         &mut self,
         n: usize,
