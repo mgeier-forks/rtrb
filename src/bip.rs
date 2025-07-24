@@ -136,6 +136,42 @@ impl<T> RingBuffer<T> {
         // SAFETY: See docstring.
         unsafe { self.data_ptr().add(self.collapse_position(pos)) }
     }
+
+    /// Drop all elements that are still in the buffer.
+    ///
+    /// After this, head and tail indices are invalid.
+    ///
+    /// # Safety
+    ///
+    /// This can only be called in the `Drop` implementation of the ring buffer.
+    ///
+    /// The threads must have been synchronized before via `flags()`.
+    #[inline(never)]
+    unsafe fn drop_all_elements(&mut self) {
+        // These atomic variables are *not* used for synchronizing the threads
+        // before destruction.  Relaxed ordering is sufficient here.
+        let mut head = self.head.load(Ordering::Relaxed);
+        let tail = self.tail.load(Ordering::Relaxed);
+
+        // Loop over all slots that hold a value and drop them.
+        while head != tail {
+            // SAFETY: All slots between head and tail have been initialized.
+            unsafe { self.slot_ptr(head).drop_in_place() };
+            head = self.increment1(head);
+        }
+    }
+}
+
+impl<T> Drop for RingBuffer<T> {
+    /// Drops all non-empty slots.
+    fn drop(&mut self) {
+        // SAFETY: this is called exactly once, no references to any elements exist anymore.
+        unsafe { self.drop_all_elements() };
+
+        // Finally, deallocate the buffer, but don't run any destructors.
+        // SAFETY: data_ptr and capacity are still valid from the original initialization.
+        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.capacity()) };
+    }
 }
 
 // SAFETY: ...
