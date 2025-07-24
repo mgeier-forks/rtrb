@@ -423,7 +423,7 @@ pub struct ContiguousWriteChunkUninit<'a, T> {
 impl<T> ContiguousWriteChunkUninit<'_, T> {
     unsafe fn commit_unchecked(self, n: usize) -> usize {
         if n == 0 {
-            // NB: No slots will be skipped, `tail` and `skip` remain unchanged.
+            // NB: No slots will be skipped, both `tail` and `skip` remain unchanged.
             return n;
         }
         let b = &self.producer.buffer;
@@ -505,11 +505,11 @@ impl<T> Producer<T> {
         // TODO: check if everything is compatible with power-of-2 addressing.
         let mut slots = 0;
         let mut head_has_been_refreshed = false;
-        // TODO: what happens when queue is empty/full at this point?
-        // TODO: <= vs <
-        if b.collapse_position(tail) <= b.collapse_position(head) {
+        // Collapsing the indices makes it impossible to distinguish empty and full,
+        // so we check for emptiness first.
+        let is_empty = head == tail;
+        if !is_empty && b.collapse_position(tail) <= b.collapse_position(head) {
             // Is there enough space between `tail` and `head`?
-            // TODO: use distance()?
             slots = head - tail;
             if slots < n {
                 // Refresh head ...
@@ -517,9 +517,9 @@ impl<T> Producer<T> {
                 self.cached_head.set(head);
                 head_has_been_refreshed = true;
                 // ... and try again.
-                if b.collapse_position(tail) <= b.collapse_position(head) {
+                let is_empty = head == tail;
+                if !is_empty && b.collapse_position(tail) <= b.collapse_position(head) {
                     // `head` did not wrap around.
-                    // TODO: use distance()?
                     slots = head - tail;
                     if slots < n {
                         return Err(ChunkError::TooFewSlots(slots));
@@ -531,14 +531,14 @@ impl<T> Producer<T> {
         }
         let offset;
         if slots < n {
-            // Is there is enough space at the end of the buffer?
+            // Is there enough space at the end of the buffer?
             slots = b.capacity() - b.collapse_position(tail);
             if slots < n {
                 // Nope, let's check the beginning.
 
                 // TODO: interaction/reuse with slots() et al.?
 
-                slots = slots.max(head);
+                slots = slots.max(b.collapse_position(head));
                 if slots < n {
                     // TODO: check if this early return/local variable is an actual optimization?
                     if head_has_been_refreshed {
@@ -546,7 +546,7 @@ impl<T> Producer<T> {
                     }
                     head = b.head.load(Ordering::Acquire);
                     self.cached_head.set(head);
-                    slots = slots.max(head);
+                    slots = slots.max(b.collapse_position(head));
                     if slots < n {
                         return Err(ChunkError::TooFewSlots(slots));
                     }
