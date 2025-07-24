@@ -64,8 +64,8 @@ pub mod chunks;
 mod diy;
 
 pub mod array;
-pub mod embedded;
 pub mod bip;
+pub mod embedded;
 
 #[cfg(feature = "mmap")]
 pub mod mmap;

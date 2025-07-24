@@ -477,8 +477,7 @@ impl<T> ContiguousWriteChunkUninit<'_, T> {
 pub struct ContiguousWriteChunk<'a, T>(Option<ContiguousWriteChunkUninit<'a, T>>);
 
 // TODO: same as non-contiguous?
-impl<T> Drop for ContiguousWriteChunk<'_, T>
-{
+impl<T> Drop for ContiguousWriteChunk<'_, T> {
     fn drop(&mut self) {
         // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
         if let Some(mut chunk) = self.0.take() {
@@ -566,10 +565,7 @@ impl<T> ContiguousReadChunk<'_, T> {
 }
 
 impl<T> Producer<T> {
-    pub fn write_chunk(
-        &mut self,
-        n: usize,
-    ) -> Result<ContiguousWriteChunk<'_, T>, ChunkError>
+    pub fn write_chunk(&mut self, n: usize) -> Result<ContiguousWriteChunk<'_, T>, ChunkError>
     where
         T: Default,
     {
