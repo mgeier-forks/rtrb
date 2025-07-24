@@ -62,6 +62,8 @@ use cache_padded::CachePadded;
 
 pub mod chunks;
 mod diy;
+#[macro_use]
+mod macros;
 
 pub mod array;
 pub mod bip;
