@@ -55,20 +55,9 @@ pub struct RingBuffer<T> {
     capacity: usize,
 }
 
+storage_vec!(padded, bip);
+
 impl<T> RingBuffer<T> {
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
-        // TODO: update capacity if power of 2 is needed.
-        //let capacity = Calc::from_u8(C).update_capacity(capacity);
-        BoxedRingBuffer::new(Self {
-            head: CachePadded::new(AtomicUsize::new(0)),
-            tail: CachePadded::new(AtomicUsize::new(0)),
-            skip: CachePadded::new(AtomicUsize::new(NO_SKIP)),
-            flags: AtomicU8::new(0),
-            data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
-            capacity,
-        })
-    }
 
     /// Drop all elements that are still in the buffer.
     ///

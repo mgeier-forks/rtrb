@@ -78,4 +78,51 @@ macro_rules! impl_index_calculation_double_size {
     };
 }
 
-//pub(crate) use index_calculation_double_size;
+// storage: vec, array, vrb, dst
+// indices & calculation: mop, bip (bip+vrb doesn't make sense)
+// indices & padding: tight, padded
+// chunks: vrb is a special case: only contiguous; bip could have both?
+// owning p&c: vec, vrb, dst; non-owning: array, maybe dst?
+// addressing: double size, pow2, single size, pow2-single; ()
+// size_type: usize, u32, u16, u8; (u64 and u128 probably don't make sense?)
+
+macro_rules! storage_vec {
+    ($padding:ident, $partite:ident) => {
+        impl<T> RingBuffer<T> {
+            #[allow(clippy::new_ret_no_self)]
+            pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
+                // TODO: update capacity if power of 2 is needed.
+                //let capacity = Calc::from_u8(C).update_capacity(capacity);
+                BoxedRingBuffer::new(Self {
+                    head: init_padded!($padding, AtomicUsize::new(0)),
+                    tail: init_padded!($padding, AtomicUsize::new(0)),
+                    skip: init_only_bip!(
+                        $partite,
+                        init_padded!($padding, AtomicUsize::new(NO_SKIP))
+                    ),
+                    flags: AtomicU8::new(0),
+                    data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
+                    capacity,
+                })
+            }
+        }
+    };
+}
+
+macro_rules! init_padded {
+    (tight, $init:expr) => {
+        $init
+    };
+    (padded, $init:expr) => {
+        CachePadded::new($init)
+    };
+}
+
+macro_rules! init_only_bip {
+    (bip, $init:expr) => {
+        $init
+    };
+    ($whatever:tt) => {
+        PhantomData
+    };
+}
