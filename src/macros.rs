@@ -127,10 +127,10 @@ macro_rules! storage_array {
 }
 
 macro_rules! def_padded {
-    (true, $ty:ty) => {
+    (yes, $ty:ty) => {
         CachePadded<$ty>
     };
-    (false, $ty:ty) => {
+    (no, $ty:ty) => {
         $ty
     };
 }
@@ -145,10 +145,10 @@ macro_rules! def_only_bip {
 }
 
 macro_rules! init_padded {
-    (true, $init:expr) => {
+    (yes, $init:expr) => {
         CachePadded::new($init)
     };
-    (false, $init:expr) => {
+    (no, $init:expr) => {
         $init
     };
 }
@@ -239,7 +239,7 @@ macro_rules! impl_common {
 
 // TODO: another axis: unwrapped vs one_less
 macro_rules! impl_calculation {
-    (pow2 = false, N = $($N:ident)?) => {
+    (pow2 = no, N = $($N:ident)?) => {
         impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
             fn collapse_position(&self, pos: usize) -> usize {
                 // Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
@@ -288,7 +288,7 @@ macro_rules! impl_calculation {
             }
         }
     };
-    (pow2 = true, N = $($N:ident)?,) => {
+    (pow2 = yes, N = $($N:ident)?,) => {
         impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
         }
     };

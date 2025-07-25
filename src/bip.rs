@@ -44,7 +44,7 @@ use crate::{
 const NO_SKIP: usize = 0;
 
 storage_vec! {
-    padded = true,
+    padded = yes,
     partite = bip,
     rb_doc = "
 Bi-partite ring buffer.
@@ -65,7 +65,7 @@ impl_common! {
 }
 
 impl_calculation! {
-    pow2 = false,
+    pow2 = no,
     N =
 }
 
