@@ -1,7 +1,7 @@
 //! A bi-partite ring buffer.
 //!
 //! Simon Cooke (2003)
-//! https://www.codeproject.com/Articles/3479/The-Bip-Buffer-The-Circular-Buffer-with-a-Twist
+//! <https://www.codeproject.com/Articles/3479/The-Bip-Buffer-The-Circular-Buffer-with-a-Twist>
 //! (not thread-safe)
 //!
 //! two revolving regions
@@ -16,16 +16,16 @@
 //! Reserve -> Commit; GetContiguousBlock -> DecommitBlock.
 //!
 //! 2019:
-//! https://ferrous-systems.com/blog/lock-free-ring-buffer/
-//! https://blog.systems.ethz.ch/blog/2019/the-design-and-implementation-of-a-lock-free-ring-buffer-with-contiguous-reservations.html
+//! <https://ferrous-systems.com/blog/lock-free-ring-buffer/>
+//! <https://blog.systems.ethz.ch/blog/2019/the-design-and-implementation-of-a-lock-free-ring-buffer-with-contiguous-reservations.html>
 //!
 //! Other Rust implementations:
-//! https://crates.io/crates/bbqueue
-//! https://crates.io/crates/bipbuffer (not thread-safe)
-//! https://crates.io/crates/spsc-bip-buffer
+//! <https://crates.io/crates/bbqueue>
+//! <https://crates.io/crates/bipbuffer> (not thread-safe)
+//! <https://crates.io/crates/spsc-bip-buffer>
 //!
 //! Implementations in other languages:
-//! https://github.com/willemt/bipbuffer (C)
+//! <https://github.com/willemt/bipbuffer> (C)
 
 use alloc::{boxed::Box, vec::Vec};
 use core::{
@@ -43,16 +43,19 @@ use crate::{
 // Disable skipping (0 is an impossible value for `skip`).
 const NO_SKIP: usize = 0;
 
-storage_vec!(padded, bip,
-"
+storage_vec! {
+    padding = padded,
+    partite = bip,
+    rb_doc = "
 Bi-partite ring buffer.
 
-TODO: some more docs, maybe links? [`RingBuffer::new()`]
+TODO: some more docs, maybe links? [`RingBuffer::new()`].
+
+*See also the [module-level documentation](crate::bip).*
 "
-);
+}
 
 impl<T> RingBuffer<T> {
-
     /// Drop all elements that are still in the buffer.
     ///
     /// After this, head and tail indices are invalid.
@@ -82,18 +85,6 @@ impl<T> RingBuffer<T> {
     impl_storage_common!();
     impl_storage_ptr_capacity!();
     impl_index_calculation_double_size!();
-}
-
-impl<T> Drop for RingBuffer<T> {
-    /// Drops all non-empty slots.
-    fn drop(&mut self) {
-        // SAFETY: this is called exactly once, no references to any elements exist anymore.
-        unsafe { self.drop_all_elements() };
-
-        // Finally, deallocate the buffer, but don't run any destructors.
-        // SAFETY: data_ptr and capacity are still valid from the original initialization.
-        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.capacity()) };
-    }
 }
 
 // SAFETY: ...

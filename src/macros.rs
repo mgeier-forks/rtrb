@@ -87,7 +87,7 @@ macro_rules! impl_index_calculation_double_size {
 // size_type: usize, u32, u16, u8; (u64 and u128 probably don't make sense?)
 
 macro_rules! storage_vec {
-    ($padding:ident, $partite:ident, $rb_doc:expr) => {
+    (padding = $padding:ident, partite = $partite:ident, rb_doc = $rb_doc:expr) => {
         #[doc = $rb_doc]
         // TODO: manually derive Debug
         //#[derive(Debug)]
@@ -117,6 +117,18 @@ macro_rules! storage_vec {
                     data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
                     capacity,
                 })
+            }
+        }
+
+        impl<T> Drop for RingBuffer<T> {
+            /// Drops all non-empty slots.
+            fn drop(&mut self) {
+                // SAFETY: this is called exactly once, no references to any elements exist anymore.
+                unsafe { self.drop_all_elements() };
+
+                // Finally, deallocate the buffer, but don't run any destructors.
+                // SAFETY: data_ptr and capacity are still valid from the original initialization.
+                unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.capacity()) };
             }
         }
     };
