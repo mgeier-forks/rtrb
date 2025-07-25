@@ -1,11 +1,3 @@
-// TODO: make multiple files/modules with macros?
-
-/// Has to be used inside `impl<...> RingBuffer<...>`.
-macro_rules! impl_storage_ptr_capacity {
-    () => {
-    };
-}
-
 // storage: vec, array, vrb, dst
 // indices & calculation: mop, bip (bip+vrb doesn't make sense)
 // indices & padding: tight, padded
@@ -15,15 +7,15 @@ macro_rules! impl_storage_ptr_capacity {
 // size_type: usize, u32, u16, u8; (u64 and u128 probably don't make sense?)
 
 macro_rules! storage_vec {
-    (padding = $padding:ident, partite = $partite:ident, rb_doc = $rb_doc:expr) => {
+    (padded = $padded:ident, partite = $partite:ident, rb_doc = $rb_doc:expr) => {
         #[doc = $rb_doc]
         // TODO: manually derive Debug
         //#[derive(Debug)]
         pub struct RingBuffer<T> {
-            head: def_padded!($padding, AtomicUsize),
-            tail: def_padded!($padding, AtomicUsize),
+            head: def_padded!($padded, AtomicUsize),
+            tail: def_padded!($padded, AtomicUsize),
             // TODO: measure whether CachePadded helps
-            skip: def_only_bip!($partite, def_padded!($padding, AtomicUsize)),
+            skip: def_only_bip!($partite, def_padded!($padded, AtomicUsize)),
             flags: AtomicU8,
             data_ptr: *mut T,
             capacity: usize,
@@ -35,11 +27,11 @@ macro_rules! storage_vec {
                 // TODO: update capacity if power of 2 is needed.
                 //let capacity = Calc::from_u8(C).update_capacity(capacity);
                 BoxedRingBuffer::new(Self {
-                    head: init_padded!($padding, AtomicUsize::new(0)),
-                    tail: init_padded!($padding, AtomicUsize::new(0)),
+                    head: init_padded!($padded, AtomicUsize::new(0)),
+                    tail: init_padded!($padded, AtomicUsize::new(0)),
                     skip: init_only_bip!(
                         $partite,
-                        init_padded!($padding, AtomicUsize::new(NO_SKIP))
+                        init_padded!($padded, AtomicUsize::new(NO_SKIP))
                     ),
                     flags: AtomicU8::new(0),
                     data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
@@ -71,7 +63,7 @@ macro_rules! storage_vec {
 }
 
 macro_rules! storage_array {
-    (padding = $padding:ident, partite = $partite:ident, rb_doc = $rb_doc:expr) => {
+    (padded = $padded:ident, partite = $partite:ident, rb_doc = $rb_doc:expr) => {
         use crate::atomic::*;
         use crate::cache_padded::CachePadded;
         use core::cell::UnsafeCell;
@@ -81,10 +73,10 @@ macro_rules! storage_array {
         // TODO: manually derive Debug
         //#[derive(Debug)]
         pub struct RingBuffer<T, const N: usize> {
-            head: def_padded!($padding, AtomicUsize),
-            tail: def_padded!($padding, AtomicUsize),
+            head: def_padded!($padded, AtomicUsize),
+            tail: def_padded!($padded, AtomicUsize),
             // TODO: measure whether CachePadded helps
-            skip: def_only_bip!($partite, def_padded!($padding, AtomicUsize)),
+            skip: def_only_bip!($partite, def_padded!($padded, AtomicUsize)),
             flags: AtomicU8,
             /// The static array holding slots.
             ///
@@ -104,11 +96,11 @@ macro_rules! storage_array {
                     );
                 }
                 Self {
-                    head: init_padded!($padding, AtomicUsize::new(0)),
-                    tail: init_padded!($padding, AtomicUsize::new(0)),
+                    head: init_padded!($padded, AtomicUsize::new(0)),
+                    tail: init_padded!($padded, AtomicUsize::new(0)),
                     skip: init_only_bip!(
                         $partite,
-                        init_padded!($padding, AtomicUsize::new(NO_SKIP))
+                        init_padded!($padded, AtomicUsize::new(NO_SKIP))
                     ),
                     flags: AtomicU8::new(0),
                     slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
@@ -135,11 +127,11 @@ macro_rules! storage_array {
 }
 
 macro_rules! def_padded {
-    (tight, $ty:ty) => {
-        $ty
-    };
-    (padded, $ty:ty) => {
+    (true, $ty:ty) => {
         CachePadded<$ty>
+    };
+    (false, $ty:ty) => {
+        $ty
     };
 }
 
@@ -153,11 +145,11 @@ macro_rules! def_only_bip {
 }
 
 macro_rules! init_padded {
-    (tight, $init:expr) => {
-        $init
-    };
-    (padded, $init:expr) => {
+    (true, $init:expr) => {
         CachePadded::new($init)
+    };
+    (false, $init:expr) => {
+        $init
     };
 }
 
@@ -170,6 +162,7 @@ macro_rules! init_only_bip {
     };
 }
 
+// TODO: less repetition?
 macro_rules! impl_partite {
     (partite = mop, N = $($N:ident)?) => {
         impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
@@ -198,7 +191,39 @@ macro_rules! impl_partite {
             }
         }
     };
-    (partite = bip, N = $($N:ident)?) => {};
+    (partite = bip, N = $($N:ident)?) => {
+        impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
+            /// Drop all elements that are still in the buffer.
+            ///
+            /// After this, head and tail indices are invalid.
+            ///
+            /// # Safety
+            ///
+            /// This can only be called in the `Drop` implementation of the ring buffer.
+            ///
+            /// The threads must have been synchronized before via `self.flags`.
+            #[inline(never)]
+            unsafe fn drop_all_elements(&mut self) {
+                // These atomic variables are *not* used for synchronizing the threads
+                // before destruction.  Relaxed ordering is sufficient here.
+                let mut head = self.head.load(Ordering::Relaxed);
+                let tail = self.tail.load(Ordering::Relaxed);
+                let skip = self.skip.load(Ordering::Relaxed);
+
+                // Loop over all slots that hold a value and drop them.
+                while head != tail {
+
+                    if skip != NO_SKIP && head == skip {
+                        head = self.increment(head, self.capacity() - self.collapse_position(skip));
+                    }
+
+                    // SAFETY: All slots between head and tail have been initialized.
+                    unsafe { self.slot_ptr(head).drop_in_place() };
+                    head = self.increment1(head);
+                }
+            }
+        }
+    };
 }
 
 macro_rules! impl_common {

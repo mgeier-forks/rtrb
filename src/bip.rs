@@ -44,7 +44,7 @@ use crate::{
 const NO_SKIP: usize = 0;
 
 storage_vec! {
-    padding = padded,
+    padded = true,
     partite = bip,
     rb_doc = "
 Bi-partite ring buffer.
@@ -70,33 +70,6 @@ impl_calculation! {
 }
 
 impl<T> RingBuffer<T> {
-    /// Drop all elements that are still in the buffer.
-    ///
-    /// After this, head and tail indices are invalid.
-    ///
-    /// # Safety
-    ///
-    /// This can only be called in the `Drop` implementation of the ring buffer.
-    ///
-    /// The threads must have been synchronized before via `self.flags`.
-    #[inline(never)]
-    unsafe fn drop_all_elements(&mut self) {
-        // These atomic variables are *not* used for synchronizing the threads
-        // before destruction.  Relaxed ordering is sufficient here.
-        let mut head = self.head.load(Ordering::Relaxed);
-        let tail = self.tail.load(Ordering::Relaxed);
-
-        // TODO: skip "skip"!
-
-        // Loop over all slots that hold a value and drop them.
-        while head != tail {
-            // SAFETY: All slots between head and tail have been initialized.
-            unsafe { self.slot_ptr(head).drop_in_place() };
-            head = self.increment1(head);
-        }
-    }
-
-    impl_storage_ptr_capacity!();
 }
 
 // SAFETY: ...

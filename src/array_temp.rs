@@ -1,7 +1,7 @@
 //! TODO: move this to crate::array once macros are complete.
 
 storage_array! {
-    padding = padded,
+    padded = true,
     partite = mop,
     rb_doc = "
 Ring buffer using an array as storage.

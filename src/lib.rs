@@ -61,7 +61,10 @@ mod cache_padded;
 use cache_padded::CachePadded;
 
 pub mod chunks;
-mod atomic;
+// TODO: feature "portable-atomic"?
+mod atomic {
+    pub use core::sync::atomic::{AtomicUsize, AtomicU8, Ordering};
+}
 mod diy;
 #[macro_use]
 mod macros;
