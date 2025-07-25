@@ -43,19 +43,13 @@ use crate::{
 // Disable skipping (0 is an impossible value for `skip`).
 const NO_SKIP: usize = 0;
 
-/// Bi-partite ring buffer.
-#[derive(Debug)]
-pub struct RingBuffer<T> {
-    head: CachePadded<AtomicUsize>,
-    tail: CachePadded<AtomicUsize>,
-    // TODO: measure whether CachePadded helps
-    skip: CachePadded<AtomicUsize>,
-    flags: AtomicU8,
-    data_ptr: *mut T,
-    capacity: usize,
-}
+storage_vec!(padded, bip,
+"
+Bi-partite ring buffer.
 
-storage_vec!(padded, bip);
+TODO: some more docs, maybe links? [`RingBuffer::new()`]
+"
+);
 
 impl<T> RingBuffer<T> {
 
@@ -74,6 +68,8 @@ impl<T> RingBuffer<T> {
         // before destruction.  Relaxed ordering is sufficient here.
         let mut head = self.head.load(Ordering::Relaxed);
         let tail = self.tail.load(Ordering::Relaxed);
+
+        // TODO: skip "skip"!
 
         // Loop over all slots that hold a value and drop them.
         while head != tail {

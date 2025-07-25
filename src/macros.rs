@@ -87,7 +87,20 @@ macro_rules! impl_index_calculation_double_size {
 // size_type: usize, u32, u16, u8; (u64 and u128 probably don't make sense?)
 
 macro_rules! storage_vec {
-    ($padding:ident, $partite:ident) => {
+    ($padding:ident, $partite:ident, $rb_doc:expr) => {
+        #[doc = $rb_doc]
+        // TODO: manually derive Debug
+        //#[derive(Debug)]
+        pub struct RingBuffer<T> {
+            head: def_padded!($padding, AtomicUsize),
+            tail: def_padded!($padding, AtomicUsize),
+            // TODO: measure whether CachePadded helps
+            skip: def_only_bip!($partite, def_padded!($padding, AtomicUsize)),
+            flags: AtomicU8,
+            data_ptr: *mut T,
+            capacity: usize,
+        }
+
         impl<T> RingBuffer<T> {
             #[allow(clippy::new_ret_no_self)]
             pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
@@ -109,6 +122,24 @@ macro_rules! storage_vec {
     };
 }
 
+macro_rules! def_padded {
+    (tight, $ty:ty) => {
+        $ty
+    };
+    (padded, $ty:ty) => {
+        CachePadded<$ty>
+    };
+}
+
+macro_rules! def_only_bip {
+    (bip, $init:ty) => {
+        $init
+    };
+    ($whatever:tt) => {
+        ()
+    };
+}
+
 macro_rules! init_padded {
     (tight, $init:expr) => {
         $init
@@ -123,6 +154,6 @@ macro_rules! init_only_bip {
         $init
     };
     ($whatever:tt) => {
-        PhantomData
+        ()
     };
 }
