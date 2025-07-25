@@ -55,6 +55,20 @@ TODO: some more docs, maybe links? [`RingBuffer::new()`].
 "
 }
 
+impl_partite! {
+    partite = bip,
+    N =
+}
+
+impl_common! {
+    N =
+}
+
+impl_calculation! {
+    pow2 = false,
+    N =
+}
+
 impl<T> RingBuffer<T> {
     /// Drop all elements that are still in the buffer.
     ///
@@ -64,7 +78,7 @@ impl<T> RingBuffer<T> {
     ///
     /// This can only be called in the `Drop` implementation of the ring buffer.
     ///
-    /// The threads must have been synchronized before via `flags()`.
+    /// The threads must have been synchronized before via `self.flags`.
     #[inline(never)]
     unsafe fn drop_all_elements(&mut self) {
         // These atomic variables are *not* used for synchronizing the threads
@@ -82,9 +96,7 @@ impl<T> RingBuffer<T> {
         }
     }
 
-    impl_storage_common!();
     impl_storage_ptr_capacity!();
-    impl_index_calculation_double_size!();
 }
 
 // SAFETY: ...
@@ -311,7 +323,7 @@ impl<T> BoxedRingBuffer<T> {
 impl<T> Drop for BoxedRingBuffer<T> {
     fn drop(&mut self) {
         // SAFETY: must point to initialized Storage.
-        let flags: &AtomicU8 = unsafe { self.ptr.as_ref().flags() };
+        let flags: &AtomicU8 = unsafe { &self.ptr.as_ref().flags };
         // The "store" part of `fetch_or()` has to use `Release` to make sure that any previous writes
         // to the ring buffer happen before it (in the thread that drops first).
         // The "load" part can be `Relaxed` for the first thread,

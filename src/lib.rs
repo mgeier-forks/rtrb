@@ -61,11 +61,13 @@ mod cache_padded;
 use cache_padded::CachePadded;
 
 pub mod chunks;
+mod atomic;
 mod diy;
 #[macro_use]
 mod macros;
 
 pub mod array;
+pub mod array_temp;
 pub mod bip;
 pub mod embedded;
 
