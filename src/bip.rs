@@ -45,7 +45,7 @@ const NO_SKIP: usize = 0;
 
 storage_vec! {
     padded = yes,
-    partite = bip,
+    bip = yes,
     rb_doc = "
 Bi-partite ring buffer.
 
@@ -56,7 +56,7 @@ TODO: some more docs, maybe links? [`RingBuffer::new()`].
 }
 
 impl_partite! {
-    partite = bip,
+    bip = yes,
     N =
 }
 

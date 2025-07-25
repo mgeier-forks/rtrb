@@ -7,7 +7,7 @@
 // size_type: usize, u32, u16, u8; (u64 and u128 probably don't make sense?)
 
 macro_rules! storage_vec {
-    (padded = $padded:ident, partite = $partite:ident, rb_doc = $rb_doc:expr) => {
+    (padded = $padded:ident, bip = $bip:ident, rb_doc = $rb_doc:expr) => {
         #[doc = $rb_doc]
         // TODO: manually derive Debug
         //#[derive(Debug)]
@@ -15,7 +15,7 @@ macro_rules! storage_vec {
             head: def_padded!($padded, AtomicUsize),
             tail: def_padded!($padded, AtomicUsize),
             // TODO: measure whether CachePadded helps
-            skip: def_only_bip!($partite, def_padded!($padded, AtomicUsize)),
+            skip: def_only_bip!($bip, def_padded!($padded, AtomicUsize)),
             flags: AtomicU8,
             data_ptr: *mut T,
             capacity: usize,
@@ -30,7 +30,7 @@ macro_rules! storage_vec {
                     head: init_padded!($padded, AtomicUsize::new(0)),
                     tail: init_padded!($padded, AtomicUsize::new(0)),
                     skip: init_only_bip!(
-                        $partite,
+                        $bip,
                         init_padded!($padded, AtomicUsize::new(NO_SKIP))
                     ),
                     flags: AtomicU8::new(0),
@@ -63,7 +63,7 @@ macro_rules! storage_vec {
 }
 
 macro_rules! storage_array {
-    (padded = $padded:ident, partite = $partite:ident, rb_doc = $rb_doc:expr) => {
+    (padded = $padded:ident, bip = $bip:ident, rb_doc = $rb_doc:expr) => {
         use crate::atomic::*;
         use crate::cache_padded::CachePadded;
         use core::cell::UnsafeCell;
@@ -76,7 +76,7 @@ macro_rules! storage_array {
             head: def_padded!($padded, AtomicUsize),
             tail: def_padded!($padded, AtomicUsize),
             // TODO: measure whether CachePadded helps
-            skip: def_only_bip!($partite, def_padded!($padded, AtomicUsize)),
+            skip: def_only_bip!($bip, def_padded!($padded, AtomicUsize)),
             flags: AtomicU8,
             /// The static array holding slots.
             ///
@@ -99,7 +99,7 @@ macro_rules! storage_array {
                     head: init_padded!($padded, AtomicUsize::new(0)),
                     tail: init_padded!($padded, AtomicUsize::new(0)),
                     skip: init_only_bip!(
-                        $partite,
+                        $bip,
                         init_padded!($padded, AtomicUsize::new(NO_SKIP))
                     ),
                     flags: AtomicU8::new(0),
@@ -123,6 +123,12 @@ macro_rules! storage_array {
                 unsafe { self.drop_all_elements() };
             }
         }
+
+        impl<T, const N: usize> Default for RingBuffer<T, N> {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
     };
 }
 
@@ -136,10 +142,10 @@ macro_rules! def_padded {
 }
 
 macro_rules! def_only_bip {
-    (bip, $init:ty) => {
+    (yes, $init:ty) => {
         $init
     };
-    ($dummy1:ident, $dummy2:ty) => {
+    (no, $init:ty) => {
         ()
     };
 }
@@ -154,17 +160,17 @@ macro_rules! init_padded {
 }
 
 macro_rules! init_only_bip {
-    (bip, $init:expr) => {
+    (yes, $init:expr) => {
         $init
     };
-    ($dummy1:ident, $dummy2:expr) => {
+    (no, $init:expr) => {
         ()
     };
 }
 
 // TODO: less repetition?
 macro_rules! impl_partite {
-    (partite = mop, N = $($N:ident)?) => {
+    (bip = no, N = $($N:ident)?) => {
         impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
             /// Drop all elements that are still in the buffer.
             ///
@@ -191,7 +197,7 @@ macro_rules! impl_partite {
             }
         }
     };
-    (partite = bip, N = $($N:ident)?) => {
+    (bip = yes, N = $($N:ident)?) => {
         impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
             /// Drop all elements that are still in the buffer.
             ///

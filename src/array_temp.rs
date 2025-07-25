@@ -2,7 +2,7 @@
 
 storage_array! {
     padded = yes,
-    partite = mop,
+    bip = no,
     rb_doc = "
 Ring buffer using an array as storage.
 
@@ -13,7 +13,7 @@ TODO: ...
 }
 
 impl_partite! {
-    partite = mop,
+    bip = no,
     N = N
 }
 
