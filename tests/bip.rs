@@ -10,3 +10,5 @@ fn basic() {
     }
     assert!(p.write_chunk_uninit(4).is_err());
 }
+
+// TODO: test if skipped elements are dropped

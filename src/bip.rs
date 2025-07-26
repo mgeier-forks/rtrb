@@ -57,23 +57,17 @@ TODO: some more docs, maybe links? [`RingBuffer::new()`].
 
 impl_drop_all_elements! {
     bip = yes,
-    N =
+    N = ()
 }
 
 impl_common! {
-    N =
+    N = ()
 }
 
 impl_calculation! {
     pow2 = no,
-    N =
+    N = ()
 }
-
-impl<T> RingBuffer<T> {
-}
-
-// SAFETY: ...
-unsafe impl<T: Send> Sync for RingBuffer<T> {}
 
 /*
 impl<T, const C: u8, I: Indices> PartialEq for BipStorage<T, C, I> {

@@ -14,14 +14,14 @@ TODO: ...
 
 impl_drop_all_elements! {
     bip = no,
-    N = N
+    N = (N)
 }
 
 impl_common! {
-    N = N
+    N = (N)
 }
 
 impl_calculation! {
     pow2 = no,
-    N = N
+    N = (N)
 }

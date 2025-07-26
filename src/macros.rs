@@ -3,7 +3,7 @@
 // indices & padding: tight, padded
 // chunks: vrb is a special case: only contiguous; bip could have both?
 // owning p&c: vec, vrb, dst; non-owning: array, maybe dst?
-// addressing: double size, pow2, single size, pow2-single; one_less, unwrap; pow2; not_pow2
+// addressing: double size, pow2, single size, pow2-single; one_less (waste_one), unwrap; pow2; not_pow2
 // size_type: usize, u32, u16, u8; (u64 and u128 probably don't make sense?)
 
 macro_rules! storage_vec {
@@ -29,10 +29,7 @@ macro_rules! storage_vec {
                 BoxedRingBuffer::new(Self {
                     head: init_padded!($padded, AtomicUsize::new(0)),
                     tail: init_padded!($padded, AtomicUsize::new(0)),
-                    skip: init_only_bip!(
-                        $bip,
-                        init_padded!($padded, AtomicUsize::new(NO_SKIP))
-                    ),
+                    skip: init_only_bip!($bip, init_padded!($padded, AtomicUsize::new(NO_SKIP))),
                     flags: AtomicU8::new(0),
                     data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
                     capacity,
@@ -98,10 +95,7 @@ macro_rules! storage_array {
                 Self {
                     head: init_padded!($padded, AtomicUsize::new(0)),
                     tail: init_padded!($padded, AtomicUsize::new(0)),
-                    skip: init_only_bip!(
-                        $bip,
-                        init_padded!($padded, AtomicUsize::new(NO_SKIP))
-                    ),
+                    skip: init_only_bip!($bip, init_padded!($padded, AtomicUsize::new(NO_SKIP))),
                     flags: AtomicU8::new(0),
                     slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
                 }
@@ -169,7 +163,13 @@ macro_rules! init_only_bip {
 }
 
 macro_rules! impl_drop_all_elements_helper {
-    ($this:ident, $head:ident, let_skip = ($($let_skip:tt)*), check_skip = ($($check_skip:tt)*), N = $($N:ident)?) => {
+    (
+        self = $elf:ident,
+        head = $head:ident,
+        let_skip = ($($let_skip:tt)*),
+        check_skip = ($($check_skip:tt)*),
+        N = ($($N:ident)?)
+    ) => {
         impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
             /// Drop all elements that are still in the buffer.
             ///
@@ -181,19 +181,19 @@ macro_rules! impl_drop_all_elements_helper {
             ///
             /// The threads must have been synchronized before via `self.flags`.
             #[inline(never)]
-            unsafe fn drop_all_elements(&mut $this) {
+            unsafe fn drop_all_elements(&mut $elf) {
                 // These atomic variables are *not* used for synchronizing the threads
                 // before destruction.  Relaxed ordering is sufficient here.
-                let mut $head = $this.head.load(Ordering::Relaxed);
-                let tail = $this.tail.load(Ordering::Relaxed);
+                let mut $head = $elf.head.load(Ordering::Relaxed);
+                let tail = $elf.tail.load(Ordering::Relaxed);
                 $($let_skip)*
 
                 // Loop over all slots that hold a value and drop them.
                 while $head != tail {
                     $($check_skip)*
                     // SAFETY: All slots between head and tail have been initialized.
-                    unsafe { $this.slot_ptr($head).drop_in_place() };
-                    $head = $this.increment1($head);
+                    unsafe { $elf.slot_ptr($head).drop_in_place() };
+                    $head = $elf.increment1($head);
                 }
             }
         }
@@ -201,17 +201,19 @@ macro_rules! impl_drop_all_elements_helper {
 }
 
 macro_rules! impl_drop_all_elements {
-    (bip = no, N = $($N:ident)?) => {
+    (bip = no, N = ($($N:ident)?)) => {
         impl_drop_all_elements_helper! {
-            self, head,
+            self = self,
+            head = head,
             let_skip = (),
             check_skip = (),
-            N = $($N)?
+            N = ($($N)?)
         }
     };
-    (bip = yes, N = $($N:ident)?) => {
+    (bip = yes, N = ($($N:ident)?)) => {
         impl_drop_all_elements_helper! {
-            self, head,
+            self = self,
+            head = head,
             let_skip = (
                 let skip = self.skip.load(Ordering::Relaxed);
             ),
@@ -220,13 +222,17 @@ macro_rules! impl_drop_all_elements {
                     head = self.increment(head, self.capacity() - self.collapse_position(skip));
                 }
             ),
-            N = $($N)?
+            N = ($($N)?)
         }
     };
 }
 
 macro_rules! impl_common {
-    (N = $($N:ident)?) => {
+    (N = ($($N:ident)?)) => {
+        // SAFETY: RingBuffer is only mutated via Producer/Consumer (which are !Sync),
+        // all other access can be shared.
+        unsafe impl<T: Send$(, const $N: usize)?> Sync for RingBuffer<T$(, $N)?> {}
+
         impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
             unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
                 // SAFETY: See docstring.
@@ -238,7 +244,7 @@ macro_rules! impl_common {
 
 // TODO: another axis: unwrapped vs one_less
 macro_rules! impl_calculation {
-    (pow2 = no, N = $($N:ident)?) => {
+    (pow2 = no, N = ($($N:ident)?)) => {
         impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
             fn collapse_position(&self, pos: usize) -> usize {
                 // Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
@@ -287,7 +293,7 @@ macro_rules! impl_calculation {
             }
         }
     };
-    (pow2 = yes, N = $($N:ident)?,) => {
+    (pow2 = yes, N = ($($N:ident)?)) => {
         impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
             // TODO:
         }
