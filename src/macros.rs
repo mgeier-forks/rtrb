@@ -168,9 +168,8 @@ macro_rules! init_only_bip {
     };
 }
 
-// TODO: less repetition?
-macro_rules! impl_partite {
-    (bip = no, N = $($N:ident)?) => {
+macro_rules! impl_drop_all_elements_helper {
+    ($this:ident, $head:ident, let_skip = ($($let_skip:tt)*), check_skip = ($($check_skip:tt)*), N = $($N:ident)?) => {
         impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
             /// Drop all elements that are still in the buffer.
             ///
@@ -182,52 +181,46 @@ macro_rules! impl_partite {
             ///
             /// The threads must have been synchronized before via `self.flags`.
             #[inline(never)]
-            unsafe fn drop_all_elements(&mut self) {
+            unsafe fn drop_all_elements(&mut $this) {
                 // These atomic variables are *not* used for synchronizing the threads
                 // before destruction.  Relaxed ordering is sufficient here.
-                let mut head = self.head.load(Ordering::Relaxed);
-                let tail = self.tail.load(Ordering::Relaxed);
+                let mut $head = $this.head.load(Ordering::Relaxed);
+                let tail = $this.tail.load(Ordering::Relaxed);
+                $($let_skip)*
 
                 // Loop over all slots that hold a value and drop them.
-                while head != tail {
+                while $head != tail {
+                    $($check_skip)*
                     // SAFETY: All slots between head and tail have been initialized.
-                    unsafe { self.slot_ptr(head).drop_in_place() };
-                    head = self.increment1(head);
+                    unsafe { $this.slot_ptr($head).drop_in_place() };
+                    $head = $this.increment1($head);
                 }
             }
         }
+    }
+}
+
+macro_rules! impl_drop_all_elements {
+    (bip = no, N = $($N:ident)?) => {
+        impl_drop_all_elements_helper! {
+            self, head,
+            let_skip = (),
+            check_skip = (),
+            N = $($N)?
+        }
     };
     (bip = yes, N = $($N:ident)?) => {
-        impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
-            /// Drop all elements that are still in the buffer.
-            ///
-            /// After this, head and tail indices are invalid.
-            ///
-            /// # Safety
-            ///
-            /// This can only be called in the `Drop` implementation of the ring buffer.
-            ///
-            /// The threads must have been synchronized before via `self.flags`.
-            #[inline(never)]
-            unsafe fn drop_all_elements(&mut self) {
-                // These atomic variables are *not* used for synchronizing the threads
-                // before destruction.  Relaxed ordering is sufficient here.
-                let mut head = self.head.load(Ordering::Relaxed);
-                let tail = self.tail.load(Ordering::Relaxed);
+        impl_drop_all_elements_helper! {
+            self, head,
+            let_skip = (
                 let skip = self.skip.load(Ordering::Relaxed);
-
-                // Loop over all slots that hold a value and drop them.
-                while head != tail {
-
-                    if skip != NO_SKIP && head == skip {
-                        head = self.increment(head, self.capacity() - self.collapse_position(skip));
-                    }
-
-                    // SAFETY: All slots between head and tail have been initialized.
-                    unsafe { self.slot_ptr(head).drop_in_place() };
-                    head = self.increment1(head);
+            ),
+            check_skip = (
+                if skip != NO_SKIP && head == skip {
+                    head = self.increment(head, self.capacity() - self.collapse_position(skip));
                 }
-            }
+            ),
+            N = $($N)?
         }
     };
 }
@@ -296,6 +289,7 @@ macro_rules! impl_calculation {
     };
     (pow2 = yes, N = $($N:ident)?,) => {
         impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
+            // TODO:
         }
     };
 }

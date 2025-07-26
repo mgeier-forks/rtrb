@@ -12,7 +12,7 @@ TODO: ...
 "
 }
 
-impl_partite! {
+impl_drop_all_elements! {
     bip = no,
     N = N
 }

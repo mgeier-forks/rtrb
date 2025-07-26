@@ -55,7 +55,7 @@ TODO: some more docs, maybe links? [`RingBuffer::new()`].
 "
 }
 
-impl_partite! {
+impl_drop_all_elements! {
     bip = yes,
     N =
 }
