@@ -69,6 +69,17 @@ impl_calculation! {
     N = ()
 }
 
+// TODO: bip option?
+def_producer_consumer_boxed! {}
+
+impl_producer_consumer_common! {
+    N = ()
+}
+
+impl_next_head_bip! {
+    N = ()
+}
+
 /*
 impl<T, const C: u8, I: Indices> PartialEq for BipStorage<T, C, I> {
     fn eq(&self, other: &Self) -> bool {
@@ -79,56 +90,7 @@ impl<T, const C: u8, I: Indices> PartialEq for BipStorage<T, C, I> {
 impl<T, const C: u8, I: Indices> Eq for BipStorage<T, C, I> {}
 */
 
-// TODO: manual impls:
-//#[derive(Debug, PartialEq, Eq)]
-pub struct Producer<T> {
-    buffer: BoxedRingBuffer<T>,
-    cached_head: Cell<usize>,
-    cached_tail: Cell<usize>,
-    // NB: caching `skip` doesn't help, because it can jump to any position.
-}
-
 impl<T> Producer<T> {
-    // TODO: same as rtrb::Producer?
-    pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
-        if let Some(tail) = self.next_tail() {
-            let b = &self.buffer;
-            // SAFETY: tail points to an empty slot.
-            unsafe { b.slot_ptr(tail).write(value) };
-            let tail = b.increment1(tail);
-            b.tail.store(tail, Ordering::Release);
-            self.cached_tail.set(tail);
-            Ok(())
-        } else {
-            Err(PushError::Full(value))
-        }
-    }
-
-    /// Get the tail position for writing the next slot, if available.
-    ///
-    /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
-    /// For performance, this special case is implemented separately.
-    // TODO: same as rtrb::Producer? (except for comment)
-    fn next_tail(&self) -> Option<usize> {
-        let head = self.cached_head.get();
-        let tail = self.cached_tail.get();
-        let b = &self.buffer;
-
-        // NB: `b.skip` is never set. One element can always be inserted without skipping.
-
-        // Check if the queue is *possibly* full.
-        if b.distance(head, tail) == b.capacity() {
-            // Refresh the head ...
-            let head = b.head.load(Ordering::Acquire);
-            self.cached_head.set(head);
-            // ... and check if it's *really* full.
-            if b.distance(head, tail) == b.capacity() {
-                // `head` didn't change, queue is full.
-                return None;
-            }
-        }
-        Some(tail)
-    }
     pub fn slots(&self) -> usize {
         todo!()
     }
@@ -165,78 +127,7 @@ impl<T> Producer<T> {
     }
 }
 
-// TODO: manual impls:
-//#[derive(Debug, PartialEq, Eq)]
-pub struct Consumer<T> {
-    buffer: BoxedRingBuffer<T>,
-    cached_head: Cell<usize>,
-    cached_tail: Cell<usize>,
-    // TODO: cached_skip?
-}
-
 impl<T> Consumer<T> {
-    // TODO: same as rtrb::Consumer?
-    pub fn pop(&mut self) -> Result<T, PopError> {
-        if let Some(head) = self.next_head() {
-            let b = &self.buffer;
-            // SAFETY: head points to an initialized slot.
-            let value = unsafe { b.slot_ptr(head).read() };
-            let head = b.increment1(head);
-            b.head.store(head, Ordering::Release);
-            self.cached_head.set(head);
-            Ok(value)
-        } else {
-            Err(PopError::Empty)
-        }
-    }
-
-    /// Get the `head` position for reading the next slot, if available.
-    ///
-    /// This is a strict subset of the functionality implemented in `read_chunk()`.
-    /// For performance, this special case is implemented separately.
-    fn next_head(&self) -> Option<usize> {
-        let mut head = self.cached_head.get();
-        let mut tail = self.cached_tail.get();
-        let b = &self.buffer;
-
-        let mut tail_has_been_refreshed = false;
-        // Check if the queue is *possibly* empty.
-        if head == tail {
-            // Refresh the tail ...
-            tail = b.tail.load(Ordering::Acquire);
-            self.cached_tail.set(tail);
-            tail_has_been_refreshed = true;
-            // ... and check if it's *really* empty.
-            if head == tail {
-                // `tail` didn't change, queue is empty.
-                return None;
-            } else if b.collapse_position(head) < b.collapse_position(tail) {
-                // `tail` did change, but it didn't wrap around.
-                return Some(head);
-            }
-        }
-        // `tail` potentially wrapped around, so we have to check `skip`.
-        let mut skip = b.skip.load(Ordering::Acquire);
-        if skip != NO_SKIP && head == skip {
-            head = b.increment(head, b.capacity() - b.collapse_position(skip));
-            b.head.store(head, Ordering::Release);
-            self.cached_head.set(head);
-            skip = NO_SKIP;
-            b.skip.store(skip, Ordering::Release);
-            if head == tail {
-                if tail_has_been_refreshed {
-                    return None;
-                }
-                tail = b.tail.load(Ordering::Acquire);
-                self.cached_tail.set(tail);
-                if head == tail {
-                    return None;
-                }
-            }
-        }
-        Some(head)
-    }
-
     pub fn peek(&self) -> Result<&T, PeekError> {
         todo!()
     }
@@ -339,119 +230,19 @@ impl<T> core::ops::Deref for BoxedRingBuffer<T> {
     }
 }
 
-// "chunks" stuff. make separate module or not?
+// "chunks" stuff.
 
-//#[derive(Debug, PartialEq, Eq)]
-pub struct ContiguousWriteChunkUninit<'a, T> {
-    ptr: *mut T,
-    len: usize,
-    producer: &'a Producer<T>,
+impl_chunks_bip! {
+    N = ()
+}
+impl_chunks_contiguous! {
+    N = ()
+}
+impl_chunks_common! {
+    N = ()
 }
 
-impl<T> ContiguousWriteChunkUninit<'_, T> {
-    unsafe fn commit_unchecked(self, n: usize) -> usize {
-        if n == 0 {
-            // NB: No slots will be skipped, both `tail` and `skip` remain unchanged.
-            return n;
-        }
-        let b = &self.producer.buffer;
-        let mut tail = self.producer.cached_tail.get();
-        if self.ptr == b.data_ptr() && b.collapse_position(tail) != 0 {
-            b.skip.store(tail, Ordering::Release);
-            // TODO: make this a reusable function?
-            tail = b.increment(tail, b.capacity() - b.collapse_position(tail));
-            // NB: It is safe to store `skip` before `tail`, because the consumer
-            // will potentially only read between `head` and (the old) `tail`,
-            // without looking at `skip`.
-            // Storing `tail` before `skip` would be problematic, however, because
-            // the consumer would see new data at the beginning of the buffer,
-            // but wouldn't know that the end has to be skipped.
-        }
-        tail = b.increment(tail, n);
-        b.tail.store(tail, Ordering::Release);
-        self.producer.cached_tail.set(tail);
-        n
-    }
-
-    /// Drops all elements starting from index `n`.
-    ///
-    /// #Safety
-    ///
-    /// All of those slots must be initialized.
-    unsafe fn drop_suffix(&mut self, n: usize) {
-        // NB: If n >= self.len(), the loop is not entered.
-        for i in n..self.len {
-            // SAFETY: The caller must make sure that all slots are initialized.
-            unsafe { self.ptr.add(i).drop_in_place() };
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.len
-    }
-}
-
-// TODO: same as non-contiguous
-impl<T> ContiguousWriteChunkUninit<'_, T> {
-    pub unsafe fn commit_all(self) {
-        let slots = self.len();
-        // SAFETY: Delegated to the caller.
-        unsafe { self.commit_unchecked(slots) };
-    }
-}
-
-// TODO: same as non-contiguous?
-//#[derive(Debug, PartialEq, Eq)]
-pub struct ContiguousWriteChunk<'a, T>(Option<ContiguousWriteChunkUninit<'a, T>>);
-
-// TODO: same as non-contiguous?
-impl<T> Drop for ContiguousWriteChunk<'_, T> {
-    fn drop(&mut self) {
-        // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
-        if let Some(mut chunk) = self.0.take() {
-            // No part of the chunk has been committed, all slots are dropped.
-            // SAFETY: All slots have been initialized in From::from().
-            unsafe { chunk.drop_suffix(0) };
-        }
-    }
-}
-
-impl<'a, T> From<ContiguousWriteChunkUninit<'a, T>> for ContiguousWriteChunk<'a, T>
-where
-    T: Default,
-{
-    /// Fills all slots with the [`Default`] value.
-    fn from(chunk: ContiguousWriteChunkUninit<'a, T>) -> Self {
-        for i in 0..chunk.len {
-            // SAFETY: i is in a valid range.
-            unsafe { chunk.ptr.add(i).write(Default::default()) };
-        }
-        ContiguousWriteChunk(Some(chunk))
-    }
-}
-
-// TODO: same as non-contiguous
-impl<T> ContiguousWriteChunk<'_, T>
-where
-    T: Default,
-{
-    pub fn commit_all(mut self) {
-        // self.0 is always Some(chunk).
-        let chunk = self.0.take().unwrap();
-        // SAFETY: All slots have been initialized in From::from().
-        unsafe { chunk.commit_all() };
-        // `self` is dropped here, with `self.0` being set to `None`.
-    }
-}
-
-//#[derive(Debug, PartialEq, Eq)]
-pub struct ContiguousReadChunk<'a, T> {
-    ptr: *mut T,
-    len: usize,
-    consumer: &'a Consumer<T>,
-}
-
-impl<T> ContiguousReadChunk<'_, T> {
+impl<T> ReadChunk<'_, T> {
     pub fn as_slice(&self) -> &[T] {
         todo!()
     }
@@ -475,148 +266,5 @@ impl<T> ContiguousReadChunk<'_, T> {
     pub fn is_empty(&self) -> bool {
         todo!()
     }
-
-    unsafe fn commit_unchecked(self, n: usize) -> usize {
-        // TODO: if skip is reached -> reset skip? set head to beginning
-
-        let len = self.len.min(n);
-        for i in 0..len {
-            // SAFETY: The caller must make sure that there are n initialized elements.
-            unsafe { self.ptr.add(i).drop_in_place() };
-        }
-        let c = self.consumer;
-        let head = c.buffer.increment(c.cached_head.get(), n);
-        c.buffer.head.store(head, Ordering::Release);
-        c.cached_head.set(head);
-        n
-    }
 }
 
-impl<T> Producer<T> {
-    pub fn write_chunk(&mut self, n: usize) -> Result<ContiguousWriteChunk<'_, T>, ChunkError>
-    where
-        T: Default,
-    {
-        self.write_chunk_uninit(n).map(ContiguousWriteChunk::from)
-    }
-    pub fn write_chunk_uninit(
-        &mut self,
-        n: usize,
-    ) -> Result<ContiguousWriteChunkUninit<'_, T>, ChunkError> {
-        let mut head = self.cached_head.get();
-        let tail = self.cached_tail.get();
-        let b = &self.buffer;
-        // TODO: check if everything is compatible with power-of-2 addressing.
-        let mut slots = 0;
-        let mut head_has_been_refreshed = false;
-        // Collapsing the indices makes it impossible to distinguish empty and full,
-        // so we check for emptiness first.
-        let is_empty = head == tail;
-        if !is_empty && b.collapse_position(tail) <= b.collapse_position(head) {
-            // Is there enough space between `tail` and `head`?
-            slots = head - tail;
-            if slots < n {
-                // Refresh head ...
-                head = b.head.load(Ordering::Acquire);
-                self.cached_head.set(head);
-                head_has_been_refreshed = true;
-                // ... and try again.
-                let is_empty = head == tail;
-                if !is_empty && b.collapse_position(tail) <= b.collapse_position(head) {
-                    // `head` did not wrap around.
-                    slots = head - tail;
-                    if slots < n {
-                        return Err(ChunkError::TooFewSlots(slots));
-                    }
-                } else {
-                    // `head` did wrap around, we'll continue below.
-                }
-            }
-        }
-        let offset;
-        if slots < n {
-            // Is there enough space at the end of the buffer?
-            slots = b.capacity() - b.collapse_position(tail);
-            if slots < n {
-                // Nope, let's check the beginning.
-
-                // TODO: interaction/reuse with slots() et al.?
-
-                slots = slots.max(b.collapse_position(head));
-                if slots < n {
-                    // TODO: check if this early return/local variable is an actual optimization?
-                    if head_has_been_refreshed {
-                        return Err(ChunkError::TooFewSlots(slots));
-                    }
-                    head = b.head.load(Ordering::Acquire);
-                    self.cached_head.set(head);
-                    slots = slots.max(b.collapse_position(head));
-                    if slots < n {
-                        return Err(ChunkError::TooFewSlots(slots));
-                    }
-                }
-                // NB: `tail` will be (conditionally) reset in `commit_unchecked()`.
-                offset = 0;
-            } else {
-                offset = b.collapse_position(tail);
-            }
-        } else {
-            offset = b.collapse_position(tail);
-        }
-        Ok(ContiguousWriteChunkUninit {
-            // SAFETY: tail has been updated to a valid position.
-            ptr: unsafe { b.data_ptr().add(offset) },
-            len: n,
-            producer: self,
-        })
-    }
-}
-
-impl<T> Consumer<T> {
-    pub fn read_chunk(&mut self, n: usize) -> Result<ContiguousReadChunk<'_, T>, ChunkError> {
-        let b = &self.buffer;
-        let head = self.cached_head.get();
-        let mut tail = self.cached_tail.get();
-        let mut slots = 0;
-        // TODO: what happens when queue is empty/full at this point?
-        if b.collapse_position(head) <= b.collapse_position(tail) {
-            slots = tail - head;
-            if slots < n {
-                // Refresh the tail ...
-                tail = b.tail.load(Ordering::Acquire);
-                self.cached_tail.set(tail);
-                // ... and check again.
-                if b.collapse_position(head) < b.collapse_position(tail) {
-                    // `tail` did not wrap around.
-                    slots = tail - head;
-                    if slots < n {
-                        return Err(ChunkError::TooFewSlots(slots));
-                    }
-                } else {
-                    // `tail` did wrap around, we'll continue below.
-                }
-            }
-        } else {
-            // No need to refresh `tail`, it cannot overtake `head`.
-        }
-        if slots < n {
-            let mut skip = b.skip.load(Ordering::Acquire);
-            if skip == NO_SKIP {
-                // TODO: does this work at wrap-around with power-of-2 addressing?
-                skip = b.increment(head, b.capacity() - b.collapse_position(head));
-            }
-            // TODO: maybe use wrapping_sub()? use distance()? see also subtractions above!
-            slots = skip - head;
-            if slots < n {
-                return Err(ChunkError::TooFewSlots(slots));
-            }
-        }
-        let head = b.collapse_position(head);
-        Ok(ContiguousReadChunk {
-            // SAFETY: ...
-            ptr: unsafe { b.data_ptr().add(head) },
-            len: n,
-            consumer: self,
-        })
-    }
-}
