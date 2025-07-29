@@ -241,30 +241,3 @@ impl_chunks_contiguous! {
 impl_chunks_common! {
     N = ()
 }
-
-impl<T> ReadChunk<'_, T> {
-    pub fn as_slice(&self) -> &[T] {
-        todo!()
-    }
-
-    pub fn as_mut_slice(&mut self) -> &mut [T] {
-        todo!()
-    }
-
-    pub fn commit(self, n: usize) {
-        todo!()
-    }
-
-    pub fn commit_all(self) {
-        todo!()
-    }
-
-    pub fn len(&self) -> usize {
-        todo!()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        todo!()
-    }
-}
-

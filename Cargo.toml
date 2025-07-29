@@ -66,3 +66,7 @@ harness = false
 [[bench]]
 name = "two_threads_array"
 harness = false
+
+[[bench]]
+name = "bip"
+harness = false

@@ -479,20 +479,25 @@ macro_rules! impl_chunks_bip {
             }
         }
 
-        // TODO: separate version for non-bip but contiguous(i.e. vrb)?
+        // TODO: separate version for non-bip but contiguous (i.e. vrb)
         impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
             unsafe fn commit_unchecked(self, n: usize) -> usize {
-                // TODO: if skip is reached -> reset skip? set head to beginning
-
-                let len = self.len.min(n);
-                for i in 0..len {
+                for i in 0..n {
                     // SAFETY: The caller must make sure that there are n initialized elements.
                     unsafe { self.ptr.add(i).drop_in_place() };
                 }
-                let c = self.consumer;
-                let head = c.buffer.increment(c.cached_head.get(), n);
-                c.buffer.head.store(head, Ordering::Release);
-                c.cached_head.set(head);
+                let b = &self.consumer.buffer;
+                let mut head = b.increment(self.consumer.cached_head.get(), n);
+                // TODO: does caching "skip" help?
+                let mut skip = b.skip.load(Ordering::Acquire);
+                if skip != NO_SKIP && head == skip {
+                    head = b.increment(head, b.capacity() - b.collapse_position(skip));
+                    skip = NO_SKIP;
+                    b.skip.store(skip, Ordering::Release);
+                }
+                // TODO: check order of storing head and skip
+                b.head.store(head, Ordering::Release);
+                self.consumer.cached_head.set(head);
                 n
             }
         }
@@ -504,6 +509,7 @@ macro_rules! impl_chunks_bip {
             {
                 self.write_chunk_uninit(n).map(WriteChunk::from)
             }
+
             pub fn write_chunk_uninit(
                 &mut self,
                 n: usize,
@@ -515,21 +521,24 @@ macro_rules! impl_chunks_bip {
                 let mut slots = 0;
                 let mut head_has_been_refreshed = false;
                 // Collapsing the indices makes it impossible to distinguish empty and full,
-                // so we check for emptiness first.
+                // so we check for emptiness before collapsing.
                 let is_empty = head == tail;
-                if !is_empty && b.collapse_position(tail) <= b.collapse_position(head) {
+                let mut collapsed_head = b.collapse_position(head);
+                let collapsed_tail = b.collapse_position(tail);
+                if !is_empty && collapsed_tail <= collapsed_head {
                     // Is there enough space between `tail` and `head`?
-                    slots = head - tail;
+                    slots = collapsed_head - collapsed_tail;
                     if slots < n {
                         // Refresh head ...
                         head = b.head.load(Ordering::Acquire);
                         self.cached_head.set(head);
+                        collapsed_head = b.collapse_position(head);
                         head_has_been_refreshed = true;
                         // ... and try again.
                         let is_empty = head == tail;
-                        if !is_empty && b.collapse_position(tail) <= b.collapse_position(head) {
+                        if !is_empty && collapsed_tail <= collapsed_head {
                             // `head` did not wrap around.
-                            slots = head - tail;
+                            slots = collapsed_head - collapsed_tail;
                             if slots < n {
                                 return Err(ChunkError::TooFewSlots(slots));
                             }
@@ -541,13 +550,13 @@ macro_rules! impl_chunks_bip {
                 let offset;
                 if slots < n {
                     // Is there enough space at the end of the buffer?
-                    slots = b.capacity() - b.collapse_position(tail);
+                    slots = b.capacity() - collapsed_tail;
                     if slots < n {
                         // Nope, let's check the beginning.
 
                         // TODO: interaction/reuse with slots() et al.?
 
-                        slots = slots.max(b.collapse_position(head));
+                        slots = slots.max(collapsed_head);
                         if slots < n {
                             // TODO: check if this early return/local variable is an actual optimization?
                             if head_has_been_refreshed {
@@ -555,7 +564,8 @@ macro_rules! impl_chunks_bip {
                             }
                             head = b.head.load(Ordering::Acquire);
                             self.cached_head.set(head);
-                            slots = slots.max(b.collapse_position(head));
+                            collapsed_head = b.collapse_position(head);
+                            slots = slots.max(collapsed_head);
                             if slots < n {
                                 return Err(ChunkError::TooFewSlots(slots));
                             }
@@ -563,10 +573,10 @@ macro_rules! impl_chunks_bip {
                         // NB: `tail` will be (conditionally) reset in `commit_unchecked()`.
                         offset = 0;
                     } else {
-                        offset = b.collapse_position(tail);
+                        offset = collapsed_tail;
                     }
                 } else {
-                    offset = b.collapse_position(tail);
+                    offset = collapsed_tail;
                 }
                 Ok(WriteChunkUninit {
                     // SAFETY: tail has been updated to a valid position.
@@ -583,17 +593,23 @@ macro_rules! impl_chunks_bip {
                 let head = self.cached_head.get();
                 let mut tail = self.cached_tail.get();
                 let mut slots = 0;
-                // TODO: what happens when queue is empty/full at this point?
-                if b.collapse_position(head) <= b.collapse_position(tail) {
-                    slots = tail - head;
+                // Collapsing the indices makes it impossible to distinguish empty and full,
+                // so we check for emptiness before collapsing.
+                let is_empty = head == tail;
+                let collapsed_head = b.collapse_position(head);
+                let mut collapsed_tail = b.collapse_position(tail);
+                if is_empty || collapsed_head < collapsed_tail {
+                    slots = collapsed_tail - collapsed_head;
                     if slots < n {
                         // Refresh the tail ...
                         tail = b.tail.load(Ordering::Acquire);
                         self.cached_tail.set(tail);
+                        collapsed_tail = b.collapse_position(tail);
                         // ... and check again.
-                        if b.collapse_position(head) < b.collapse_position(tail) {
+                        let is_empty = head == tail;
+                        if is_empty || collapsed_head < collapsed_tail {
                             // `tail` did not wrap around.
-                            slots = tail - head;
+                            slots = collapsed_tail - collapsed_head;
                             if slots < n {
                                 return Err(ChunkError::TooFewSlots(slots));
                             }
@@ -605,21 +621,21 @@ macro_rules! impl_chunks_bip {
                     // No need to refresh `tail`, it cannot overtake `head`.
                 }
                 if slots < n {
-                    let mut skip = b.skip.load(Ordering::Acquire);
-                    if skip == NO_SKIP {
-                        // TODO: does this work at wrap-around with power-of-2 addressing?
-                        skip = b.increment(head, b.capacity() - b.collapse_position(head));
-                    }
-                    // TODO: maybe use wrapping_sub()? see also subtractions above!
-                    slots = skip - head;
+                    let skip = b.skip.load(Ordering::Acquire);
+                    let end = if skip == NO_SKIP {
+                        b.capacity()
+                    } else {
+                        b.collapse_position(skip)
+                    };
+                    slots = end - collapsed_head;
                     if slots < n {
                         return Err(ChunkError::TooFewSlots(slots));
                     }
                 }
-                let head = b.collapse_position(head);
+                let offset = collapsed_head;
                 Ok(ReadChunk {
                     // SAFETY: ...
-                    ptr: unsafe { b.data_ptr().add(head) },
+                    ptr: unsafe { b.data_ptr().add(offset) },
                     len: n,
                     consumer: self,
                 })
@@ -631,6 +647,8 @@ macro_rules! impl_chunks_bip {
 // bip and vrb
 macro_rules! impl_chunks_contiguous {
     (N = ($($N:ident)?)) => {
+        use core::mem::MaybeUninit;
+
         //#[derive(Debug, PartialEq, Eq)]
         pub struct WriteChunkUninit<'a, T$(, $N)?> {
             ptr: *mut T,
@@ -639,6 +657,11 @@ macro_rules! impl_chunks_contiguous {
         }
 
         impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
+            pub fn as_mut_slice(&mut self) -> &mut [MaybeUninit<T>] {
+                // SAFETY: The pointer and length have been computed correctly in write_chunk_uninit().
+                unsafe { core::slice::from_raw_parts_mut(self.ptr.cast(), self.len) }
+            }
+
             /// Drops all elements starting from index `n`.
             ///
             /// #Safety
@@ -671,11 +694,44 @@ macro_rules! impl_chunks_contiguous {
             }
         }
 
+        impl<T$(, const $N: usize)?> WriteChunk<'_, T$(, $N)?>
+        where
+            T: Default,
+        {
+            pub fn as_mut_slice(&mut self) -> &mut [T] {
+                // self.0 is always Some(chunk).
+                let chunk = self.0.as_ref().unwrap();
+                // SAFETY: The pointer and length have been computed correctly in write_chunk_uninit()
+                // and all slots have been initialized in From::from().
+                unsafe { core::slice::from_raw_parts_mut(chunk.ptr, chunk.len) }
+            }
+        }
+
         //#[derive(Debug, PartialEq, Eq)]
         pub struct ReadChunk<'a, T$(, const $N: usize)?> {
             ptr: *mut T,
             len: usize,
             consumer: &'a Consumer<T$(, $N)?>,
+        }
+
+        impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
+            pub fn as_slice(&self) -> &[T] {
+                // SAFETY: The correct pointer and length have been provided by ReadChunk::new().
+                unsafe { core::slice::from_raw_parts(self.ptr, self.len) }
+            }
+
+            pub fn as_mut_slice(&mut self) -> &mut [T] {
+                // SAFETY: The correct pointer and length have been provided by ReadChunk::new().
+                unsafe { core::slice::from_raw_parts_mut(self.ptr, self.len) }
+            }
+
+            pub fn len(&self) -> usize {
+                self.len
+            }
+
+            pub fn is_empty(&self) -> bool {
+                self.len == 0
+            }
         }
     }
 }
@@ -714,6 +770,15 @@ macro_rules! impl_chunks_common {
                 // SAFETY: All slots have been initialized in From::from().
                 unsafe { chunk.commit_all() };
                 // `self` is dropped here, with `self.0` being set to `None`.
+            }
+        }
+
+
+        impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
+            pub fn commit_all(self) {
+                let slots = self.len();
+                // SAFETY: self.len() initialized elements have been obtained in read_chunk().
+                unsafe { self.commit_unchecked(slots) };
             }
         }
     };
