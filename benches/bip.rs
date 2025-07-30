@@ -48,7 +48,7 @@ $(
             // Queue is so long that there is no contention between threads.
             let size = (3 * iters).next_power_of_two();
             let (mut p, mut c) = create(size);
-            let mut dummy = vec![0u8; size - iters];
+            let mut dummy = vec![0; size - iters];
             assert!(write_chunk(&mut p, &dummy));
             assert!(read_chunk(&mut c, &mut dummy));
             let half = iters / 2;
@@ -83,7 +83,7 @@ $(
             barrier.wait();
             let start_popping = std::time::Instant::now();
             for i in 0..iters {
-                let mut a = [0u8; 1];
+                let mut a = [0];
                 assert!(read_chunk(&mut c, black_box(&mut a)));
                 assert_eq!(a, [i as u8]);
             }
@@ -143,6 +143,7 @@ $(
 $(
     group_small.bench_function($id, |b| {
         b.iter_custom(|iters| {
+                        //eprintln!("new iteration, size {iters}");
             let (create, write_chunk, read_chunk) = help_with_type_inference($create, $write_chunk, $read_chunk);
             // Queue is very short in order to force a lot of contention between threads.
             let (mut p, mut c) = create(4);
@@ -152,14 +153,18 @@ $(
                     let start = std::time::Instant::now();
                     let mut i = 0;
                     while i < iters {
-                        // NB: we alternate chunk sizes in hope for unpredictable "skip" behavior.
+                        //eprintln!("write {i}");
+                        // NB: we change chunk sizes in hope for unpredictable "skip" behavior.
+        // TODO: more random. spin on 2, then optional 1?
                         while !write_chunk(&mut p, black_box(&[i as u8])) {
                             std::hint::spin_loop();
                         }
-                        while !write_chunk(&mut p, black_box(&[(i + 1) as u8, (i + 2) as u8])) {
+                        i += 1;
+                        while !write_chunk(&mut p, black_box(&[i as u8, (i + 1) as u8])) {
                             std::hint::spin_loop();
                         }
-                        i += 3;
+                        i += 2;
+                        //eprintln!("write done {i}");
                     }
                     start
                 })
@@ -167,17 +172,19 @@ $(
             // While the second thread is still starting up, this thread will busy-wait.
             let mut i = 0;
             while i < iters {
-                let mut a = [0u8; 2];
+                        //eprintln!("read {i}");
+                let mut a = [0, 0];
                 if read_chunk(&mut c, black_box(&mut a)) {
                     assert_eq!(a, [i as u8, (i + 1) as u8]);
+                        //eprintln!("read {i} success 2");
                     i += 2;
                 }
-                let mut a = [0u8; 1];
-                while !read_chunk(&mut c, black_box(&mut a)) {
-                    std::hint::spin_loop();
+                let mut a = [0];
+                if read_chunk(&mut c, black_box(&mut a)) {
+                    assert_eq!(a, [i as u8]);
+                        //eprintln!("read {i} success 1");
+                    i += 1;
                 }
-                assert_eq!(a, [i as u8]);
-                i += 1;
             }
             // The timing stops once all items have been received.
             let stop = std::time::Instant::now();
