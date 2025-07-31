@@ -682,7 +682,6 @@ macro_rules! impl_chunks_bip {
     ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
         impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
             unsafe fn commit_unchecked(self, n: usize) -> usize {
-        //println!("p: enter commit_unchecked(), n = {n}");
                 if n == 0 {
                     // NB: No slots will be skipped, both `tail` and `skip` remain unchanged.
                     // This is the same as if the function wasn't called at all.
@@ -690,7 +689,6 @@ macro_rules! impl_chunks_bip {
                 }
                 let b = &self.producer.buffer;
                 let mut tail = self.producer.cached_tail.get();
-        //println!("p: tail = {tail}");
                 if self.ptr == b.data_ptr() && b.collapse_position(tail) != 0 {
                     // NB: It is safe to store `skip` before `tail`, because the consumer
                     // will potentially only read between `head` and (the old) `tail`,
@@ -699,23 +697,12 @@ macro_rules! impl_chunks_bip {
                     // the consumer would see new data at the beginning of the buffer,
                     // but wouldn't know that the end has to be skipped.
                     b.skip.store(tail, Ordering::Release);
-        //println!("p: setting skip = {tail}");
                     // TODO: make this a reusable function?
                     tail = b.increment(tail, b.capacity() - b.collapse_position(tail));
-        //println!("p: writing at beginning after `skip` at tail = {tail}");
-
-        /*
-                    // We have to invalidate the cached head here to make sure that we don't
-                    // overtake it.  To avoid loading the atomic variable right now, we set it
-                    // as if the queue were full.
-                    self.producer.cached_head.set(tail);
-*/
-                    //self.producer.cached_head.set(b.head.load(Ordering::Acquire));
                 }
                 tail = b.increment(tail, n);
                 b.tail.store(tail, Ordering::Release);
                 self.producer.cached_tail.set(tail);
-        //println!("p: incrementing tail: {tail}, commit done");
                 n
             }
         }
@@ -723,7 +710,6 @@ macro_rules! impl_chunks_bip {
         // TODO: separate version for non-bip but contiguous (i.e. vrb)
         impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
             unsafe fn commit_unchecked(self, n: usize) -> usize {
-        //println!("c: enter commit_unchecked(), head = {}, n = {n}", self.consumer.cached_head.get());
                 for i in 0..n {
                     // SAFETY: The caller must make sure that there are n initialized elements.
                     unsafe { self.ptr.add(i).drop_in_place() };
@@ -732,7 +718,6 @@ macro_rules! impl_chunks_bip {
                 let head = b.increment(self.consumer.cached_head.get(), n);
                 b.head.store(head, Ordering::Release);
                 self.consumer.cached_head.set(head);
-        //println!("c: head = {head} (incremented), commit done");
                 n
             }
         }
@@ -749,11 +734,8 @@ macro_rules! impl_chunks_bip {
                 &mut self,
                 n: usize,
             ) -> Result<WriteChunkUninit<'_, T$(, $N)?>, ChunkError> {
-        //println!("p: enter write_chunk_uninit(), n = {n}");
                 let mut head = self.cached_head.get();
-        //println!("p: head = {head} (cached)");
                 let tail = self.cached_tail.get();
-        //println!("p: tail = {tail}");
                 let b = &self.buffer;
                 // TODO: check if everything is compatible with power-of-2 addressing.
                 let mut slots = 0;
@@ -762,67 +744,51 @@ macro_rules! impl_chunks_bip {
                 // so we check for emptiness before collapsing.
                 let is_empty = head == tail;
                 let mut collapsed_head = b.collapse_position(head);
-        //println!("p: collapsed head = {collapsed_head} (cached)");
                 let collapsed_tail = b.collapse_position(tail);
-        //println!("p: collapsed tail = {collapsed_tail}");
                 if !is_empty && collapsed_tail <= collapsed_head {
                     // Is there enough space between `tail` and `head`?
                     slots = collapsed_head - collapsed_tail;
-        //println!("p: tail < head (or full), slots = {slots}");
                     if slots < n {
                         // Refresh head ...
                         head = b.head.load(Ordering::Acquire);
                         self.cached_head.set(head);
-        //println!("p: head = {head} (refreshed)");
                         collapsed_head = b.collapse_position(head);
-        //println!("p: collapsed head = {collapsed_head} (refreshed)");
                         head_has_been_refreshed = true;
                         // ... and try again.
                         let is_empty = head == tail;
                         if !is_empty && collapsed_tail <= collapsed_head {
                             // `head` did not wrap around.
                             slots = collapsed_head - collapsed_tail;
-        //println!("p: tail < head (or full), slots = {slots}");
                             if slots < n {
-        //println!("p: too few slots");
                                 return Err(ChunkError::TooFewSlots(slots));
                             }
                         } else {
-        //println!("p: head wrapped around");
                             // `head` did wrap around, we'll continue below.
                         }
                     }
                 } else {
-        //println!("p: tail >= (cached) head (not full)");
                     // No need to refresh `head`, it cannot overtake `tail`.
                 }
                 let offset;
                 if slots < n {
                     // Is there enough space at the end of the buffer?
                     slots = b.capacity() - collapsed_tail;
-        //println!("p: slots at end of buffer: {slots}");
                     if slots < n {
                         // Nope, let's check the beginning.
 
                         // TODO: interaction/reuse with slots() et al.?
 
-        //println!("p: not enough, slots at beginning (cached): {slots}");
                         slots = slots.max(collapsed_head);
                         if slots < n {
                             // TODO: check if this early return/local variable is an actual optimization?
                             if head_has_been_refreshed {
-        //println!("p: too few slots");
                                 return Err(ChunkError::TooFewSlots(slots));
                             }
                             head = b.head.load(Ordering::Acquire);
                             self.cached_head.set(head);
-        //println!("p: refreshed head: {head}");
                             collapsed_head = b.collapse_position(head);
-        //println!("p: refreshed collapsed head: {collapsed_head}");
                             slots = slots.max(collapsed_head);
-        //println!("p: refreshed slots: {slots}");
                             if slots < n {
-        //println!("p: too few slots");
                                 return Err(ChunkError::TooFewSlots(slots));
                             }
                         }
@@ -834,7 +800,6 @@ macro_rules! impl_chunks_bip {
                 } else {
                     offset = collapsed_tail;
                 }
-        //println!("p: success; offset = {offset}");
                 Ok(WriteChunkUninit {
                     // SAFETY: `offset` has been set to a valid position.
                     ptr: unsafe { b.data_ptr().add(offset) },
@@ -846,12 +811,9 @@ macro_rules! impl_chunks_bip {
 
         impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
             pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T$(, $N)?>, ChunkError> {
-        //println!("c: enter read_chunk(), n = {n}");
                 let b = &self.buffer;
                 let mut head = self.cached_head.get();
-        //println!("c: head = {head}");
                 let mut tail = self.cached_tail.get();
-        //println!("c: tail = {tail} (cached)");
                 let mut slots = 0;
                 let mut tail_has_been_refreshed = false;
                 // Collapsing the indices makes it impossible to distinguish empty and full,
@@ -861,46 +823,37 @@ macro_rules! impl_chunks_bip {
                 let mut collapsed_tail = b.collapse_position(tail);
                 if is_empty || collapsed_head < collapsed_tail {
                     slots = collapsed_tail - collapsed_head;
-        //println!("c: head < tail (or empty), slots = {slots}");
                     if slots < n {
                         // Refresh the tail ...
                         tail = b.tail.load(Ordering::Acquire);
                         tail_has_been_refreshed = true;
                         self.cached_tail.set(tail);
-        //println!("c: tail = {tail} (refreshed)");
                         collapsed_tail = b.collapse_position(tail);
                         // ... and check again.
                         let is_empty = head == tail;
                         if is_empty || collapsed_head < collapsed_tail {
                             // `tail` did not wrap around.
                             slots = collapsed_tail - collapsed_head;
-        //println!("c: head < tail (or empty), slots = {slots}");
                             if slots < n {
-        //println!("c: too few slots");
                                 return Err(ChunkError::TooFewSlots(slots));
                             }
                         } else {
-        //println!("c: tail wrapped around");
                             // `tail` did wrap around, we'll continue below.
                         }
                     }
                 } else {
-        //println!("c: (cached) tail <= head (not empty)");
                     // No need to refresh `tail`, it cannot overtake `head`.
                 }
                 if slots < n {
                     // NB: We are only allowed to use `skip` if (collapsed) `tail < head`
                     //     (or if the buffer is full).
                     let mut skip = b.skip.load(Ordering::Acquire);
-        //println!("c: skip = {skip}");
                     let end = if skip == NO_SKIP {
                         b.capacity()
                     } else {
                         b.collapse_position(skip)
                     };
                     slots = end - collapsed_head;
-        //println!("c: slots until end: {slots}");
-
                     if slots == 0 {
                         // No more slots at the end of the buffer, let's wrap around.
                         if skip != NO_SKIP {
@@ -925,12 +878,10 @@ macro_rules! impl_chunks_bip {
 
                     }
                     if slots < n {
-        //println!("c: too few slots");
                         return Err(ChunkError::TooFewSlots(slots));
                     }
                 }
                 let offset = collapsed_head;
-        //println!("c: success; offset = {offset}");
                 Ok(ReadChunk {
                     // SAFETY: ...
                     ptr: unsafe { b.data_ptr().add(offset) },
