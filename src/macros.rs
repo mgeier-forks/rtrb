@@ -246,7 +246,7 @@ macro_rules! impl_common {
     }
 }
 
-// TODO: another axis: unwrapped vs one_less
+// TODO: another axis: unwrap vs waste_one
 macro_rules! impl_calculation {
     (pow2 = no, N = ($($N:ident)?)) => {
         impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
@@ -1016,6 +1016,241 @@ macro_rules! impl_chunks_bip {
     };
 }
 
+macro_rules! fn_write_chunk_uninit_as_mut_sliceX_docstring {
+    () => {
+        "
+
+After writing to the slots, they are *not* automatically made available
+to be read by the [`Consumer`].
+This has to be explicitly done by calling [`commit()`](WriteChunkUninit::commit)
+or [`commit_all()`](WriteChunkUninit::commit_all).
+If items are written but *not* committed afterwards,
+they will *not* become available for reading and
+they will be leaked (which is only relevant if `T` implements [`Drop`]).
+"
+    };
+}
+
+macro_rules! fn_write_chunk_uninit_as_mut_sliceX {
+    (contiguous = yes) => {
+        /// Returns a slice for writing to the requested slots.
+        ///
+        /// The extension trait [`CopyToUninit`] can be used to safely copy data into this slice.
+        #[doc = fn_write_chunk_uninit_as_mut_sliceX_docstring!()]
+        pub fn as_mut_slice(&mut self) -> &mut [MaybeUninit<T>] {
+            // SAFETY: The pointer and length have been computed correctly in write_chunk_uninit().
+            unsafe { core::slice::from_raw_parts_mut(self.ptr.cast(), self.len) }
+        }
+    };
+    (contiguous = no) => {
+        /// Returns two slices for writing to the requested slots.
+        ///
+        /// The first slice can only be empty if `0` slots have been requested.
+        /// If the first slice contains all requested slots, the second one is empty.
+        ///
+        /// The extension trait [`CopyToUninit`] can be used to safely copy data into those slices.
+        #[doc = fn_write_chunk_uninit_as_mut_sliceX_docstring!()]
+        pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
+            // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit().
+            unsafe {
+                (
+                    core::slice::from_raw_parts_mut(self.first_ptr.cast(), self.first_len),
+                    core::slice::from_raw_parts_mut(self.second_ptr.cast(), self.second_len),
+                )
+            }
+        }
+    };
+}
+
+/// Drops all elements starting from index `n`.
+///
+/// # Safety
+///
+/// All of those slots must be initialized.
+macro_rules! fn_write_chunk_uninit_drop_suffix {
+    (contiguous = yes) => {
+        unsafe fn drop_suffix(&mut self, n: usize) {
+            // NB: If n >= self.len(), the loop is not entered.
+            for i in n..self.len {
+                // SAFETY: The caller must make sure that all slots are initialized.
+                unsafe { self.ptr.add(i).drop_in_place() };
+            }
+        }
+    };
+    (contiguous = no) => {
+        unsafe fn drop_suffix(&mut self, n: usize) {
+            // NB: If n >= self.len(), the loops are not entered.
+            for i in n..self.first_len {
+                // SAFETY: The caller must make sure that all slots are initialized.
+                unsafe { self.first_ptr.add(i).drop_in_place() };
+            }
+            for i in n.saturating_sub(self.first_len)..self.second_len {
+                // SAFETY: The caller must make sure that all slots are initialized.
+                unsafe { self.second_ptr.add(i).drop_in_place() };
+            }
+        }
+    };
+}
+
+macro_rules! fn_write_chunk_as_mut_sliceX_docstring {
+    () => {
+        "
+
+After writing to the slots, they are *not* automatically made available
+to be read by the [`Consumer`].
+This has to be explicitly done by calling [`commit()`](WriteChunk::commit)
+or [`commit_all()`](WriteChunk::commit_all).
+If items are written but *not* committed afterwards,
+they will *not* become available for reading and
+they will eventually be dropped (if `T` implements [`Drop`]).
+"
+    };
+}
+
+macro_rules! fn_write_chunk_as_mut_sliceX {
+    (contiguous = yes) => {
+        /// Returns a slice for writing to the requested slots.
+        ///
+        /// All slots are initially filled with their [`Default`] value.
+        #[doc = fn_write_chunk_as_mut_sliceX_docstring!()]
+        pub fn as_mut_slice(&mut self) -> &mut [T] {
+            // self.0 is always Some(chunk).
+            let chunk = self.0.as_ref().unwrap();
+            // SAFETY: The pointer and length have been computed correctly in write_chunk_uninit()
+            // and all slots have been initialized in From::from().
+            unsafe { core::slice::from_raw_parts_mut(chunk.ptr, chunk.len) }
+        }
+    };
+    (contiguous = no) => {
+        /// Returns two slices for writing to the requested slots.
+        ///
+        /// All slots are initially filled with their [`Default`] value.
+        ///
+        /// The first slice can only be empty if `0` slots have been requested.
+        /// If the first slice contains all requested slots, the second one is empty.
+        #[doc = fn_write_chunk_as_mut_sliceX_docstring!()]
+        pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
+            // self.0 is always Some(chunk).
+            let chunk = self.0.as_ref().unwrap();
+            // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit()
+            // and all slots have been initialized in From::from().
+            unsafe {
+                (
+                    core::slice::from_raw_parts_mut(chunk.first_ptr, chunk.first_len),
+                    core::slice::from_raw_parts_mut(chunk.second_ptr, chunk.second_len),
+                )
+            }
+        }
+    };
+}
+
+macro_rules! fn_read_chunk_as_sliceX_docstring {
+    () => {
+        "
+
+The provided slots are *not* automatically made available
+to be written again by the [`Producer`].
+This has to be explicitly done by calling [`commit()`](ReadChunk::commit)
+or [`commit_all()`](ReadChunk::commit_all).
+Note that this runs the destructor of the committed items (if `T` implements [`Drop`]).
+You can \"peek\" at the contained values by simply not calling any of the \"commit\" methods.
+"
+    };
+}
+
+macro_rules! fn_read_chunk_as_sliceX {
+    (contiguous = yes) => {
+        /// Returns a slice for reading from the requested slots.
+        #[doc = fn_read_chunk_as_sliceX_docstring!()]
+        pub fn as_slice(&self) -> &[T] {
+            // SAFETY: The correct pointer and length have been provided by ReadChunk::new().
+            unsafe { core::slice::from_raw_parts(self.ptr, self.len) }
+        }
+    };
+    (contiguous = no) => {
+        /// Returns two slices for reading from the requested slots.
+        ///
+        /// The first slice can only be empty if `0` slots have been requested.
+        /// If the first slice contains all requested slots, the second one is empty.
+        #[doc = fn_read_chunk_as_sliceX_docstring!()]
+        pub fn as_slices(&self) -> (&[T], &[T]) {
+            // SAFETY: The pointers and lengths have been computed correctly in read_chunk().
+            unsafe {
+                (
+                    core::slice::from_raw_parts(self.first_ptr, self.first_len),
+                    core::slice::from_raw_parts(self.second_ptr, self.second_len),
+                )
+            }
+        }
+    };
+}
+
+macro_rules! fn_read_chunk_as_mut_sliceX_docstring {
+    () => {
+        "
+
+In the vast majority of cases, mutable access is not required when
+reading data and the immutable version should be preferred. However,
+there are some scenarios where it might be desirable to perform
+operations on the data in-place without copying it to a separate buffer
+(e.g. streaming decryption), in which case this version can be used.
+"
+    };
+}
+
+macro_rules! fn_read_chunk_as_mut_sliceX {
+    (contiguous = yes) => {
+        /// Returns a mutable slice for reading from the requested slots.
+        ///
+        /// This has the same semantics as [`as_slice()`](ReadChunk::as_slice),
+        /// except that it returns a mutable slice and requires a mutable reference
+        /// to the chunk.
+        #[doc = fn_read_chunk_as_mut_sliceX_docstring!()]
+        pub fn as_mut_slice(&mut self) -> &mut [T] {
+            // SAFETY: The correct pointer and length have been provided by ReadChunk::new().
+            unsafe { core::slice::from_raw_parts_mut(self.ptr, self.len) }
+        }
+    };
+    (contiguous = no) => {
+        /// Returns two mutable slices for reading from the requested slots.
+        ///
+        /// This has the same semantics as [`as_slices()`](ReadChunk::as_slices),
+        /// except that it returns mutable slices and requires a mutable reference
+        /// to the chunk.
+        #[doc = fn_read_chunk_as_mut_sliceX_docstring!()]
+        pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
+            // SAFETY: The pointers and lengths have been computed correctly in read_chunk().
+            unsafe {
+                (
+                    core::slice::from_raw_parts_mut(self.first_ptr, self.first_len),
+                    core::slice::from_raw_parts_mut(self.second_ptr, self.second_len),
+                )
+            }
+        }
+    };
+}
+
+macro_rules! fn_X_chunk_X_len_and_is_empty {
+    (contiguous = yes) => {
+        pub fn len(&self) -> usize {
+            self.len
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.len == 0
+        }
+    };
+    (contiguous = no) => {
+        pub fn len(&self) -> usize {
+            self.first_len + self.second_len
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.first_len == 0
+        }
+    };
+}
+
 macro_rules! impl_chunks_non_contiguous {
     ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
         use core::mem::MaybeUninit;
@@ -1030,36 +1265,9 @@ macro_rules! impl_chunks_non_contiguous {
         }
 
         impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
-            pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
-                // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit().
-                unsafe {
-                    (
-                        core::slice::from_raw_parts_mut(self.first_ptr.cast(), self.first_len),
-                        core::slice::from_raw_parts_mut(self.second_ptr.cast(), self.second_len),
-                    )
-                }
-            }
-
-            /// Drops all elements starting from index `n`.
-            ///
-            /// #Safety
-            ///
-            /// All of those slots must be initialized.
-            unsafe fn drop_suffix(&mut self, n: usize) {
-                // NB: If n >= self.len(), the loops are not entered.
-                for i in n..self.first_len {
-                    // SAFETY: The caller must make sure that all slots are initialized.
-                    unsafe { self.first_ptr.add(i).drop_in_place() };
-                }
-                for i in n.saturating_sub(self.first_len)..self.second_len {
-                    // SAFETY: The caller must make sure that all slots are initialized.
-                    unsafe { self.second_ptr.add(i).drop_in_place() };
-                }
-            }
-
-            pub fn len(&self) -> usize {
-                self.first_len + self.second_len
-            }
+            fn_write_chunk_uninit_as_mut_sliceX!(contiguous = no);
+            fn_write_chunk_uninit_drop_suffix!(contiguous = no);
+            fn_X_chunk_X_len_and_is_empty!(contiguous = no);
         }
 
         impl<'a, T$(, const $N: usize)?> From<WriteChunkUninit<'a, T$(, $N)?>> for WriteChunk<'a, T$(, $N)?>
@@ -1084,18 +1292,7 @@ macro_rules! impl_chunks_non_contiguous {
         where
             T: Default,
         {
-            pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
-                // self.0 is always Some(chunk).
-                let chunk = self.0.as_ref().unwrap();
-                // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit()
-                // and all slots have been initialized in From::from().
-                unsafe {
-                    (
-                        core::slice::from_raw_parts_mut(chunk.first_ptr, chunk.first_len),
-                        core::slice::from_raw_parts_mut(chunk.second_ptr, chunk.second_len),
-                    )
-                }
-            }
+            fn_write_chunk_as_mut_sliceX!(contiguous = no);
         }
 
         //#[derive(Debug, PartialEq, Eq)]
@@ -1110,33 +1307,9 @@ macro_rules! impl_chunks_non_contiguous {
         }
 
         impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
-            pub fn as_slices(&self) -> (&[T], &[T]) {
-                // SAFETY: The pointers and lengths have been computed correctly in read_chunk().
-                unsafe {
-                    (
-                        core::slice::from_raw_parts(self.first_ptr, self.first_len),
-                        core::slice::from_raw_parts(self.second_ptr, self.second_len),
-                    )
-                }
-            }
-
-            pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
-                // SAFETY: The pointers and lengths have been computed correctly in read_chunk().
-                unsafe {
-                    (
-                        core::slice::from_raw_parts_mut(self.first_ptr, self.first_len),
-                        core::slice::from_raw_parts_mut(self.second_ptr, self.second_len),
-                    )
-                }
-            }
-
-            pub fn len(&self) -> usize {
-                self.first_len + self.second_len
-            }
-
-            pub fn is_empty(&self) -> bool {
-                self.first_len == 0
-            }
+            fn_read_chunk_as_sliceX!(contiguous = no);
+            fn_read_chunk_as_mut_sliceX!(contiguous = no);
+            fn_X_chunk_X_len_and_is_empty!(contiguous = no);
         }
     }
 }
@@ -1154,27 +1327,9 @@ macro_rules! impl_chunks_contiguous {
         }
 
         impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
-            pub fn as_mut_slice(&mut self) -> &mut [MaybeUninit<T>] {
-                // SAFETY: The pointer and length have been computed correctly in write_chunk_uninit().
-                unsafe { core::slice::from_raw_parts_mut(self.ptr.cast(), self.len) }
-            }
-
-            /// Drops all elements starting from index `n`.
-            ///
-            /// #Safety
-            ///
-            /// All of those slots must be initialized.
-            unsafe fn drop_suffix(&mut self, n: usize) {
-                // NB: If n >= self.len(), the loop is not entered.
-                for i in n..self.len {
-                    // SAFETY: The caller must make sure that all slots are initialized.
-                    unsafe { self.ptr.add(i).drop_in_place() };
-                }
-            }
-
-            pub fn len(&self) -> usize {
-                self.len
-            }
+            fn_write_chunk_uninit_as_mut_sliceX!(contiguous = yes);
+            fn_write_chunk_uninit_drop_suffix!(contiguous = yes);
+            fn_X_chunk_X_len_and_is_empty!(contiguous = yes);
         }
 
         impl<'a, T$(, const $N: usize)?> From<WriteChunkUninit<'a, T$(, $N)?>> for WriteChunk<'a, T$(, $N)?>
@@ -1195,13 +1350,7 @@ macro_rules! impl_chunks_contiguous {
         where
             T: Default,
         {
-            pub fn as_mut_slice(&mut self) -> &mut [T] {
-                // self.0 is always Some(chunk).
-                let chunk = self.0.as_ref().unwrap();
-                // SAFETY: The pointer and length have been computed correctly in write_chunk_uninit()
-                // and all slots have been initialized in From::from().
-                unsafe { core::slice::from_raw_parts_mut(chunk.ptr, chunk.len) }
-            }
+            fn_write_chunk_as_mut_sliceX!(contiguous = yes);
         }
 
         //#[derive(Debug, PartialEq, Eq)]
@@ -1212,23 +1361,9 @@ macro_rules! impl_chunks_contiguous {
         }
 
         impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
-            pub fn as_slice(&self) -> &[T] {
-                // SAFETY: The correct pointer and length have been provided by ReadChunk::new().
-                unsafe { core::slice::from_raw_parts(self.ptr, self.len) }
-            }
-
-            pub fn as_mut_slice(&mut self) -> &mut [T] {
-                // SAFETY: The correct pointer and length have been provided by ReadChunk::new().
-                unsafe { core::slice::from_raw_parts_mut(self.ptr, self.len) }
-            }
-
-            pub fn len(&self) -> usize {
-                self.len
-            }
-
-            pub fn is_empty(&self) -> bool {
-                self.len == 0
-            }
+            fn_read_chunk_as_sliceX!(contiguous = yes);
+            fn_read_chunk_as_mut_sliceX!(contiguous = yes);
+            fn_X_chunk_X_len_and_is_empty!(contiguous = yes);
         }
     }
 }
