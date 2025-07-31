@@ -64,7 +64,6 @@ macro_rules! storage_array {
         use crate::atomic::*;
         use crate::cache_padded::CachePadded;
         use core::cell::UnsafeCell;
-        use core::mem::MaybeUninit;
 
         #[doc = $rb_doc]
         // TODO: manually derive Debug
@@ -309,6 +308,7 @@ macro_rules! def_producer_consumer_boxed {
             buffer: BoxedRingBuffer<T>,
             cached_head: Cell<usize>,
             cached_tail: Cell<usize>,
+            // TODO: cached_skip?
             // NB: caching `skip` doesn't help, because it can jump to any position.
         }
 
@@ -323,12 +323,89 @@ macro_rules! def_producer_consumer_boxed {
     };
 }
 
+// TODO: bip option for cached_skip?
+macro_rules! def_producer_consumer_ref {
+    (N = ($($N:ident)?)) => {
+        use core::cell::Cell;
+
+        // TODO: manual impls:
+        //#[derive(Debug, PartialEq, Eq)]
+        pub struct Producer<'a, T$(, const $N: usize)?> {
+            buffer: &'a RingBuffer<T$(, $N)?>,
+            cached_head: Cell<usize>,
+            cached_tail: Cell<usize>,
+            // TODO: cached_skip?
+        }
+
+        // TODO: manual impls:
+        //#[derive(Debug, PartialEq, Eq)]
+        pub struct Consumer<'a, T$(, const $N: usize)?> {
+            buffer: &'a RingBuffer<T$(, $N)?>,
+            cached_head: Cell<usize>,
+            cached_tail: Cell<usize>,
+            // TODO: cached_skip?
+        }
+
+        use crate::diy::{HAS_CONSUMER, HAS_PRODUCER};
+
+        impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
+            pub fn producer(&self) -> Option<Producer<T$(, $N)?>> {
+                let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
+                if old_flags & HAS_PRODUCER == 0 {
+                    let head = self.head.load(Ordering::Acquire);
+                    let tail = self.tail.load(Ordering::Acquire);
+                    Some(
+                        Producer {
+                            buffer: self,
+                            cached_head: Cell::new(head),
+                            cached_tail: Cell::new(tail),
+                        }
+                    )
+                } else {
+                    None
+                }
+            }
+
+            pub fn consumer(&self) -> Option<Consumer<T$(, $N)?>> {
+                let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
+                if old_flags & HAS_CONSUMER == 0 {
+                    let head = self.head.load(Ordering::Acquire);
+                    let tail = self.tail.load(Ordering::Acquire);
+                    Some(
+                        Consumer{
+                            buffer: self,
+                            cached_head: Cell::new(head),
+                            cached_tail: Cell::new(tail),
+                        }
+                    )
+                } else {
+                    None
+                }
+            }
+        }
+
+        impl<T$(, const $N: usize)?> Drop for Producer<'_, T$(, $N)?>
+        {
+            fn drop(&mut self) {
+                let _ = self.buffer.flags.fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
+            }
+        }
+
+        impl<T$(, const $N: usize)?> Drop for Consumer<'_, T$(, $N)?>
+        {
+            fn drop(&mut self) {
+                let _ = self.buffer.flags.fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
+            }
+        }
+    };
+}
+
 /// NB: next_tail() can also be used for "bip", because `b.skip` is never set.
 /// One element can always be inserted without skipping.
 // TODO: move this into impl_common?
 macro_rules! impl_producer_consumer_common {
-    (N = ($($N:ident)?)) => {
-        impl<T$(, const $N: usize)?> Producer<T$(, $N)?> {
+    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
+        impl<$($a, )?T$(, const $N: usize)?> Producer<$($a, )?T$(, $N)?> {
             pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
                 if let Some(tail) = self.next_tail() {
                     let b = &self.buffer;
@@ -341,6 +418,34 @@ macro_rules! impl_producer_consumer_common {
                 } else {
                     Err(PushError::Full(value))
                 }
+            }
+
+            /// Returns the number of slots available for writing.
+            ///
+            /// Since items can be concurrently consumed on another thread, the actual number
+            /// of available slots may increase at any time
+            /// (up to the [`capacity()`](Producer::capacity)).
+            ///
+            /// To check for a single available slot,
+            /// using [`is_full()`](Producer::is_full) is often quicker
+            /// (because it might not have to check an atomic variable).
+            ///
+            /// # Examples
+            ///
+            /// ```
+            /// // TODO: module-specific example!
+            /// use rtrb::RingBuffer;
+            ///
+            /// let (p, c) = RingBuffer::<f32>::new(1024);
+            ///
+            /// assert_eq!(p.slots(), 1024);
+            /// ```
+            // NB: This also works for "bip", since `skip` is irrelevant for `push()`.
+            pub fn slots(&self) -> usize {
+                let b = &self.buffer;
+                let head = b.head.load(Ordering::Acquire);
+                self.cached_head.set(head);
+                b.capacity() - b.distance(head, self.cached_tail.get())
             }
 
             /// Get the tail position for writing the next slot, if available.
@@ -366,7 +471,7 @@ macro_rules! impl_producer_consumer_common {
             }
         }
 
-        impl<T$(, const $N: usize)?> Consumer<T$(, $N)?> {
+        impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
             pub fn pop(&mut self) -> Result<T, PopError> {
                 if let Some(head) = self.next_head() {
                     let b = &self.buffer;
@@ -384,10 +489,92 @@ macro_rules! impl_producer_consumer_common {
     }
 }
 
+// TODO: combine with other macros?
+macro_rules! impl_producer_consumer_bip {
+    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
+        impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
+            /// Returns the number of slots available for reading.
+            ///
+            /// Since items can be concurrently produced on another thread, the actual number
+            /// of available slots may increase at any time
+            /// (up to the [`capacity()`](Consumer::capacity)).
+            ///
+            /// To check for a single available slot,
+            /// using [`is_empty()`](Consumer::is_empty) is often quicker
+            /// (because it might not have to check an atomic variable).
+            ///
+            /// TODO: [`read_chunk()`](Consumer::read_chunk) might not provide the full number of free slots
+            ///
+            /// TODO: see alternative "slots" variations
+            ///
+            /// # Examples
+            ///
+            /// ```
+            /// // TODO: module-specific example!
+            /// use rtrb::RingBuffer;
+            ///
+            /// let (p, c) = RingBuffer::<f32>::new(1024);
+            ///
+            /// assert_eq!(c.slots(), 0);
+            /// ```
+            pub fn slots(&self) -> usize {
+                let b = &self.buffer;
+                let head = self.cached_head.get();
+                let tail = b.tail.load(Ordering::Acquire);
+                self.cached_tail.set(tail);
+                if head == tail {
+                    return 0;
+                }
+                let collapsed_head = b.collapse_position(head);
+                let collapsed_tail = b.collapse_position(tail);
+                if collapsed_head < collapsed_tail {
+                    collapsed_tail - collapsed_head
+                } else {
+                    let skip = b.skip.load(Ordering::Acquire);
+                    let end = if skip != NO_SKIP {
+                        b.collapse_position(skip)
+                    } else {
+                        b.capacity()
+                    };
+                    collapsed_tail + end - collapsed_head
+                }
+            }
+        }
+    }
+}
+
+macro_rules! impl_next_head_non_bip {
+    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
+        impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
+            /// Get the head position for reading the next slot, if available.
+            ///
+            /// This is a strict subset of the functionality implemented in `read_chunk()`.
+            /// For performance, this special case is implemented separately.
+            fn next_head(&self) -> Option<usize> {
+                let head = self.cached_head.get();
+                let tail = self.cached_tail.get();
+
+                // Check if the queue is *possibly* empty.
+                if head == tail {
+                    // Refresh the tail ...
+                    let tail = self.buffer.tail.load(Ordering::Acquire);
+                    self.cached_tail.set(tail);
+                    // ... and check if it's *really* empty.
+                    if head == tail {
+                        // `tail` didn't change, queue is empty.
+                        return None;
+                    }
+                }
+                Some(head)
+            }
+        }
+    }
+}
+
 // TODO: move this somewhere
 macro_rules! impl_next_head_bip {
-    (N = ($($N:ident)?)) => {
-        impl<T$(, const $N: usize)?> Consumer<T$(, $N)?> {
+    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
+        impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
             /// Get the `head` position for reading the next slot, if available.
             ///
             /// This is a strict subset of the functionality implemented in `read_chunk()`.
@@ -440,29 +627,10 @@ macro_rules! impl_next_head_bip {
                         self.cached_head.set(head);
                         skip = NO_SKIP;
                         b.skip.store(skip, Ordering::Release);
-                        // We have to invalidate the cached tail here to make sure it wraps around
-                        // as well.  To avoid loading the atomic variable, we set it as if the
-                        // queue were empty (which it is definitely not, but delaying the atomic
-                        // load might be advantageous).
-                        self.cached_tail.set(head);
 
                         // NB: The producer only sets `skip` if it writes at least one slot
                         // at the beginning of the buffer.  Therefore, we know that the
                         // wrapped-around `head` is valid for reading (at least) one slot.
-
-                        /*
-                        if head == tail {
-                            // TODO: measure if this optimization helps
-                            if tail_has_been_refreshed {
-                                return None;
-                            }
-                            tail = b.tail.load(Ordering::Acquire);
-                            self.cached_tail.set(tail);
-                            if head == tail {
-                                return None;
-                            }
-                        }
-                        */
                     }
                 }
                 Some(head)
@@ -471,11 +639,50 @@ macro_rules! impl_next_head_bip {
     };
 }
 
-macro_rules! impl_chunks_bip {
-    (N = ($($N:ident)?)) => {
+macro_rules! impl_chunks_mop {
+    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
+        impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
+            unsafe fn commit_unchecked(self, n: usize) -> usize {
+                let first_len = self.first_len.min(n);
+                for i in 0..first_len {
+                    // SAFETY: The caller must make sure that there are n initialized elements.
+                    unsafe { self.first_ptr.add(i).drop_in_place() };
+                }
+                let second_len = self.second_len.min(n - first_len);
+                for i in 0..second_len {
+                    // SAFETY: The caller must make sure that there are n initialized elements.
+                    unsafe { self.second_ptr.add(i).drop_in_place() };
+                }
+                let c = self.consumer;
+                let head = c.buffer.increment(c.cached_head.get(), n);
+                c.buffer.head.store(head, Ordering::Release);
+                c.cached_head.set(head);
+                n
+            }
+        }
+    }
+}
+
+// mop and vrb
+macro_rules! impl_chunks_non_bip {
+    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
         impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
             unsafe fn commit_unchecked(self, n: usize) -> usize {
-        println!("p: enter commit_unchecked(), n = {n}");
+                let p = self.producer;
+                let tail = p.buffer.increment(p.cached_tail.get(), n);
+                p.buffer.tail.store(tail, Ordering::Release);
+                p.cached_tail.set(tail);
+                n
+            }
+        }
+    }
+}
+
+macro_rules! impl_chunks_bip {
+    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
+        impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
+            unsafe fn commit_unchecked(self, n: usize) -> usize {
+        //println!("p: enter commit_unchecked(), n = {n}");
                 if n == 0 {
                     // NB: No slots will be skipped, both `tail` and `skip` remain unchanged.
                     // This is the same as if the function wasn't called at all.
@@ -483,7 +690,7 @@ macro_rules! impl_chunks_bip {
                 }
                 let b = &self.producer.buffer;
                 let mut tail = self.producer.cached_tail.get();
-        println!("p: tail = {tail}");
+        //println!("p: tail = {tail}");
                 if self.ptr == b.data_ptr() && b.collapse_position(tail) != 0 {
                     // NB: It is safe to store `skip` before `tail`, because the consumer
                     // will potentially only read between `head` and (the old) `tail`,
@@ -492,9 +699,10 @@ macro_rules! impl_chunks_bip {
                     // the consumer would see new data at the beginning of the buffer,
                     // but wouldn't know that the end has to be skipped.
                     b.skip.store(tail, Ordering::Release);
+        //println!("p: setting skip = {tail}");
                     // TODO: make this a reusable function?
                     tail = b.increment(tail, b.capacity() - b.collapse_position(tail));
-        println!("p: writing at beginning after `skip` at tail = {tail}");
+        //println!("p: writing at beginning after `skip` at tail = {tail}");
 
         /*
                     // We have to invalidate the cached head here to make sure that we don't
@@ -507,7 +715,7 @@ macro_rules! impl_chunks_bip {
                 tail = b.increment(tail, n);
                 b.tail.store(tail, Ordering::Release);
                 self.producer.cached_tail.set(tail);
-        println!("p: incrementing tail: {tail}");
+        //println!("p: incrementing tail: {tail}, commit done");
                 n
             }
         }
@@ -521,30 +729,15 @@ macro_rules! impl_chunks_bip {
                     unsafe { self.ptr.add(i).drop_in_place() };
                 }
                 let b = &self.consumer.buffer;
-                let mut head = b.increment(self.consumer.cached_head.get(), n);
-        //println!("c: head = {head} (incremented)");
-                // TODO: does caching "skip" help?
-                let mut skip = b.skip.load(Ordering::Acquire);
-        //println!("c: skip = {skip}");
-                if skip != NO_SKIP && head == skip {
-                    head = b.increment(head, b.capacity() - b.collapse_position(skip));
-        //println!("c: skipping, head = {head}");
-                    skip = NO_SKIP;
-                    b.skip.store(skip, Ordering::Release);
-                    // We have to invalidate the cached tail here to make sure it wraps around.
-                    // To avoid loading the atomic variable, we set it as if the queue were empty
-                    // (which it is definitely not, but delaying the atomic load might be
-                    // advantageous).
-                    self.consumer.cached_tail.set(head);
-                }
-                // TODO: check order of storing head and skip
+                let head = b.increment(self.consumer.cached_head.get(), n);
                 b.head.store(head, Ordering::Release);
                 self.consumer.cached_head.set(head);
+        //println!("c: head = {head} (incremented), commit done");
                 n
             }
         }
 
-        impl<T$(, const $N: usize)?> Producer<T$(, $N)?> {
+        impl<$($a, )?T$(, const $N: usize)?> Producer<$($a, )?T$(, $N)?> {
             pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T$(, $N)?>, ChunkError>
             where
                 T: Default,
@@ -556,11 +749,11 @@ macro_rules! impl_chunks_bip {
                 &mut self,
                 n: usize,
             ) -> Result<WriteChunkUninit<'_, T$(, $N)?>, ChunkError> {
-        println!("p: enter write_chunk_uninit(), n = {n}");
+        //println!("p: enter write_chunk_uninit(), n = {n}");
                 let mut head = self.cached_head.get();
-        println!("p: head = {head} (cached)");
+        //println!("p: head = {head} (cached)");
                 let tail = self.cached_tail.get();
-        println!("p: tail = {tail}");
+        //println!("p: tail = {tail}");
                 let b = &self.buffer;
                 // TODO: check if everything is compatible with power-of-2 addressing.
                 let mut slots = 0;
@@ -569,62 +762,67 @@ macro_rules! impl_chunks_bip {
                 // so we check for emptiness before collapsing.
                 let is_empty = head == tail;
                 let mut collapsed_head = b.collapse_position(head);
+        //println!("p: collapsed head = {collapsed_head} (cached)");
                 let collapsed_tail = b.collapse_position(tail);
+        //println!("p: collapsed tail = {collapsed_tail}");
                 if !is_empty && collapsed_tail <= collapsed_head {
                     // Is there enough space between `tail` and `head`?
                     slots = collapsed_head - collapsed_tail;
-        println!("p: tail < head (or full), slots = {slots}");
+        //println!("p: tail < head (or full), slots = {slots}");
                     if slots < n {
                         // Refresh head ...
                         head = b.head.load(Ordering::Acquire);
                         self.cached_head.set(head);
-        println!("p: head = {head} (refreshed)");
+        //println!("p: head = {head} (refreshed)");
                         collapsed_head = b.collapse_position(head);
+        //println!("p: collapsed head = {collapsed_head} (refreshed)");
                         head_has_been_refreshed = true;
                         // ... and try again.
                         let is_empty = head == tail;
                         if !is_empty && collapsed_tail <= collapsed_head {
                             // `head` did not wrap around.
                             slots = collapsed_head - collapsed_tail;
-        println!("p: tail < head (or full), slots = {slots}");
+        //println!("p: tail < head (or full), slots = {slots}");
                             if slots < n {
-        println!("p: too few slots");
+        //println!("p: too few slots");
                                 return Err(ChunkError::TooFewSlots(slots));
                             }
                         } else {
-        println!("p: head wrapped around");
+        //println!("p: head wrapped around");
                             // `head` did wrap around, we'll continue below.
                         }
                     }
                 } else {
-        println!("p: tail >= (cached) head (not full?)");
+        //println!("p: tail >= (cached) head (not full)");
                     // No need to refresh `head`, it cannot overtake `tail`.
                 }
                 let offset;
                 if slots < n {
                     // Is there enough space at the end of the buffer?
                     slots = b.capacity() - collapsed_tail;
-        println!("p: slots at end of buffer: {slots}");
+        //println!("p: slots at end of buffer: {slots}");
                     if slots < n {
                         // Nope, let's check the beginning.
 
                         // TODO: interaction/reuse with slots() et al.?
 
-        println!("p: not enough, slots at beginning (cached): {slots}");
+        //println!("p: not enough, slots at beginning (cached): {slots}");
                         slots = slots.max(collapsed_head);
                         if slots < n {
                             // TODO: check if this early return/local variable is an actual optimization?
                             if head_has_been_refreshed {
-        println!("p: too few slots");
+        //println!("p: too few slots");
                                 return Err(ChunkError::TooFewSlots(slots));
                             }
                             head = b.head.load(Ordering::Acquire);
                             self.cached_head.set(head);
+        //println!("p: refreshed head: {head}");
                             collapsed_head = b.collapse_position(head);
+        //println!("p: refreshed collapsed head: {collapsed_head}");
                             slots = slots.max(collapsed_head);
-        println!("p: still not enough, refreshed slots: {slots}");
+        //println!("p: refreshed slots: {slots}");
                             if slots < n {
-        println!("p: too few slots");
+        //println!("p: too few slots");
                                 return Err(ChunkError::TooFewSlots(slots));
                             }
                         }
@@ -636,7 +834,7 @@ macro_rules! impl_chunks_bip {
                 } else {
                     offset = collapsed_tail;
                 }
-        println!("p: success; offset = {offset}");
+        //println!("p: success; offset = {offset}");
                 Ok(WriteChunkUninit {
                     // SAFETY: `offset` has been set to a valid position.
                     ptr: unsafe { b.data_ptr().add(offset) },
@@ -646,19 +844,20 @@ macro_rules! impl_chunks_bip {
             }
         }
 
-        impl<T$(, const $N: usize)?> Consumer<T$(, $N)?> {
+        impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
             pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T$(, $N)?>, ChunkError> {
-        //println!("c: enter read_chunk()");
+        //println!("c: enter read_chunk(), n = {n}");
                 let b = &self.buffer;
-                let head = self.cached_head.get();
+                let mut head = self.cached_head.get();
         //println!("c: head = {head}");
                 let mut tail = self.cached_tail.get();
         //println!("c: tail = {tail} (cached)");
                 let mut slots = 0;
+                let mut tail_has_been_refreshed = false;
                 // Collapsing the indices makes it impossible to distinguish empty and full,
                 // so we check for emptiness before collapsing.
                 let is_empty = head == tail;
-                let collapsed_head = b.collapse_position(head);
+                let mut collapsed_head = b.collapse_position(head);
                 let mut collapsed_tail = b.collapse_position(tail);
                 if is_empty || collapsed_head < collapsed_tail {
                     slots = collapsed_tail - collapsed_head;
@@ -666,6 +865,7 @@ macro_rules! impl_chunks_bip {
                     if slots < n {
                         // Refresh the tail ...
                         tail = b.tail.load(Ordering::Acquire);
+                        tail_has_been_refreshed = true;
                         self.cached_tail.set(tail);
         //println!("c: tail = {tail} (refreshed)");
                         collapsed_tail = b.collapse_position(tail);
@@ -685,12 +885,13 @@ macro_rules! impl_chunks_bip {
                         }
                     }
                 } else {
-        //println!("c: head >= (cached) tail (not empty)");
+        //println!("c: (cached) tail <= head (not empty)");
                     // No need to refresh `tail`, it cannot overtake `head`.
                 }
                 if slots < n {
-                    // NB: We are only allowed to use `skip` if (collapsed) `tail < head`.
-                    let skip = b.skip.load(Ordering::Acquire);
+                    // NB: We are only allowed to use `skip` if (collapsed) `tail < head`
+                    //     (or if the buffer is full).
+                    let mut skip = b.skip.load(Ordering::Acquire);
         //println!("c: skip = {skip}");
                     let end = if skip == NO_SKIP {
                         b.capacity()
@@ -699,6 +900,30 @@ macro_rules! impl_chunks_bip {
                     };
                     slots = end - collapsed_head;
         //println!("c: slots until end: {slots}");
+
+                    if slots == 0 {
+                        // No more slots at the end of the buffer, let's wrap around.
+                        if skip != NO_SKIP {
+                            skip = NO_SKIP;
+                            b.skip.store(skip, Ordering::Release);
+                        }
+                        head = b.increment(head, b.capacity() - collapsed_head);
+                        // NB: `skip` is stored before `head`.
+                        b.head.store(head, Ordering::Release);
+                        self.cached_head.set(head);
+                        collapsed_head = b.collapse_position(head);
+                        slots = collapsed_tail - collapsed_head;
+                        if slots < n {
+                            if tail_has_been_refreshed {
+                                return Err(ChunkError::TooFewSlots(slots));
+                            }
+                            tail = b.tail.load(Ordering::Acquire);
+                            self.cached_tail.set(tail);
+                            collapsed_tail = b.collapse_position(tail);
+                            slots = collapsed_tail - collapsed_head;
+                        }
+
+                    }
                     if slots < n {
         //println!("c: too few slots");
                         return Err(ChunkError::TooFewSlots(slots));
@@ -717,16 +942,141 @@ macro_rules! impl_chunks_bip {
     };
 }
 
-// bip and vrb
-macro_rules! impl_chunks_contiguous {
-    (N = ($($N:ident)?)) => {
+macro_rules! impl_chunks_non_contiguous {
+    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
         use core::mem::MaybeUninit;
 
         //#[derive(Debug, PartialEq, Eq)]
-        pub struct WriteChunkUninit<'a, T$(, $N)?> {
+        pub struct WriteChunkUninit<'a, T$(, const $N: usize)?> {
+            first_ptr: *mut T,
+            first_len: usize,
+            second_ptr: *mut T,
+            second_len: usize,
+            producer: &'a Producer<$($a, )?T$(, $N)?>,
+        }
+
+        impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
+            pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
+                // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit().
+                unsafe {
+                    (
+                        core::slice::from_raw_parts_mut(self.first_ptr.cast(), self.first_len),
+                        core::slice::from_raw_parts_mut(self.second_ptr.cast(), self.second_len),
+                    )
+                }
+            }
+
+            /// Drops all elements starting from index `n`.
+            ///
+            /// #Safety
+            ///
+            /// All of those slots must be initialized.
+            unsafe fn drop_suffix(&mut self, n: usize) {
+                // NB: If n >= self.len(), the loops are not entered.
+                for i in n..self.first_len {
+                    // SAFETY: The caller must make sure that all slots are initialized.
+                    unsafe { self.first_ptr.add(i).drop_in_place() };
+                }
+                for i in n.saturating_sub(self.first_len)..self.second_len {
+                    // SAFETY: The caller must make sure that all slots are initialized.
+                    unsafe { self.second_ptr.add(i).drop_in_place() };
+                }
+            }
+
+            pub fn len(&self) -> usize {
+                self.first_len + self.second_len
+            }
+        }
+
+        impl<'a, T$(, const $N: usize)?> From<WriteChunkUninit<'a, T$(, $N)?>> for WriteChunk<'a, T$(, $N)?>
+        where
+            T: Default,
+        {
+            /// Fills all slots with the [`Default`] value.
+            fn from(chunk: WriteChunkUninit<'a, T$(, $N)?>) -> Self {
+                for i in 0..chunk.first_len {
+                    // SAFETY: i is in a valid range.
+                    unsafe { chunk.first_ptr.add(i).write(Default::default()) };
+                }
+                for i in 0..chunk.second_len {
+                    // SAFETY: i is in a valid range.
+                    unsafe { chunk.second_ptr.add(i).write(Default::default()) };
+                }
+                WriteChunk(Some(chunk))
+            }
+        }
+
+        impl<T$(, const $N: usize)?> WriteChunk<'_, T$(, $N)?>
+        where
+            T: Default,
+        {
+            pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
+                // self.0 is always Some(chunk).
+                let chunk = self.0.as_ref().unwrap();
+                // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit()
+                // and all slots have been initialized in From::from().
+                unsafe {
+                    (
+                        core::slice::from_raw_parts_mut(chunk.first_ptr, chunk.first_len),
+                        core::slice::from_raw_parts_mut(chunk.second_ptr, chunk.second_len),
+                    )
+                }
+            }
+        }
+
+        //#[derive(Debug, PartialEq, Eq)]
+        pub struct ReadChunk<'a, T$(, const $N: usize)?> {
+            // Must be "mut" for drop_in_place()
+            first_ptr: *mut T,
+            first_len: usize,
+            // Must be "mut" for drop_in_place()
+            second_ptr: *mut T,
+            second_len: usize,
+            consumer: &'a Consumer<$($a, )?T$(, $N)?>,
+        }
+
+        impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
+            pub fn as_slices(&self) -> (&[T], &[T]) {
+                // SAFETY: The pointers and lengths have been computed correctly in read_chunk().
+                unsafe {
+                    (
+                        core::slice::from_raw_parts(self.first_ptr, self.first_len),
+                        core::slice::from_raw_parts(self.second_ptr, self.second_len),
+                    )
+                }
+            }
+
+            pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
+                // SAFETY: The pointers and lengths have been computed correctly in read_chunk().
+                unsafe {
+                    (
+                        core::slice::from_raw_parts_mut(self.first_ptr, self.first_len),
+                        core::slice::from_raw_parts_mut(self.second_ptr, self.second_len),
+                    )
+                }
+            }
+
+            pub fn len(&self) -> usize {
+                self.first_len + self.second_len
+            }
+
+            pub fn is_empty(&self) -> bool {
+                self.first_len == 0
+            }
+        }
+    }
+}
+
+// bip and vrb
+macro_rules! impl_chunks_contiguous {
+    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
+        use core::mem::MaybeUninit;
+
+        //#[derive(Debug, PartialEq, Eq)]
+        pub struct WriteChunkUninit<'a, T$(, const $N: usize)?> {
             ptr: *mut T,
             len: usize,
-            producer: &'a Producer<T$(, $N)?>,
+            producer: &'a Producer<$($a, )?T$(, $N)?>,
         }
 
         impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
@@ -784,7 +1134,7 @@ macro_rules! impl_chunks_contiguous {
         pub struct ReadChunk<'a, T$(, const $N: usize)?> {
             ptr: *mut T,
             len: usize,
-            consumer: &'a Consumer<T$(, $N)?>,
+            consumer: &'a Consumer<$($a, )?T$(, $N)?>,
         }
 
         impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
@@ -811,7 +1161,22 @@ macro_rules! impl_chunks_contiguous {
 
 macro_rules! impl_chunks_common {
     (N = ($($N:ident)?)) => {
-        impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T> {
+        /// It (as well as [`WriteChunk`]) can be moved ...
+        /// ```
+        /// # TODO: select correct module
+        /// fn assert_send<X: Send>() {}
+        /// assert_send::<rtrb::chunks::WriteChunkUninit<u8>>();
+        /// ```
+        /// ... but not shared between threads:
+        /// ```compile_fail
+        /// fn assert_sync<X: Sync>() {}
+        /// assert_sync::<rtrb::chunks::WriteChunkUninit<u8>>();
+        /// ```
+        // SAFETY: WriteChunkUninit only exists while a unique reference to the producer is held.
+        // It is therefore safe to move it to another thread.
+        unsafe impl<T: Send$(, const $N: usize)?> Send for WriteChunkUninit<'_, T$(, $N)?> {}
+
+        impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
             pub unsafe fn commit_all(self) {
                 let slots = self.len();
                 // SAFETY: Delegated to the caller.

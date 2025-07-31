@@ -1,7 +1,3 @@
-// TODO: push chunks (with differing "skip" values?) and pop chunks (in a different pattern?)
-
-// TODO: push chunks (with differing "skip" values?) and pop single values
-
 macro_rules! create_bip_benchmark {
     ($($id:literal, $create:expr, $write_chunk:expr, $read_chunk:expr,::)+) => {
 
@@ -143,7 +139,7 @@ $(
 $(
     group_small.bench_function($id, |b| {
         b.iter_custom(|iters| {
-                        //eprintln!("new iteration, size {iters}");
+                        //println!("=== new iteration, size {iters}");
             let (create, write_chunk, read_chunk) = help_with_type_inference($create, $write_chunk, $read_chunk);
             // Queue is very short in order to force a lot of contention between threads.
             let (mut p, mut c) = create(4);
@@ -153,7 +149,7 @@ $(
                     let start = std::time::Instant::now();
                     let mut i = 0;
                     while i < iters {
-                        //eprintln!("write {i}");
+                        //println!("write {i}");
                         // NB: we change chunk sizes in hope for unpredictable "skip" behavior.
         // TODO: more random. spin on 2, then optional 1?
                         while !write_chunk(&mut p, black_box(&[i as u8])) {
@@ -164,7 +160,7 @@ $(
                             std::hint::spin_loop();
                         }
                         i += 2;
-                        //eprintln!("write done {i}");
+                        //println!("write done {i}");
                     }
                     start
                 })
@@ -172,17 +168,17 @@ $(
             // While the second thread is still starting up, this thread will busy-wait.
             let mut i = 0;
             while i < iters {
-                        //eprintln!("read {i}");
+                        //println!("read {i}");
                 let mut a = [0, 0];
                 if read_chunk(&mut c, black_box(&mut a)) {
                     assert_eq!(a, [i as u8, (i + 1) as u8]);
-                        //eprintln!("read {i} success 2");
+                        //println!("read {i} success 2");
                     i += 2;
                 }
                 let mut a = [0];
                 if read_chunk(&mut c, black_box(&mut a)) {
                     assert_eq!(a, [i as u8]);
-                        //eprintln!("read {i} success 1");
+                        //println!("read {i} success 1");
                     i += 1;
                 }
             }
@@ -227,6 +223,46 @@ create_bip_benchmark! {
         chunk.commit_all();
     }).is_ok(),
     ::
-    //"bip-push-pop",
-    //"mop-push-pop",
+    "bip-push-pop",
+    rtrb::bip::RingBuffer::new,
+    |p, s| {
+        if p.slots() < s.len() {
+            return false;
+        }
+        for x in s.iter() {
+            p.push(*x).unwrap();
+        }
+        true
+    },
+    |c, s| {
+        if c.slots() < s.len() {
+            return false;
+        }
+        for x in s.iter_mut() {
+            *x = c.pop().unwrap();
+        }
+        true
+    },
+    ::
+    "mop-push-pop",
+    rtrb::RingBuffer::new,
+    |p, s| {
+        if p.slots() < s.len() {
+            return false;
+        }
+        for x in s.iter() {
+            p.push(*x).unwrap();
+        }
+        true
+    },
+    |c, s| {
+        if c.slots() < s.len() {
+            return false;
+        }
+        for x in s.iter_mut() {
+            *x = c.pop().unwrap();
+        }
+        true
+    },
+    ::
 }

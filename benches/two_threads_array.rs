@@ -1,5 +1,5 @@
 macro_rules! create_two_threads_array_benchmark {
-    ($($id:literal, $create:expr, $push:expr, $pop:expr,)::+) => {
+    ($($id:literal, $create:expr, $push:expr, $pop:expr,::)+) => {
 
 use criterion::{criterion_group, criterion_main};
 
@@ -76,10 +76,11 @@ criterion_main!(benches);
 
 pub const SIZE: usize = 32;
 
-create_two_threads_array_benchmark!(
+create_two_threads_array_benchmark! {
     "rtrb::array",
     || {
-        static RB: rtrb::array::RingBuffer<u8, SIZE> = rtrb::array::RingBuffer::new();
+        use rtrb::array::RingBuffer;
+        static RB: RingBuffer<u8, SIZE> = RingBuffer::new();
         (RB.producer().unwrap(), RB.consumer().unwrap())
     },
     |p, i| p.push(i).is_ok(),
@@ -92,4 +93,14 @@ create_two_threads_array_benchmark!(
     },
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
-);
+    ::
+    "rtrb::bip_array",
+    || {
+        use rtrb::bip_array::RingBuffer;
+        static RB: RingBuffer<u8, SIZE> = RingBuffer::new();
+        (RB.producer().unwrap(), RB.consumer().unwrap())
+    },
+    |p, i| p.push(i).is_ok(),
+    |c| c.pop().ok(),
+    ::
+}

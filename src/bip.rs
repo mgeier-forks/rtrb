@@ -41,7 +41,8 @@ use crate::{
 };
 
 // Disable skipping (0 is an impossible value for `skip`).
-const NO_SKIP: usize = 0;
+// TODO: move somewhere else
+pub const NO_SKIP: usize = 0;
 
 storage_vec! {
     padded = yes,
@@ -73,10 +74,17 @@ impl_calculation! {
 def_producer_consumer_boxed! {}
 
 impl_producer_consumer_common! {
+    'a = (),
+    N = ()
+}
+
+impl_producer_consumer_bip! {
+    'a = (),
     N = ()
 }
 
 impl_next_head_bip! {
+    'a = (),
     N = ()
 }
 
@@ -91,9 +99,6 @@ impl<T, const C: u8, I: Indices> Eq for BipStorage<T, C, I> {}
 */
 
 impl<T> Producer<T> {
-    pub fn slots(&self) -> usize {
-        todo!()
-    }
     /// The maximum number of slots for contiguous writing.
     // TODO: return a pair? or the max?
     pub fn slots_contiguous(&self) -> usize {
@@ -131,9 +136,7 @@ impl<T> Consumer<T> {
     pub fn peek(&self) -> Result<&T, PeekError> {
         todo!()
     }
-    pub fn slots(&self) -> usize {
-        todo!()
-    }
+
     // TODO: disable public is_empty for bip?
     pub fn is_empty(&self) -> bool {
         todo!()
@@ -233,9 +236,11 @@ impl<T> core::ops::Deref for BoxedRingBuffer<T> {
 // "chunks" stuff.
 
 impl_chunks_bip! {
+    'a = (),
     N = ()
 }
 impl_chunks_contiguous! {
+    'a = (),
     N = ()
 }
 impl_chunks_common! {
