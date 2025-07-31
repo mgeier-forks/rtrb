@@ -10,6 +10,7 @@ macro_rules! storage_vec {
     (padded = $padded:ident, bip = $bip:ident, rb_doc = $rb_doc:expr) => {
         use crate::atomic::*;
         use crate::CachePadded;
+        use alloc::vec::Vec;
         use core::mem::ManuallyDrop;
 
         #[doc = $rb_doc]
