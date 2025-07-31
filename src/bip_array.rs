@@ -2,7 +2,6 @@
 //!
 //! See [`rtrb::bip`](crate::bip) for a bi-partite ring buffer with dynamic storage.
 
-use crate::bip::NO_SKIP;
 use crate::{chunks::ChunkError, PopError, PushError};
 
 storage_array! {

@@ -210,6 +210,17 @@ create_bip_benchmark! {
         chunk.commit_all();
     }).is_ok(),
     ::
+    "bip2",
+    rtrb::bip2::RingBuffer::new,
+    |p, s| p.write_chunk(s.len()).map(|mut chunk| {
+        chunk.as_mut_slice().copy_from_slice(s);
+        chunk.commit_all();
+    }).is_ok(),
+    |c, s| c.read_chunk(s.len()).map(|chunk| {
+        s.copy_from_slice(chunk.as_slice());
+        chunk.commit_all();
+    }).is_ok(),
+    ::
     "bip-uninit",
     rtrb::bip::RingBuffer::new,
     |p, s| p.write_chunk_uninit(s.len()).map(|mut chunk| {

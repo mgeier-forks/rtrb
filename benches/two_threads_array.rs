@@ -26,7 +26,7 @@ $(
     // NB: wrap-around differs between implementations (N vs. N-1 elements)
 )+
 
-    let mut group = criterion.benchmark_group("two-threads-static");
+    let mut group = criterion.benchmark_group("two-threads-array");
     group.throughput(criterion::Throughput::Bytes(1));
 $(
     group.bench_function($id, |b| {

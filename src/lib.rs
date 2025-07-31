@@ -72,6 +72,7 @@ mod macros;
 pub mod array;
 pub mod array_temp;
 pub mod bip;
+pub mod bip2;
 pub mod bip_array;
 pub mod embedded;
 

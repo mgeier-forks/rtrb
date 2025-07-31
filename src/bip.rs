@@ -27,22 +27,10 @@
 //! Implementations in other languages:
 //! <https://github.com/willemt/bipbuffer> (C)
 
-use alloc::{boxed::Box, vec::Vec};
-use core::{
-    cell::Cell,
-    mem::ManuallyDrop,
-    ptr::NonNull,
-    sync::atomic::{AtomicU8, AtomicUsize, Ordering},
-};
-
 use crate::{
-    cache_padded::CachePadded, chunks::ChunkError, diy::IS_ABANDONED, PeekError, PopError,
+    chunks::ChunkError, diy::IS_ABANDONED, PeekError, PopError,
     PushError,
 };
-
-// Disable skipping (0 is an impossible value for `skip`).
-// TODO: move somewhere else
-pub const NO_SKIP: usize = 0;
 
 storage_vec! {
     padded = yes,
@@ -72,6 +60,8 @@ impl_calculation! {
 
 // TODO: bip option?
 def_producer_consumer_boxed! {}
+
+def_boxed_ring_buffer! {}
 
 impl_producer_consumer_common! {
     'a = (),
@@ -147,89 +137,6 @@ impl<T> Consumer<T> {
     // TODO: disable public capacity for bip?
     pub fn capacity(&self) -> usize {
         todo!()
-    }
-}
-
-/// Non-public helper type.
-//#[derive(Debug, PartialEq, Eq)]
-struct BoxedRingBuffer<T> {
-    ptr: NonNull<RingBuffer<T>>,
-}
-
-unsafe impl<T: Send> Send for BoxedRingBuffer<T> {}
-
-impl<T> BoxedRingBuffer<T> {
-    #[allow(clippy::new_ret_no_self)]
-    fn new(rb: RingBuffer<T>) -> (Producer<T>, Consumer<T>) {
-        debug_assert_eq!(rb.flags.load(Ordering::Relaxed) & IS_ABANDONED, 0);
-        let head = rb.head.load(Ordering::Relaxed);
-        let tail = rb.tail.load(Ordering::Relaxed);
-        let ptr = Box::leak(Box::new(rb));
-        // SAFETY: Pointer from Box is always non-null.
-        let ptr = unsafe { NonNull::new_unchecked(ptr) };
-        let p = Producer {
-            buffer: Self { ptr },
-            cached_head: Cell::new(head),
-            cached_tail: Cell::new(tail),
-        };
-        let c = Consumer {
-            buffer: Self { ptr },
-            cached_head: Cell::new(head),
-            cached_tail: Cell::new(tail),
-        };
-        (p, c)
-    }
-}
-
-impl<T> Drop for BoxedRingBuffer<T> {
-    fn drop(&mut self) {
-        // SAFETY: must point to initialized Storage.
-        let flags: &AtomicU8 = unsafe { &self.ptr.as_ref().flags };
-        // The "store" part of `fetch_or()` has to use `Release` to make sure that any previous writes
-        // to the ring buffer happen before it (in the thread that drops first).
-        // The "load" part can be `Relaxed` for the first thread,
-        // but it must be `Acquire` for the second one (see below).
-        if flags.fetch_or(IS_ABANDONED, Ordering::Release) & IS_ABANDONED == 0 {
-            // The flag wasn't set before, so we are the first to drop our
-            // producer/consumer and it should not be dropped yet.
-        } else {
-            // The flag was already set, i.e. the other thread has already dropped its
-            // consumer/producer and it can be dropped now.
-
-            // However, since the load of `flags` was `Relaxed`,
-            // we have to use `Acquire` here to make sure that reading `head` and `tail`
-            // in the destructor happens after this point.
-
-            // Ideally, we would use a memory fence like this:
-            //core::sync::atomic::fence(Ordering::Acquire);
-            // ... but as long as ThreadSanitizer doesn't support fences,
-            // we use load(Acquire) as a work-around to avoid false positives:
-            let _ = flags.load(Ordering::Acquire);
-            // SAFETY: RingBuffer has been allocated with `Box::new()`.
-            unsafe {
-                drop_slow(self.ptr);
-            }
-        }
-    }
-}
-
-/// Non-inlined part of `Ref::drop()`.
-#[inline(never)]
-unsafe fn drop_slow<T>(ptr: NonNull<RingBuffer<T>>) {
-    // SAFETY: This is allowed because the storage has been allocated with `Box::new()`.
-    unsafe {
-        // Turn the pointer back into a `Box` and immediately drop it,
-        // which deallocates the memory allocated in `Ref::new()`.
-        drop(Box::from_raw(ptr.as_ptr()));
-    }
-}
-
-impl<T> core::ops::Deref for BoxedRingBuffer<T> {
-    type Target = RingBuffer<T>;
-
-    fn deref(&self) -> &Self::Target {
-        // SAFETY: There are never any mutable references.
-        unsafe { self.ptr.as_ref() }
     }
 }
 
