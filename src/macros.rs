@@ -182,6 +182,44 @@ macro_rules! check_skip {
     (bip = no, $($dummy:tt)*) => {};
 }
 
+// TODO: rename
+macro_rules! impl_everything_eventually {
+    (
+        bip = $bip:ident,
+        pow2 = $pow2:ident,
+        'a = ($($a:lifetime)?),
+        N = ($($N:ident)?)
+    ) => {
+        // SAFETY: RingBuffer is only mutated via Producer/Consumer (which are !Sync),
+        // all other access can be shared.
+        unsafe impl<T: Send$(, const $N: usize)?> Sync for RingBuffer<T$(, $N)?> {}
+
+        impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
+            unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
+                // SAFETY: See docstring.
+                unsafe { self.data_ptr().add(self.collapse_position(pos)) }
+            }
+            fn_ring_buffer_drop_all_elements!(bip = $bip);
+            fn_ring_buffer_update_capacity!(pow2 = $pow2);
+            fn_ring_buffer_collapse_position!(pow2 = $pow2);
+            fn_ring_buffer_increment!(pow2 = $pow2);
+            fn_ring_buffer_increment1!(pow2 = $pow2);
+            fn_ring_buffer_distance!(pow2 = $pow2);
+        }
+
+        impl<$($a, )?T$(, const $N: usize)?> Producer<$($a, )?T$(, $N)?> {
+            fn_producer_push!();
+            fn_producer_slots!();
+            fn_producer_next_tail!();
+        }
+
+        impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
+            fn_consumer_pop!();
+            fn_consumer_next_head!(bip = $bip);
+        }
+    };
+}
+
 macro_rules! fn_ring_buffer_drop_all_elements {
     (bip = $bip:ident) => {
         /// Drop all elements that are still in the buffer.
@@ -210,29 +248,6 @@ macro_rules! fn_ring_buffer_drop_all_elements {
             }
         }
     };
-}
-
-macro_rules! impl_drop_all_elements {
-    (bip = $bip:ident, N = ($($N:ident)?)) => {
-        impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
-            fn_ring_buffer_drop_all_elements!(bip = $bip);
-        }
-    }
-}
-
-macro_rules! impl_common {
-    (N = ($($N:ident)?)) => {
-        // SAFETY: RingBuffer is only mutated via Producer/Consumer (which are !Sync),
-        // all other access can be shared.
-        unsafe impl<T: Send$(, const $N: usize)?> Sync for RingBuffer<T$(, $N)?> {}
-
-        impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
-            unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
-                // SAFETY: See docstring.
-                unsafe { self.data_ptr().add(self.collapse_position(pos)) }
-            }
-        }
-    }
 }
 
 macro_rules! fn_ring_buffer_update_capacity {
@@ -332,19 +347,6 @@ macro_rules! fn_ring_buffer_distance {
             } else {
                 2 * self.capacity() - a + b
             }
-        }
-    };
-}
-
-// TODO: another axis: unwrap vs waste_one
-macro_rules! impl_calculation {
-    (pow2 = $pow2:ident, N = ($($N:ident)?)) => {
-        impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
-            fn_ring_buffer_update_capacity!(pow2 = $pow2);
-            fn_ring_buffer_collapse_position!(pow2 = $pow2);
-            fn_ring_buffer_increment!(pow2 = $pow2);
-            fn_ring_buffer_increment1!(pow2 = $pow2);
-            fn_ring_buffer_distance!(pow2 = $pow2);
         }
     };
 }
@@ -681,21 +683,6 @@ macro_rules! fn_consumer_pop {
     };
 }
 
-// TODO: move this into impl_common?
-macro_rules! impl_producer_consumer_common {
-    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
-        impl<$($a, )?T$(, const $N: usize)?> Producer<$($a, )?T$(, $N)?> {
-            fn_producer_push!();
-            fn_producer_slots!();
-            fn_producer_next_tail!();
-        }
-
-        impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
-            fn_consumer_pop!();
-        }
-    }
-}
-
 macro_rules! fn_consumer_slots {
     (bip = yes) => {
         /// Returns the number of slots available for reading.
@@ -823,23 +810,6 @@ macro_rules! fn_consumer_next_head {
                 }
             }
             Some(head)
-        }
-    };
-}
-
-macro_rules! impl_next_head_non_bip {
-    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
-        impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
-            fn_consumer_next_head!(bip = no);
-        }
-    }
-}
-
-// TODO: move this somewhere
-macro_rules! impl_next_head_bip {
-    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
-        impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
-            fn_consumer_next_head!(bip = yes);
         }
     };
 }

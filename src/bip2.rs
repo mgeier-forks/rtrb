@@ -14,17 +14,10 @@ TODO: some more docs, maybe links? [`RingBuffer::new()`].
 "
 }
 
-impl_drop_all_elements! {
+impl_everything_eventually! {
     bip = yes,
-    N = ()
-}
-
-impl_common! {
-    N = ()
-}
-
-impl_calculation! {
     pow2 = yes,
+    'a = (),
     N = ()
 }
 
@@ -33,17 +26,7 @@ def_producer_consumer_boxed! {}
 
 def_boxed_ring_buffer! {}
 
-impl_producer_consumer_common! {
-    'a = (),
-    N = ()
-}
-
 impl_producer_consumer_bip! {
-    'a = (),
-    N = ()
-}
-
-impl_next_head_bip! {
     'a = (),
     N = ()
 }

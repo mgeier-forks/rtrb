@@ -14,31 +14,14 @@ TODO: ...
 "
 }
 
-impl_drop_all_elements! {
+impl_everything_eventually! {
     bip = no,
-    N = (N)
-}
-
-impl_common! {
-    N = (N)
-}
-
-impl_calculation! {
     pow2 = no,
+    'a = ('a),
     N = (N)
 }
 
 def_producer_consumer_ref! {
-    N = (N)
-}
-
-impl_producer_consumer_common! {
-    'a = ('a),
-    N = (N)
-}
-
-impl_next_head_non_bip! {
-    'a = ('a),
     N = (N)
 }
 
