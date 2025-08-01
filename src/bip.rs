@@ -55,7 +55,6 @@ impl_calculation! {
     N = ()
 }
 
-// TODO: bip option?
 def_producer_consumer_boxed! {}
 
 def_boxed_ring_buffer! {}

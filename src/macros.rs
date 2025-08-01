@@ -166,69 +166,60 @@ macro_rules! init_only_bip {
     };
 }
 
-macro_rules! impl_drop_all_elements_helper {
-    (
-        self = $elf:ident,
-        head = $head:ident,
-        let_skip = ($($let_skip:tt)*),
-        check_skip = ($($check_skip:tt)*),
-        N = ($($N:ident)?)
-    ) => {
-        impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
-            /// Drop all elements that are still in the buffer.
-            ///
-            /// After this, head and tail indices are invalid.
-            ///
-            /// # Safety
-            ///
-            /// This can only be called in the `Drop` implementation of the ring buffer.
-            ///
-            /// The threads must have been synchronized before via `self.flags`.
-            #[inline(never)]
-            unsafe fn drop_all_elements(&mut $elf) {
-                // These atomic variables are *not* used for synchronizing the threads
-                // before destruction.  Relaxed ordering is sufficient here.
-                let mut $head = $elf.head.load(Ordering::Relaxed);
-                let tail = $elf.tail.load(Ordering::Relaxed);
-                $($let_skip)*
+// TODO: longer name?
+macro_rules! let_skip {
+    (bip = yes, skip = $skip:ident, self = $self:ident) => {
+        let $skip = $self.skip.load(Ordering::Relaxed);
+    };
+    (bip = no, $($dummy:tt)*) => {};
+}
 
-                // Loop over all slots that hold a value and drop them.
-                while $head != tail {
-                    $($check_skip)*
-                    // SAFETY: All slots between head and tail have been initialized.
-                    unsafe { $elf.slot_ptr($head).drop_in_place() };
-                    $head = $elf.increment1($head);
-                }
+// TODO: longer name?
+macro_rules! check_skip {
+    (bip = yes, skip = $skip:ident, self = $self:ident, head = $head:ident) => {
+        if $self.collapse_position($head) == $skip {
+            $head = $self.increment($head, $self.capacity() - $skip);
+        }
+    };
+    (bip = no, $($dummy:tt)*) => {};
+}
+
+macro_rules! fn_ring_buffer_drop_all_elements {
+    (bip = $bip:ident) => {
+        /// Drop all elements that are still in the buffer.
+        ///
+        /// After this, head and tail indices are invalid.
+        ///
+        /// # Safety
+        ///
+        /// This can only be called in the `Drop` implementation of the ring buffer.
+        ///
+        /// The threads must have been synchronized before via `self.flags`.
+        #[inline(never)]
+        unsafe fn drop_all_elements(&mut self) {
+            // These atomic variables are *not* used for synchronizing the threads
+            // before destruction.  Relaxed ordering is sufficient here.
+            let mut head = self.head.load(Ordering::Relaxed);
+            let tail = self.tail.load(Ordering::Relaxed);
+            let_skip!(bip = $bip, skip = skip, self = self);
+
+            // Loop over all slots that hold a value and drop them.
+            while head != tail {
+                check_skip!(bip = $bip, skip = skip, self = self, head = head);
+                // SAFETY: All slots between head and tail have been initialized.
+                unsafe { self.slot_ptr(head).drop_in_place() };
+                head = self.increment1(head);
             }
         }
-    }
+    };
 }
 
 macro_rules! impl_drop_all_elements {
-    (bip = no, N = ($($N:ident)?)) => {
-        impl_drop_all_elements_helper! {
-            self = self,
-            head = head,
-            let_skip = (),
-            check_skip = (),
-            N = ($($N)?)
+    (bip = $bip:ident, N = ($($N:ident)?)) => {
+        impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
+            fn_ring_buffer_drop_all_elements!(bip = $bip);
         }
-    };
-    (bip = yes, N = ($($N:ident)?)) => {
-        impl_drop_all_elements_helper! {
-            self = self,
-            head = head,
-            let_skip = (
-                let skip = self.skip.load(Ordering::Relaxed);
-            ),
-            check_skip = (
-                if self.collapse_position(head) == skip {
-                    head = self.increment(head, self.capacity() - skip);
-                }
-            ),
-            N = ($($N)?)
-        }
-    };
+    }
 }
 
 macro_rules! impl_common {
@@ -246,86 +237,106 @@ macro_rules! impl_common {
     }
 }
 
-// TODO: another axis: unwrap vs waste_one
-macro_rules! impl_calculation {
-    (pow2 = no, N = ($($N:ident)?)) => {
-        impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
-            fn collapse_position(&self, pos: usize) -> usize {
-                // Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
-                debug_assert!(pos == 0 || pos < 2 * self.capacity());
-                if pos < self.capacity() {
-                    pos
-                } else {
-                    pos - self.capacity()
-                }
-            }
-
-            /// Increments a position by going `n` slots forward.
-            fn increment(&self, pos: usize, n: usize) -> usize {
-                debug_assert!(pos == 0 || pos < 2 * self.capacity());
-                debug_assert!(n <= self.capacity());
-                let threshold = 2 * self.capacity() - n;
-                if pos < threshold {
-                    pos + n
-                } else {
-                    pos - threshold
-                }
-            }
-
-            /// Increments a position by going one slot forward.
-            ///
-            /// This might be more efficient than self.increment(..., 1).
-            fn increment1(&self, pos: usize) -> usize {
-                debug_assert_ne!(self.capacity(), 0);
-                debug_assert!(pos < 2 * self.capacity());
-                if pos < 2 * self.capacity() - 1 {
-                    pos + 1
-                } else {
-                    0
-                }
-            }
-
-            /// Returns the distance between two positions.
-            fn distance(&self, a: usize, b: usize) -> usize {
-                debug_assert!(a == 0 || a < 2 * self.capacity());
-                debug_assert!(b == 0 || b < 2 * self.capacity());
-                if a <= b {
-                    b - a
-                } else {
-                    2 * self.capacity() - a + b
-                }
-            }
+/// Makes sure the position is in the range `0 .. capacity`.
+macro_rules! fn_ring_buffer_collapse_position {
+    (pow2 = yes) => {
+        // Wraps from any number to the range `0 .. capacity`.
+        fn collapse_position(&self, pos: usize) -> usize {
+            // TODO: is capacity 0 supported?
+            pos & (self.capacity() - 1)
         }
     };
-    (pow2 = yes, N = ($($N:ident)?)) => {
-        impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
-            // Wraps from any number to the range `0 .. capacity`.
-            fn collapse_position(&self, pos: usize) -> usize {
-                // TODO: is capacity 0 supported?
-                pos & (self.capacity() - 1)
-            }
-
-            /// Increments a position by going `n` slots forward.
-            fn increment(&self, pos: usize, n: usize) -> usize {
-                pos.wrapping_add(n)
-            }
-
-            /// Increments a position by going one slot forward.
-            ///
-            /// This might be more efficient than self.increment(..., 1).
-            fn increment1(&self, pos: usize) -> usize {
-                pos.wrapping_add(1)
-            }
-
-            /// Returns the distance between two positions.
-            fn distance(&self, a: usize, b: usize) -> usize {
-                b.wrapping_sub(a)
+    (pow2 = no) => {
+        // Wraps from the range `0 .. 2 * capacity` to `0 .. capacity`.
+        fn collapse_position(&self, pos: usize) -> usize {
+            debug_assert!(pos == 0 || pos < 2 * self.capacity());
+            if pos < self.capacity() {
+                pos
+            } else {
+                pos - self.capacity()
             }
         }
     };
 }
 
-// TODO: bip option for cached_skip?
+/// Increments a position by going `n` slots forward.
+macro_rules! fn_ring_buffer_increment {
+    (pow2 = yes) => {
+        fn increment(&self, pos: usize, n: usize) -> usize {
+            pos.wrapping_add(n)
+        }
+    };
+    (pow2 = no) => {
+        fn increment(&self, pos: usize, n: usize) -> usize {
+            debug_assert!(pos == 0 || pos < 2 * self.capacity());
+            debug_assert!(n <= self.capacity());
+            let threshold = 2 * self.capacity() - n;
+            if pos < threshold {
+                pos + n
+            } else {
+                pos - threshold
+            }
+        }
+    };
+}
+
+/// Increments a position by going one slot forward.
+///
+/// This might be more efficient than self.increment(..., 1).
+macro_rules! fn_ring_buffer_increment1 {
+    (pow2 = yes) => {
+        fn increment1(&self, pos: usize) -> usize {
+            pos.wrapping_add(1)
+        }
+    };
+    (pow2 = no) => {
+        /// Increments a position by going one slot forward.
+        ///
+        /// This might be more efficient than self.increment(..., 1).
+        fn increment1(&self, pos: usize) -> usize {
+            debug_assert_ne!(self.capacity(), 0);
+            debug_assert!(pos < 2 * self.capacity());
+            if pos < 2 * self.capacity() - 1 {
+                pos + 1
+            } else {
+                0
+            }
+        }
+    };
+}
+
+/// Returns the distance between two positions.
+macro_rules! fn_ring_buffer_distance {
+    (pow2 = yes) => {
+        fn distance(&self, a: usize, b: usize) -> usize {
+            b.wrapping_sub(a)
+        }
+    };
+    (pow2 = no) => {
+        fn distance(&self, a: usize, b: usize) -> usize {
+            debug_assert!(a == 0 || a < 2 * self.capacity());
+            debug_assert!(b == 0 || b < 2 * self.capacity());
+            if a <= b {
+                b - a
+            } else {
+                2 * self.capacity() - a + b
+            }
+        }
+    };
+}
+
+// TODO: another axis: unwrap vs waste_one
+macro_rules! impl_calculation {
+    (pow2 = $pow2:ident, N = ($($N:ident)?)) => {
+        impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
+            fn_ring_buffer_collapse_position!(pow2 = $pow2);
+            fn_ring_buffer_increment!(pow2 = $pow2);
+            fn_ring_buffer_increment1!(pow2 = $pow2);
+            fn_ring_buffer_distance!(pow2 = $pow2);
+        }
+    };
+}
+
 macro_rules! def_producer_consumer_boxed {
     () => {
         use core::cell::Cell;
@@ -336,8 +347,6 @@ macro_rules! def_producer_consumer_boxed {
             buffer: BoxedRingBuffer<T>,
             cached_head: Cell<usize>,
             cached_tail: Cell<usize>,
-            // TODO: cached_skip?
-            // NB: caching `skip` doesn't help, because it can jump to any position.
         }
 
         // TODO: manual impls:
@@ -346,7 +355,6 @@ macro_rules! def_producer_consumer_boxed {
             buffer: BoxedRingBuffer<T>,
             cached_head: Cell<usize>,
             cached_tail: Cell<usize>,
-            // TODO: cached_skip?
         }
     };
 }
@@ -441,7 +449,6 @@ macro_rules! def_boxed_ring_buffer {
     };
 }
 
-// TODO: bip option for cached_skip?
 macro_rules! def_producer_consumer_ref {
     (N = ($($N:ident)?)) => {
         use core::cell::Cell;
@@ -452,7 +459,6 @@ macro_rules! def_producer_consumer_ref {
             buffer: &'a RingBuffer<T$(, $N)?>,
             cached_head: Cell<usize>,
             cached_tail: Cell<usize>,
-            // TODO: cached_skip?
         }
 
         // TODO: manual impls:
@@ -461,7 +467,6 @@ macro_rules! def_producer_consumer_ref {
             buffer: &'a RingBuffer<T$(, $N)?>,
             cached_head: Cell<usize>,
             cached_tail: Cell<usize>,
-            // TODO: cached_skip?
         }
 
         use crate::diy::{HAS_CONSUMER, HAS_PRODUCER};
@@ -518,93 +523,214 @@ macro_rules! def_producer_consumer_ref {
     };
 }
 
+macro_rules! fn_producer_push {
+    () => {
+        /// Attempts to push an element into the queue.
+        ///
+        /// The element is *moved* into the ring buffer and its slot
+        /// is made available to be read by the [`Consumer`].
+        ///
+        /// # Errors
+        ///
+        /// If the queue is full, the element is returned back as an error.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// // TODO: module-specific example!
+        /// use rtrb::{RingBuffer, PushError};
+        ///
+        /// let (mut p, c) = RingBuffer::new(1);
+        ///
+        /// assert_eq!(p.push(10), Ok(()));
+        /// assert_eq!(p.push(20), Err(PushError::Full(20)));
+        /// ```
+        pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
+            if let Some(tail) = self.next_tail() {
+                let b = &self.buffer;
+                // SAFETY: tail points to an empty slot.
+                unsafe { b.slot_ptr(tail).write(value) };
+                let tail = b.increment1(tail);
+                b.tail.store(tail, Ordering::Release);
+                self.cached_tail.set(tail);
+                Ok(())
+            } else {
+                Err(PushError::Full(value))
+            }
+        }
+    };
+}
+
+macro_rules! fn_producer_slots {
+    () => {
+        /// Returns the number of slots available for writing.
+        ///
+        /// Since items can be concurrently consumed on another thread, the actual number
+        /// of available slots may increase at any time
+        /// (up to the [`capacity()`](Producer::capacity)).
+        ///
+        /// To check for a single available slot,
+        /// using [`is_full()`](Producer::is_full) is often quicker
+        /// (because it might not have to check an atomic variable).
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// // TODO: module-specific example!
+        /// use rtrb::RingBuffer;
+        ///
+        /// let (p, c) = RingBuffer::<f32>::new(1024);
+        ///
+        /// assert_eq!(p.slots(), 1024);
+        /// ```
+        pub fn slots(&self) -> usize {
+            let b = &self.buffer;
+            let head = b.head.load(Ordering::Acquire);
+            self.cached_head.set(head);
+            b.capacity() - b.distance(head, self.cached_tail.get())
+        }
+    };
+}
+
 /// NB: next_tail() can also be used for "bip", because `b.skip` is never set.
 /// One element can always be inserted without skipping.
+macro_rules! fn_producer_next_tail {
+    () => {
+        /// Get the tail position for writing the next slot, if available.
+        ///
+        /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
+        /// For performance, this special case is implemented separately.
+        fn next_tail(&self) -> Option<usize> {
+            let head = self.cached_head.get();
+            let tail = self.cached_tail.get();
+            let b = &self.buffer;
+            // Check if the queue is *possibly* full.
+            if b.distance(head, tail) == b.capacity() {
+                // Refresh the head ...
+                let head = b.head.load(Ordering::Acquire);
+                self.cached_head.set(head);
+                // ... and check if it's *really* full.
+                if b.distance(head, tail) == b.capacity() {
+                    // `head` didn't change, queue is full.
+                    return None;
+                }
+            }
+            Some(tail)
+        }
+    };
+}
+
+macro_rules! fn_consumer_pop {
+    () => {
+        /// Attempts to pop an element from the queue.
+        ///
+        /// The element is *moved* out of the ring buffer and its slot
+        /// is made available to be filled by the [`Producer`] again.
+        ///
+        /// # Errors
+        ///
+        /// If the queue is empty, an error is returned.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// // TODO: module-specific example!
+        /// use rtrb::{PopError, RingBuffer};
+        ///
+        /// let (mut p, mut c) = RingBuffer::new(1);
+        ///
+        /// assert_eq!(p.push(10), Ok(()));
+        /// assert_eq!(c.pop(), Ok(10));
+        /// assert_eq!(c.pop(), Err(PopError::Empty));
+        /// ```
+        ///
+        /// To obtain an [`Option<T>`](Option), use [`.ok()`](Result::ok) on the result.
+        ///
+        /// ```
+        /// // TODO: module-specific example!
+        /// # use rtrb::RingBuffer;
+        /// # let (mut p, mut c) = RingBuffer::new(1);
+        /// assert_eq!(p.push(20), Ok(()));
+        /// assert_eq!(c.pop().ok(), Some(20));
+        /// ```
+        pub fn pop(&mut self) -> Result<T, PopError> {
+            if let Some(head) = self.next_head() {
+                let b = &self.buffer;
+                // SAFETY: head points to an initialized slot.
+                let value = unsafe { b.slot_ptr(head).read() };
+                let head = b.increment1(head);
+                b.head.store(head, Ordering::Release);
+                self.cached_head.set(head);
+                Ok(value)
+            } else {
+                Err(PopError::Empty)
+            }
+        }
+    };
+}
+
 // TODO: move this into impl_common?
 macro_rules! impl_producer_consumer_common {
     ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
         impl<$($a, )?T$(, const $N: usize)?> Producer<$($a, )?T$(, $N)?> {
-            pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
-                if let Some(tail) = self.next_tail() {
-                    let b = &self.buffer;
-                    // SAFETY: tail points to an empty slot.
-                    unsafe { b.slot_ptr(tail).write(value) };
-                    let tail = b.increment1(tail);
-                    b.tail.store(tail, Ordering::Release);
-                    self.cached_tail.set(tail);
-                    Ok(())
-                } else {
-                    Err(PushError::Full(value))
-                }
-            }
-
-            /// Returns the number of slots available for writing.
-            ///
-            /// Since items can be concurrently consumed on another thread, the actual number
-            /// of available slots may increase at any time
-            /// (up to the [`capacity()`](Producer::capacity)).
-            ///
-            /// To check for a single available slot,
-            /// using [`is_full()`](Producer::is_full) is often quicker
-            /// (because it might not have to check an atomic variable).
-            ///
-            /// # Examples
-            ///
-            /// ```
-            /// // TODO: module-specific example!
-            /// use rtrb::RingBuffer;
-            ///
-            /// let (p, c) = RingBuffer::<f32>::new(1024);
-            ///
-            /// assert_eq!(p.slots(), 1024);
-            /// ```
-            // NB: This also works for "bip", since `skip` is irrelevant for `push()`.
-            pub fn slots(&self) -> usize {
-                let b = &self.buffer;
-                let head = b.head.load(Ordering::Acquire);
-                self.cached_head.set(head);
-                b.capacity() - b.distance(head, self.cached_tail.get())
-            }
-
-            /// Get the tail position for writing the next slot, if available.
-            ///
-            /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
-            /// For performance, this special case is implemented separately.
-            fn next_tail(&self) -> Option<usize> {
-                let head = self.cached_head.get();
-                let tail = self.cached_tail.get();
-                let b = &self.buffer;
-                // Check if the queue is *possibly* full.
-                if b.distance(head, tail) == b.capacity() {
-                    // Refresh the head ...
-                    let head = b.head.load(Ordering::Acquire);
-                    self.cached_head.set(head);
-                    // ... and check if it's *really* full.
-                    if b.distance(head, tail) == b.capacity() {
-                        // `head` didn't change, queue is full.
-                        return None;
-                    }
-                }
-                Some(tail)
-            }
+            fn_producer_push!();
+            fn_producer_slots!();
+            fn_producer_next_tail!();
         }
 
         impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
-            pub fn pop(&mut self) -> Result<T, PopError> {
-                if let Some(head) = self.next_head() {
-                    let b = &self.buffer;
-                    // SAFETY: head points to an initialized slot.
-                    let value = unsafe { b.slot_ptr(head).read() };
-                    let head = b.increment1(head);
-                    b.head.store(head, Ordering::Release);
-                    self.cached_head.set(head);
-                    Ok(value)
-                } else {
-                    Err(PopError::Empty)
-                }
-            }
+            fn_consumer_pop!();
         }
     }
+}
+
+macro_rules! fn_consumer_slots {
+    (bip = yes) => {
+        /// Returns the number of slots available for reading.
+        ///
+        /// Since items can be concurrently produced on another thread, the actual number
+        /// of available slots may increase at any time
+        /// (up to the [`capacity()`](Consumer::capacity)).
+        ///
+        /// To check for a single available slot,
+        /// using [`is_empty()`](Consumer::is_empty) is often quicker
+        /// (because it might not have to check an atomic variable).
+        ///
+        /// TODO: [`read_chunk()`](Consumer::read_chunk) might not provide the full number of free slots
+        ///
+        /// TODO: see alternative "slots" variations
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// // TODO: module-specific example!
+        /// use rtrb::RingBuffer;
+        ///
+        /// let (p, c) = RingBuffer::<f32>::new(1024);
+        ///
+        /// assert_eq!(c.slots(), 0);
+        /// ```
+        pub fn slots(&self) -> usize {
+            let b = &self.buffer;
+            let head = self.cached_head.get();
+            let tail = b.tail.load(Ordering::Acquire);
+            self.cached_tail.set(tail);
+            if head == tail {
+                return 0;
+            }
+            let collapsed_head = b.collapse_position(head);
+            let collapsed_tail = b.collapse_position(tail);
+            if collapsed_head < collapsed_tail {
+                collapsed_tail - collapsed_head
+            } else {
+                let skip = b.skip.load(Ordering::Acquire);
+                collapsed_tail + skip - collapsed_head
+            }
+        }
+    };
+    (bip = no) => {
+        compile_error!("TODO");
+    };
 }
 
 // TODO: combine with other macros?
@@ -612,75 +738,87 @@ macro_rules! impl_producer_consumer_bip {
     ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
 
         impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
-            /// Returns the number of slots available for reading.
-            ///
-            /// Since items can be concurrently produced on another thread, the actual number
-            /// of available slots may increase at any time
-            /// (up to the [`capacity()`](Consumer::capacity)).
-            ///
-            /// To check for a single available slot,
-            /// using [`is_empty()`](Consumer::is_empty) is often quicker
-            /// (because it might not have to check an atomic variable).
-            ///
-            /// TODO: [`read_chunk()`](Consumer::read_chunk) might not provide the full number of free slots
-            ///
-            /// TODO: see alternative "slots" variations
-            ///
-            /// # Examples
-            ///
-            /// ```
-            /// // TODO: module-specific example!
-            /// use rtrb::RingBuffer;
-            ///
-            /// let (p, c) = RingBuffer::<f32>::new(1024);
-            ///
-            /// assert_eq!(c.slots(), 0);
-            /// ```
-            pub fn slots(&self) -> usize {
-                let b = &self.buffer;
-                let head = self.cached_head.get();
-                let tail = b.tail.load(Ordering::Acquire);
-                self.cached_tail.set(tail);
-                if head == tail {
-                    return 0;
-                }
-                let collapsed_head = b.collapse_position(head);
-                let collapsed_tail = b.collapse_position(tail);
-                if collapsed_head < collapsed_tail {
-                    collapsed_tail - collapsed_head
-                } else {
-                    let skip = b.skip.load(Ordering::Acquire);
-                    collapsed_tail + skip - collapsed_head
-                }
-            }
+            fn_consumer_slots!(bip = yes);
         }
     }
+}
+
+/// Get the `head` position for reading the next slot, if available.
+///
+/// This is a strict subset of the functionality implemented in `read_chunk()`.
+/// For performance, this special case is implemented separately.
+macro_rules! fn_consumer_next_head {
+    (bip = yes) => {
+        fn next_head(&self) -> Option<usize> {
+            // NB: cached_head is always up-to-date, no need for atomic load here.
+            let mut head = self.cached_head.get();
+            let mut tail = self.cached_tail.get();
+            let b = &self.buffer;
+
+            // Check if the queue is *possibly* empty.
+            if head == tail {
+                // Refresh the tail ...
+                tail = b.tail.load(Ordering::Acquire);
+                self.cached_tail.set(tail);
+                // ... and check if it's *really* empty.
+                if head == tail {
+                    // `tail` didn't change, queue is empty.
+                    return None;
+                } else if b.collapse_position(head) < b.collapse_position(tail) {
+                    // `tail` did change, but it didn't wrap around.
+                    return Some(head);
+                }
+            } else if head < tail {
+                // The tail might have wrapped around in the meantime.
+                tail = b.tail.load(Ordering::Acquire);
+                self.cached_tail.set(tail);
+            } else {
+                // The tail cannot overtake the head, no need to refresh at this point.
+            }
+            debug_assert_ne!(head, tail);
+            if b.collapse_position(tail) < b.collapse_position(head) {
+                // NB: We are only allowed to use `skip` if (collapsed) `tail < head`.
+                let skip = b.skip.load(Ordering::Acquire);
+                if b.collapse_position(head) == skip {
+                    // Nothing to read at the end of the buffer, wrap `head` and clear `skip`.
+                    head = b.increment(head, b.capacity() - skip);
+                    b.head.store(head, Ordering::Release);
+                    self.cached_head.set(head);
+                    b.skip.store(b.capacity(), Ordering::Release);
+
+                    // NB: The producer only sets `skip` if it writes at least one slot
+                    // at the beginning of the buffer.  Therefore, we know that the
+                    // wrapped-around `head` is valid for reading (at least) one slot.
+                }
+            }
+            Some(head)
+        }
+    };
+    (bip = no) => {
+        fn next_head(&self) -> Option<usize> {
+            let head = self.cached_head.get();
+            let tail = self.cached_tail.get();
+
+            // Check if the queue is *possibly* empty.
+            if head == tail {
+                // Refresh the tail ...
+                let tail = self.buffer.tail.load(Ordering::Acquire);
+                self.cached_tail.set(tail);
+                // ... and check if it's *really* empty.
+                if head == tail {
+                    // `tail` didn't change, queue is empty.
+                    return None;
+                }
+            }
+            Some(head)
+        }
+    };
 }
 
 macro_rules! impl_next_head_non_bip {
     ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
         impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
-            /// Get the head position for reading the next slot, if available.
-            ///
-            /// This is a strict subset of the functionality implemented in `read_chunk()`.
-            /// For performance, this special case is implemented separately.
-            fn next_head(&self) -> Option<usize> {
-                let head = self.cached_head.get();
-                let tail = self.cached_tail.get();
-
-                // Check if the queue is *possibly* empty.
-                if head == tail {
-                    // Refresh the tail ...
-                    let tail = self.buffer.tail.load(Ordering::Acquire);
-                    self.cached_tail.set(tail);
-                    // ... and check if it's *really* empty.
-                    if head == tail {
-                        // `tail` didn't change, queue is empty.
-                        return None;
-                    }
-                }
-                Some(head)
-            }
+            fn_consumer_next_head!(bip = no);
         }
     }
 }
@@ -689,65 +827,7 @@ macro_rules! impl_next_head_non_bip {
 macro_rules! impl_next_head_bip {
     ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
         impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
-            /// Get the `head` position for reading the next slot, if available.
-            ///
-            /// This is a strict subset of the functionality implemented in `read_chunk()`.
-            /// For performance, this special case is implemented separately.
-            fn next_head(&self) -> Option<usize> {
-                // NB: cached_head is always up-to-date, no need for atomic load here.
-                let mut head = self.cached_head.get();
-                let mut tail = self.cached_tail.get();
-                let b = &self.buffer;
-
-                // Check if the queue is *possibly* empty.
-                if head == tail {
-                    // Refresh the tail ...
-                    tail = b.tail.load(Ordering::Acquire);
-                    self.cached_tail.set(tail);
-                    // ... and check if it's *really* empty.
-                    if head == tail {
-                        // `tail` didn't change, queue is empty.
-                        return None;
-                    } else if b.collapse_position(head) < b.collapse_position(tail) {
-                        // `tail` did change, but it didn't wrap around.
-                        return Some(head);
-                    }
-                } else if head < tail {
-                    // The tail might have wrapped around in the meantime.
-                    tail = b.tail.load(Ordering::Acquire);
-                    self.cached_tail.set(tail);
-                } else {
-                    // The tail cannot overtake the head, no need to refresh at this point.
-                }
-                debug_assert_ne!(head, tail);
-
-                // TODO: check if caching skip is worth it.
-                /*
-                // TODO: skip = cached_skip;
-                if skip != NO_SKIP && head == skip {
-                    // we maybe have to skip, but maybe not
-                } else {
-                    // we maybe don't have to skip, but how can loading skip change that?
-                }
-                */
-
-                if b.collapse_position(tail) < b.collapse_position(head) {
-                    // NB: We are only allowed to use `skip` if (collapsed) `tail < head`.
-                    let skip = b.skip.load(Ordering::Acquire);
-                    if b.collapse_position(head) == skip {
-                        // Nothing to read at the end of the buffer, wrap `head` and clear `skip`.
-                        head = b.increment(head, b.capacity() - skip);
-                        b.head.store(head, Ordering::Release);
-                        self.cached_head.set(head);
-                        b.skip.store(b.capacity(), Ordering::Release);
-
-                        // NB: The producer only sets `skip` if it writes at least one slot
-                        // at the beginning of the buffer.  Therefore, we know that the
-                        // wrapped-around `head` is valid for reading (at least) one slot.
-                    }
-                }
-                Some(head)
-            }
+            fn_consumer_next_head!(bip = yes);
         }
     };
 }
