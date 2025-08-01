@@ -34,7 +34,7 @@ macro_rules! storage_vec {
                 BoxedRingBuffer::new(Self {
                     head: init_padded!($padded, AtomicUsize::new(0)),
                     tail: init_padded!($padded, AtomicUsize::new(0)),
-                    skip: init_only_bip!($bip, init_padded!($padded, AtomicUsize::new(NO_SKIP))),
+                    skip: init_only_bip!($bip, init_padded!($padded, AtomicUsize::new(capacity))),
                     flags: AtomicU8::new(0),
                     data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
                     capacity,
@@ -99,7 +99,7 @@ macro_rules! storage_array {
                 Self {
                     head: init_padded!($padded, AtomicUsize::new(0)),
                     tail: init_padded!($padded, AtomicUsize::new(0)),
-                    skip: init_only_bip!($bip, init_padded!($padded, AtomicUsize::new(NO_SKIP))),
+                    skip: init_only_bip!($bip, init_padded!($padded, AtomicUsize::new(N))),
                     flags: AtomicU8::new(0),
                     slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
                 }
@@ -222,8 +222,8 @@ macro_rules! impl_drop_all_elements {
                 let skip = self.skip.load(Ordering::Relaxed);
             ),
             check_skip = (
-                if skip != NO_SKIP && head == skip {
-                    head = self.increment(head, self.capacity() - self.collapse_position(skip));
+                if self.collapse_position(head) == skip {
+                    head = self.increment(head, self.capacity() - skip);
                 }
             ),
             N = ($($N)?)
@@ -611,10 +611,6 @@ macro_rules! impl_producer_consumer_common {
 macro_rules! impl_producer_consumer_bip {
     ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
 
-        // Disable skipping (0 is an impossible value for `skip`).
-        // TODO: move to a more meaningful place?
-        pub const NO_SKIP: usize = 0;
-
         impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
             /// Returns the number of slots available for reading.
             ///
@@ -654,12 +650,7 @@ macro_rules! impl_producer_consumer_bip {
                     collapsed_tail - collapsed_head
                 } else {
                     let skip = b.skip.load(Ordering::Acquire);
-                    let end = if skip != NO_SKIP {
-                        b.collapse_position(skip)
-                    } else {
-                        b.capacity()
-                    };
-                    collapsed_tail + end - collapsed_head
+                    collapsed_tail + skip - collapsed_head
                 }
             }
         }
@@ -742,14 +733,13 @@ macro_rules! impl_next_head_bip {
 
                 if b.collapse_position(tail) < b.collapse_position(head) {
                     // NB: We are only allowed to use `skip` if (collapsed) `tail < head`.
-                    let mut skip = b.skip.load(Ordering::Acquire);
-                    if skip != NO_SKIP && head == skip {
+                    let skip = b.skip.load(Ordering::Acquire);
+                    if b.collapse_position(head) == skip {
                         // Nothing to read at the end of the buffer, wrap `head` and clear `skip`.
-                        head = b.increment(head, b.capacity() - b.collapse_position(skip));
+                        head = b.increment(head, b.capacity() - skip);
                         b.head.store(head, Ordering::Release);
                         self.cached_head.set(head);
-                        skip = NO_SKIP;
-                        b.skip.store(skip, Ordering::Release);
+                        b.skip.store(b.capacity(), Ordering::Release);
 
                         // NB: The producer only sets `skip` if it writes at least one slot
                         // at the beginning of the buffer.  Therefore, we know that the
@@ -812,16 +802,17 @@ macro_rules! impl_chunks_bip {
                 }
                 let b = &self.producer.buffer;
                 let mut tail = self.producer.cached_tail.get();
-                if self.ptr == b.data_ptr() && b.collapse_position(tail) != 0 {
+                let collapsed_tail = b.collapse_position(tail);
+                if self.ptr == b.data_ptr() && collapsed_tail != 0 {
                     // NB: It is safe to store `skip` before `tail`, because the consumer
                     // will potentially only read between `head` and (the old) `tail`,
                     // without looking at `skip`.
                     // Storing `tail` before `skip` would be problematic, however, because
                     // the consumer would see new data at the beginning of the buffer,
                     // but wouldn't know that the end has to be skipped.
-                    b.skip.store(tail, Ordering::Release);
+                    b.skip.store(collapsed_tail, Ordering::Release);
                     // TODO: make this a reusable function?
-                    tail = b.increment(tail, b.capacity() - b.collapse_position(tail));
+                    tail = b.increment(tail, b.capacity() - collapsed_tail);
                 }
                 tail = b.increment(tail, n);
                 b.tail.store(tail, Ordering::Release);
@@ -971,17 +962,11 @@ macro_rules! impl_chunks_bip {
                     // NB: We are only allowed to use `skip` if (collapsed) `tail < head`
                     //     (or if the buffer is full).
                     let mut skip = b.skip.load(Ordering::Acquire);
-                    let end = if skip == NO_SKIP {
-                        b.capacity()
-                    } else {
-                        b.collapse_position(skip)
-                    };
-                    slots = end - collapsed_head;
+                    slots = skip - collapsed_head;
                     if slots == 0 {
                         // No more slots at the end of the buffer, let's wrap around.
-                        if skip != NO_SKIP {
-                            skip = NO_SKIP;
-                            b.skip.store(skip, Ordering::Release);
+                        if skip != b.capacity() {
+                            b.skip.store(b.capacity(), Ordering::Release);
                         }
                         head = b.increment(head, b.capacity() - collapsed_head);
                         // NB: `skip` is stored before `head`.
