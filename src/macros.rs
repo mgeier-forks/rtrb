@@ -29,8 +29,7 @@ macro_rules! storage_vec {
         impl<T> RingBuffer<T> {
             #[allow(clippy::new_ret_no_self)]
             pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
-                // TODO: update capacity if power of 2 is needed.
-                //let capacity = Calc::from_u8(C).update_capacity(capacity);
+                let capacity = Self::update_capacity(capacity);
                 BoxedRingBuffer::new(Self {
                     head: init_padded!($padded, AtomicUsize::new(0)),
                     tail: init_padded!($padded, AtomicUsize::new(0)),
@@ -91,8 +90,7 @@ macro_rules! storage_array {
             pub const fn new() -> Self {
                 const {
                     assert!(
-                        // TODO: check if power of 2 is needed.
-                        true, //Calc::from_u8(C).update_capacity(N) == N,
+                        Self::update_capacity(N) == N,
                         "`capacity` must be a power of two"
                     );
                 }
@@ -237,6 +235,19 @@ macro_rules! impl_common {
     }
 }
 
+macro_rules! fn_ring_buffer_update_capacity {
+    (pow2 = yes) => {
+        const fn update_capacity(capacity: usize) -> usize {
+            capacity.next_power_of_two()
+        }
+    };
+    (pow2 = no) => {
+        const fn update_capacity(capacity: usize) -> usize {
+            capacity
+        }
+    };
+}
+
 /// Makes sure the position is in the range `0 .. capacity`.
 macro_rules! fn_ring_buffer_collapse_position {
     (pow2 = yes) => {
@@ -329,6 +340,7 @@ macro_rules! fn_ring_buffer_distance {
 macro_rules! impl_calculation {
     (pow2 = $pow2:ident, N = ($($N:ident)?)) => {
         impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
+            fn_ring_buffer_update_capacity!(pow2 = $pow2);
             fn_ring_buffer_collapse_position!(pow2 = $pow2);
             fn_ring_buffer_increment!(pow2 = $pow2);
             fn_ring_buffer_increment1!(pow2 = $pow2);
