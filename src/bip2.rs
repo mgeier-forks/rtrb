@@ -29,9 +29,13 @@ impl_calculation! {
 }
 
 // TODO: bip option?
-def_producer_consumer_boxed! {}
+def_producer_consumer_boxed! {
+    bip = yes
+}
 
-def_boxed_ring_buffer! {}
+def_boxed_ring_buffer! {
+    bip = yes
+}
 
 impl_producer_consumer_common! {
     'a = (),

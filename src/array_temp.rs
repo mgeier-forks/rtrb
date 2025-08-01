@@ -29,6 +29,7 @@ impl_calculation! {
 }
 
 def_producer_consumer_ref! {
+    bip = no,
     N = (N)
 }
 

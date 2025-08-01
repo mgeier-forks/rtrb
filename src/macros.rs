@@ -327,7 +327,7 @@ macro_rules! impl_calculation {
 
 // TODO: bip option for cached_skip?
 macro_rules! def_producer_consumer_boxed {
-    () => {
+    (bip = $bip:ident) => {
         use core::cell::Cell;
 
         // TODO: manual impls:
@@ -336,8 +336,6 @@ macro_rules! def_producer_consumer_boxed {
             buffer: BoxedRingBuffer<T>,
             cached_head: Cell<usize>,
             cached_tail: Cell<usize>,
-            // TODO: cached_skip?
-            // NB: caching `skip` doesn't help, because it can jump to any position.
         }
 
         // TODO: manual impls:
@@ -346,13 +344,13 @@ macro_rules! def_producer_consumer_boxed {
             buffer: BoxedRingBuffer<T>,
             cached_head: Cell<usize>,
             cached_tail: Cell<usize>,
-            // TODO: cached_skip?
+            cached_skip: def_only_bip!($bip, Cell<usize>),
         }
     };
 }
 
 macro_rules! def_boxed_ring_buffer {
-    () => {
+    (bip = $bip:ident) => {
         use alloc::boxed::Box;
         use core::ptr::NonNull;
 
@@ -370,6 +368,7 @@ macro_rules! def_boxed_ring_buffer {
                 debug_assert_eq!(rb.flags.load(Ordering::Relaxed) & IS_ABANDONED, 0);
                 let head = rb.head.load(Ordering::Relaxed);
                 let tail = rb.tail.load(Ordering::Relaxed);
+                let skip = rb.skip.load(Ordering::Relaxed);
                 let ptr = Box::leak(Box::new(rb));
                 // SAFETY: Pointer from Box is always non-null.
                 let ptr = unsafe { NonNull::new_unchecked(ptr) };
@@ -382,6 +381,7 @@ macro_rules! def_boxed_ring_buffer {
                     buffer: Self { ptr },
                     cached_head: Cell::new(head),
                     cached_tail: Cell::new(tail),
+                    cached_skip: init_only_bip!($bip, Cell::new(skip)),
                 };
                 (p, c)
             }
@@ -443,7 +443,7 @@ macro_rules! def_boxed_ring_buffer {
 
 // TODO: bip option for cached_skip?
 macro_rules! def_producer_consumer_ref {
-    (N = ($($N:ident)?)) => {
+    (bip = $bip:ident, N = ($($N:ident)?)) => {
         use core::cell::Cell;
 
         // TODO: manual impls:
@@ -452,7 +452,6 @@ macro_rules! def_producer_consumer_ref {
             buffer: &'a RingBuffer<T$(, $N)?>,
             cached_head: Cell<usize>,
             cached_tail: Cell<usize>,
-            // TODO: cached_skip?
         }
 
         // TODO: manual impls:
@@ -461,7 +460,7 @@ macro_rules! def_producer_consumer_ref {
             buffer: &'a RingBuffer<T$(, $N)?>,
             cached_head: Cell<usize>,
             cached_tail: Cell<usize>,
-            // TODO: cached_skip?
+            cached_skip: def_only_bip!($bip, Cell<usize>),
         }
 
         use crate::diy::{HAS_CONSUMER, HAS_PRODUCER};
@@ -490,10 +489,11 @@ macro_rules! def_producer_consumer_ref {
                     let head = self.head.load(Ordering::Acquire);
                     let tail = self.tail.load(Ordering::Acquire);
                     Some(
-                        Consumer{
+                        Consumer {
                             buffer: self,
                             cached_head: Cell::new(head),
                             cached_tail: Cell::new(tail),
+                            cached_skip: init_only_bip!($bip, Cell::new(self.skip.load(Ordering::Acquire))),
                         }
                     )
                 } else {
@@ -650,6 +650,7 @@ macro_rules! impl_producer_consumer_bip {
                     collapsed_tail - collapsed_head
                 } else {
                     let skip = b.skip.load(Ordering::Acquire);
+                    self.cached_skip.set(skip);
                     collapsed_tail + skip - collapsed_head
                 }
             }
@@ -720,20 +721,13 @@ macro_rules! impl_next_head_bip {
                     // The tail cannot overtake the head, no need to refresh at this point.
                 }
                 debug_assert_ne!(head, tail);
-
-                // TODO: check if caching skip is worth it.
-                /*
-                // TODO: skip = cached_skip;
-                if skip != NO_SKIP && head == skip {
-                    // we maybe have to skip, but maybe not
-                } else {
-                    // we maybe don't have to skip, but how can loading skip change that?
-                }
-                */
-
                 if b.collapse_position(tail) < b.collapse_position(head) {
-                    // NB: We are only allowed to use `skip` if (collapsed) `tail < head`.
-                    let skip = b.skip.load(Ordering::Acquire);
+                    let mut skip = self.cached_skip.get();
+                    if skip == b.capacity() {
+                        // NB: We are only allowed to load `skip` if (collapsed) `tail < head`.
+                        let skip = b.skip.load(Ordering::Acquire);
+                        self.cached_skip.set(skip);
+                    }
                     if b.collapse_position(head) == skip {
                         // Nothing to read at the end of the buffer, wrap `head` and clear `skip`.
                         head = b.increment(head, b.capacity() - skip);
@@ -959,9 +953,13 @@ macro_rules! impl_chunks_bip {
                     // No need to refresh `tail`, it cannot overtake `head`.
                 }
                 if slots < n {
-                    // NB: We are only allowed to use `skip` if (collapsed) `tail < head`
-                    //     (or if the buffer is full).
-                    let mut skip = b.skip.load(Ordering::Acquire);
+                    let mut skip = self.cached_skip.get();
+                    if skip == b.capacity() {
+                        // NB: We are only allowed to load `skip` if (collapsed) `tail < head`
+                        //     (or if the buffer is full).
+                        skip = b.skip.load(Ordering::Acquire);
+                        self.cached_skip.set(skip);
+                    }
                     slots = skip - collapsed_head;
                     if slots == 0 {
                         // No more slots at the end of the buffer, let's wrap around.
