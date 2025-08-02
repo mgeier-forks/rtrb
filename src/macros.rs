@@ -202,7 +202,7 @@ macro_rules! impl_everything_eventually {
 
         impl<$($a, )?T$(, const $N: usize)?> Producer<$($a, )?T$(, $N)?> {
             fn_producer_push!();
-            fn_producer_write_chunk_uninit!(bip = $bip, N = ($($N)?));
+            fn_producer_write_chunk_uninit!(bip = $bip, WriteChunkUninit<'_, T$(, $N)?>);
             fn_producer_slots!();
             fn_producer_is_full!();
             fn_pc_capacity!();
@@ -1033,11 +1033,8 @@ macro_rules! fn_write_chunk_uninit_commit_unchecked {
 }
 
 macro_rules! fn_producer_write_chunk_uninit {
-    (bip = yes, N = ($($N:ident)?)) => {
-        pub fn write_chunk_uninit(
-            &mut self,
-            n: usize,
-        ) -> Result<WriteChunkUninit<'_, T$(, $N)?>, ChunkError> {
+    (bip = yes, $chunk:ty) => {
+        pub fn write_chunk_uninit(&mut self, n: usize) -> Result<$chunk, ChunkError> {
             let mut head = self.cached_head.get();
             let tail = self.cached_tail.get();
             let b = &self.buffer;
@@ -1108,8 +1105,8 @@ macro_rules! fn_producer_write_chunk_uninit {
             Ok(unsafe { WriteChunkUninit::new(self, n, offset) })
         }
     };
-    (bip = no, N = ($($N:ident)?)) => {
-        pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T$(, $N)?>, ChunkError> {
+    (bip = no, $chunk:ty) => {
+        pub fn write_chunk_uninit(&mut self, n: usize) -> Result<$chunk, ChunkError> {
             let head = self.cached_head.get();
             let tail = self.cached_tail.get();
             let b = &self.buffer;
