@@ -192,11 +192,16 @@ macro_rules! impl_everything_eventually {
         impl<$($a, )?T$(, const $N: usize)?> Producer<$($a, )?T$(, $N)?> {
             fn_producer_push!();
             fn_producer_slots!();
+            fn_producer_is_full!();
+            fn_pc_capacity!();
             fn_producer_next_tail!();
         }
 
         impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
             fn_consumer_pop!();
+            fn_consumer_slots!(bip = $bip);
+            fn_consumer_is_empty!();
+            fn_pc_capacity!();
             fn_consumer_next_head!(bip = $bip);
         }
     };
@@ -601,6 +606,79 @@ macro_rules! fn_producer_slots {
     };
 }
 
+macro_rules! fn_producer_is_full {
+    () => {
+        /// Returns `true` if there are currently no slots available for writing.
+        ///
+        /// TODO: additional info about bip?
+        ///
+        /// A full ring buffer might cease to be full at any time
+        /// if the corresponding [`Consumer`] is consuming items in another thread.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// // TODO: module-specific example!
+        /// use rtrb::RingBuffer;
+        ///
+        /// let (p, c) = RingBuffer::<f32>::new(1);
+        ///
+        /// assert!(!p.is_full());
+        /// ```
+        ///
+        /// Since items can be concurrently consumed on another thread, the ring buffer
+        /// might not be full for long:
+        ///
+        /// ```
+        /// # use rtrb::RingBuffer;
+        /// # let (p, c) = RingBuffer::<f32>::new(1);
+        /// if p.is_full() {
+        ///     // The buffer might be full, but it might as well not be
+        ///     // if an item was just consumed on another thread.
+        /// }
+        /// ```
+        ///
+        /// However, if it's not full, another thread cannot change that:
+        ///
+        /// ```
+        /// # use rtrb::RingBuffer;
+        /// # let (p, c) = RingBuffer::<f32>::new(1);
+        /// if !p.is_full() {
+        ///     // At least one slot is guaranteed to be available for writing.
+        /// }
+        /// ```
+        pub fn is_full(&self) -> bool {
+            self.next_tail().is_none()
+        }
+    };
+}
+
+macro_rules! fn_pc_capacity {
+    () => {
+        /// Returns the total capacity of the queue.
+        ///
+        /// At any time, the capacity is subdivided into
+        /// [`Producer::slots()`] available for writing and
+        /// [`Consumer::slots()`] available for reading.
+        ///
+        /// TODO: not quite true for bip
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// // TODO: module-specific example!
+        /// use rtrb::RingBuffer;
+        ///
+        /// let (producer, consumer) = RingBuffer::<f32>::new(100);
+        /// assert_eq!(producer.capacity(), 100);
+        /// assert_eq!(consumer.capacity(), 100);
+        /// ```
+        pub fn capacity(&self) -> usize {
+            self.buffer.capacity()
+        }
+    };
+}
+
 /// NB: next_tail() can also be used for "bip", because `b.skip` is never set.
 /// One element can always be inserted without skipping.
 macro_rules! fn_producer_next_tail {
@@ -678,32 +756,39 @@ macro_rules! fn_consumer_pop {
     };
 }
 
+macro_rules! fn_consumer_slots_docstring {
+    () => {
+        "
+Returns the number of slots available for reading.
+
+Since items can be concurrently produced on another thread, the actual number
+of available slots may increase at any time
+(up to the [`capacity()`](Consumer::capacity)).
+
+To check for a single available slot,
+using [`is_empty()`](Consumer::is_empty) is often quicker
+(because it might not have to check an atomic variable).
+
+TODO: insert bip specifics
+
+# Examples
+
+```
+// TODO: module-specific example!
+use rtrb::RingBuffer;
+
+let (p, c) = RingBuffer::<f32>::new(1024);
+
+assert_eq!(c.slots(), 0);
+```
+"
+    };
+}
 macro_rules! fn_consumer_slots {
     (bip = yes) => {
-        /// Returns the number of slots available for reading.
-        ///
-        /// Since items can be concurrently produced on another thread, the actual number
-        /// of available slots may increase at any time
-        /// (up to the [`capacity()`](Consumer::capacity)).
-        ///
-        /// To check for a single available slot,
-        /// using [`is_empty()`](Consumer::is_empty) is often quicker
-        /// (because it might not have to check an atomic variable).
-        ///
         /// TODO: [`read_chunk()`](Consumer::read_chunk) might not provide the full number of free slots
         ///
         /// TODO: see alternative "slots" variations
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// // TODO: module-specific example!
-        /// use rtrb::RingBuffer;
-        ///
-        /// let (p, c) = RingBuffer::<f32>::new(1024);
-        ///
-        /// assert_eq!(c.slots(), 0);
-        /// ```
         pub fn slots(&self) -> usize {
             let b = &self.buffer;
             let head = self.cached_head.get();
@@ -723,18 +808,60 @@ macro_rules! fn_consumer_slots {
         }
     };
     (bip = no) => {
-        compile_error!("TODO");
+        pub fn slots(&self) -> usize {
+            let b = &self.buffer;
+            let tail = b.indices().tail().load(Ordering::Acquire);
+            self.cached_tail.set(tail);
+            b.distance(self.cached_head.get(), tail)
+        }
     };
 }
 
-// TODO: combine with other macros?
-macro_rules! impl_producer_consumer_bip {
-    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
-
-        impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
-            fn_consumer_slots!(bip = yes);
+macro_rules! fn_consumer_is_empty {
+    () => {
+        /// Returns `true` if there are currently no slots available for reading.
+        ///
+        /// TODO: additional info about bip?
+        ///
+        /// An empty ring buffer might cease to be empty at any time
+        /// if the corresponding [`Producer`] is producing items in another thread.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// // TODO: module-specific example!
+        /// use rtrb::RingBuffer;
+        ///
+        /// let (p, c) = RingBuffer::<f32>::new(1);
+        ///
+        /// assert!(c.is_empty());
+        /// ```
+        ///
+        /// Since items can be concurrently produced on another thread, the ring buffer
+        /// might not be empty for long:
+        ///
+        /// ```
+        /// # use rtrb::RingBuffer;
+        /// # let (p, c) = RingBuffer::<f32>::new(1);
+        /// if c.is_empty() {
+        ///     // The buffer might be empty, but it might as well not be
+        ///     // if an item was just produced on another thread.
+        /// }
+        /// ```
+        ///
+        /// However, if it's not empty, another thread cannot change that:
+        ///
+        /// ```
+        /// # use rtrb::RingBuffer;
+        /// # let (p, c) = RingBuffer::<f32>::new(1);
+        /// if !c.is_empty() {
+        ///     // At least one slot is guaranteed to be available for reading.
+        /// }
+        /// ```
+        pub fn is_empty(&self) -> bool {
+            self.next_head().is_none()
         }
-    }
+    };
 }
 
 /// Get the `head` position for reading the next slot, if available.

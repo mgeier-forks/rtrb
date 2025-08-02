@@ -52,11 +52,6 @@ def_producer_consumer_arc! {}
 
 def_arc_ring_buffer! {}
 
-impl_producer_consumer_bip! {
-    'a = (),
-    N = ()
-}
-
 /*
 impl<T, const C: u8, I: Indices> PartialEq for BipStorage<T, C, I> {
     fn eq(&self, other: &Self) -> bool {
@@ -92,10 +87,6 @@ impl<T> Producer<T> {
     pub fn is_full(&self) -> bool {
         todo!()
     }
-    // TODO: disable public capacity for bip?
-    pub fn capacity(&self) -> usize {
-        todo!()
-    }
     pub fn is_abandoned(&self) -> bool {
         todo!()
     }
@@ -111,10 +102,6 @@ impl<T> Consumer<T> {
         todo!()
     }
     pub fn is_abandoned(&self) -> bool {
-        todo!()
-    }
-    // TODO: disable public capacity for bip?
-    pub fn capacity(&self) -> usize {
         todo!()
     }
 }

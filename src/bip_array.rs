@@ -27,11 +27,6 @@ def_producer_consumer_ref! {
     N = (N)
 }
 
-impl_producer_consumer_bip! {
-    'a = ('a),
-    N = (N)
-}
-
 // "chunks" stuff.
 
 impl_chunks_bip! {

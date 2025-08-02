@@ -26,11 +26,6 @@ def_producer_consumer_arc! {}
 
 def_arc_ring_buffer! {}
 
-impl_producer_consumer_bip! {
-    'a = (),
-    N = ()
-}
-
 // "chunks" stuff.
 
 impl_chunks_bip! {
