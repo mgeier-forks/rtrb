@@ -489,8 +489,8 @@ macro_rules! def_producer_consumer_ref {
             pub fn producer(&self) -> Option<Producer<T$(, $N)?>> {
                 let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
                 if old_flags & HAS_PRODUCER == 0 {
-                    let head = self.head.load(Ordering::Acquire);
-                    let tail = self.tail.load(Ordering::Acquire);
+                    let head = self.head.load(Ordering::Relaxed);
+                    let tail = self.tail.load(Ordering::Relaxed);
                     Some(
                         Producer {
                             buffer: self,
@@ -506,8 +506,8 @@ macro_rules! def_producer_consumer_ref {
             pub fn consumer(&self) -> Option<Consumer<T$(, $N)?>> {
                 let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
                 if old_flags & HAS_CONSUMER == 0 {
-                    let head = self.head.load(Ordering::Acquire);
-                    let tail = self.tail.load(Ordering::Acquire);
+                    let head = self.head.load(Ordering::Relaxed);
+                    let tail = self.tail.load(Ordering::Relaxed);
                     Some(
                         Consumer{
                             buffer: self,
