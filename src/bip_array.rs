@@ -2,8 +2,6 @@
 //!
 //! See [`rtrb::bip`](crate::bip) for a bi-partite ring buffer with dynamic storage.
 
-use crate::{PopError, PushError};
-
 storage_array! {
     padded = yes,
     bip = yes,

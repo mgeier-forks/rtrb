@@ -175,8 +175,13 @@ macro_rules! impl_everything_eventually {
     ) => {
         check_bip_contiguous!($bip, $contiguous);
 
+        // TODO: move definition here?
+        #[allow(unused_imports)]
+        use crate::diy::IS_ABANDONED;
+
         // TODO: move error type to top level?
         use crate::chunks::ChunkError;
+        use crate::{PopError, PushError};
 
         // SAFETY: RingBuffer is only mutated via Producer/Consumer (which are !Sync),
         // all other access can be shared.

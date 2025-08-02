@@ -1,7 +1,5 @@
 //! TODO: move this to crate::array once macros are complete.
 
-use crate::{PopError, PushError};
-
 storage_array! {
     padded = yes,
     bip = no,

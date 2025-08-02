@@ -27,8 +27,6 @@
 //! Implementations in other languages:
 //! <https://github.com/willemt/bipbuffer> (C)
 
-use crate::{diy::IS_ABANDONED, PeekError, PopError, PushError};
-
 storage_vec! {
     padded = yes,
     bip = yes,
@@ -83,16 +81,6 @@ impl<T> Producer<T> {
     pub fn slots_two(&self) -> usize {
         todo!()
     }
-    pub fn is_abandoned(&self) -> bool {
-        todo!()
-    }
-}
-
-impl<T> Consumer<T> {
-    pub fn peek(&self) -> Result<&T, PeekError> {
-        todo!()
-    }
-
     pub fn is_abandoned(&self) -> bool {
         todo!()
     }

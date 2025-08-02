@@ -1,7 +1,5 @@
 //! A bi-partite ring buffer whose capacity is a power of two.
 
-use crate::{diy::IS_ABANDONED, PopError, PushError};
-
 storage_vec! {
     padded = yes,
     bip = yes,
