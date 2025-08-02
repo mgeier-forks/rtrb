@@ -7,7 +7,16 @@
 // size_type: usize, u32, u16, u8; (u64 and u128 probably don't make sense?)
 
 macro_rules! storage_vec {
-    (padded = $padded:ident, bip = $bip:ident, rb_doc = $rb_doc:expr) => {
+    (padded = $padded:ident, bip = yes, rb_doc = $rb_doc:expr) => {
+        storage_vec_helper!(padded = $padded, skip, rb_doc = $rb_doc);
+    };
+    (padded = $padded:ident, bip = no, rb_doc = $rb_doc:expr) => {
+        storage_vec_helper!(padded = $padded, , rb_doc = $rb_doc);
+    };
+}
+
+macro_rules! storage_vec_helper {
+    (padded = $padded:ident, $($skip:ident)?, rb_doc = $rb_doc:expr) => {
         use crate::atomic::*;
         use crate::CachePadded;
         use alloc::vec::Vec;
@@ -20,7 +29,7 @@ macro_rules! storage_vec {
             head: def_padded!($padded, AtomicUsize),
             tail: def_padded!($padded, AtomicUsize),
             // TODO: measure whether CachePadded helps
-            skip: def_only_bip!($bip, def_padded!($padded, AtomicUsize)),
+            $($skip: def_padded!($padded, AtomicUsize),)?
             flags: AtomicU8,
             data_ptr: *mut T,
             capacity: usize,
@@ -33,7 +42,7 @@ macro_rules! storage_vec {
                 ArcRingBuffer::new(Self {
                     head: init_padded!($padded, AtomicUsize::new(0)),
                     tail: init_padded!($padded, AtomicUsize::new(0)),
-                    skip: init_only_bip!($bip, init_padded!($padded, AtomicUsize::new(capacity))),
+                    $($skip: init_padded!($padded, AtomicUsize::new(capacity)),)?
                     flags: AtomicU8::new(0),
                     data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
                     capacity,
@@ -64,7 +73,16 @@ macro_rules! storage_vec {
 }
 
 macro_rules! storage_array {
-    (padded = $padded:ident, bip = $bip:ident, rb_doc = $rb_doc:expr) => {
+    (padded = $padded:ident, bip = yes, rb_doc = $rb_doc:expr) => {
+        storage_array_helper!(padded = $padded, skip, rb_doc = $rb_doc);
+    };
+    (padded = $padded:ident, bip = no, rb_doc = $rb_doc:expr) => {
+        storage_array_helper!(padded = $padded, , rb_doc = $rb_doc);
+    };
+}
+
+macro_rules! storage_array_helper {
+    (padded = $padded:ident, $($skip:ident)?, rb_doc = $rb_doc:expr) => {
         use crate::atomic::*;
         use crate::cache_padded::CachePadded;
         use core::cell::UnsafeCell;
@@ -75,10 +93,8 @@ macro_rules! storage_array {
         pub struct RingBuffer<T, const N: usize> {
             head: def_padded!($padded, AtomicUsize),
             tail: def_padded!($padded, AtomicUsize),
-            // TODO: pass this in as $($field:ident: $ty:ty,)* instead of $bip
-            #[allow(dead_code)]
             // TODO: measure whether CachePadded helps
-            skip: def_only_bip!($bip, def_padded!($padded, AtomicUsize)),
+            $($skip: def_padded!($padded, AtomicUsize),)?
             flags: AtomicU8,
             /// The static array holding slots.
             ///
@@ -99,7 +115,7 @@ macro_rules! storage_array {
                 Self {
                     head: init_padded!($padded, AtomicUsize::new(0)),
                     tail: init_padded!($padded, AtomicUsize::new(0)),
-                    skip: init_only_bip!($bip, init_padded!($padded, AtomicUsize::new(N))),
+                    $($skip: init_padded!($padded, AtomicUsize::new(N)),)?
                     flags: AtomicU8::new(0),
                     slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
                 }
@@ -139,30 +155,12 @@ macro_rules! def_padded {
     };
 }
 
-macro_rules! def_only_bip {
-    (yes, $init:ty) => {
-        $init
-    };
-    (no, $init:ty) => {
-        ()
-    };
-}
-
 macro_rules! init_padded {
     (yes, $init:expr) => {
         CachePadded::new($init)
     };
     (no, $init:expr) => {
         $init
-    };
-}
-
-macro_rules! init_only_bip {
-    (yes, $init:expr) => {
-        $init
-    };
-    (no, $init:expr) => {
-        ()
     };
 }
 
