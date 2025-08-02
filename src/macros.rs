@@ -35,6 +35,9 @@ macro_rules! storage_vec_helper {
             capacity: usize,
         }
 
+        // SAFETY: If T can be moved between threads, RingBuffer can as well.
+        unsafe impl<T: Send> Send for RingBuffer<T> {}
+
         impl<T> RingBuffer<T> {
             #[allow(clippy::new_ret_no_self)]
             pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
@@ -103,6 +106,9 @@ macro_rules! storage_array_helper {
             /// *interior mutability* to modify it.
             slots: UnsafeCell<[MaybeUninit<T>; N]>,
         }
+
+        // SAFETY: If T can be moved between threads, RingBuffer can as well.
+        unsafe impl<T: Send, const N: usize> Send for RingBuffer<T, N> {}
 
         impl<T, const N: usize> RingBuffer<T, N> {
             pub const fn new() -> Self {
@@ -185,8 +191,8 @@ macro_rules! impl_everything_eventually {
         use crate::chunks::ChunkError;
         use crate::{PopError, PushError};
 
-        // SAFETY: RingBuffer is only mutated via Producer/Consumer (which are !Sync),
-        // all other access can be shared.
+        // SAFETY: RingBuffer is only mutated (using *interior mutablility*)
+        // via Producer/Consumer (which are !Sync), all other access can be shared.
         unsafe impl<T: Send$(, const $N: usize)?> Sync for RingBuffer<T$(, $N)?> {}
 
         impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
@@ -435,7 +441,8 @@ macro_rules! def_arc_ring_buffer {
             ptr: NonNull<RingBuffer<T>>,
         }
 
-        unsafe impl<T: Send> Send for ArcRingBuffer<T> {}
+        // SAFETY: If RingBuffer is Send, ArcRingBuffer is as well.
+        unsafe impl<T> Send for ArcRingBuffer<T> where RingBuffer<T>: Send {}
 
         impl<T> ArcRingBuffer<T> {
             #[allow(clippy::new_ret_no_self)]
