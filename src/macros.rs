@@ -223,7 +223,7 @@ macro_rules! impl_everything_eventually {
         struct_write_chunk!(N = ($($N)?));
         struct_read_chunk!(contiguous = $contiguous, Consumer<$($a, )?T$(, $N)?>, N = ($($N)?));
 
-        impl_send_for_write_chunk_uninited!(N = ($($N)?));
+        impl_send_for_chunks!(N = ($($N)?));
 
         impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
             fn_write_chunk_uninit_as_mut_sliceX!(contiguous = $contiguous);
@@ -1746,21 +1746,41 @@ macro_rules! fn_read_chunk_commitX {
     };
 }
 
-macro_rules! impl_send_for_write_chunk_uninited {
+macro_rules! impl_send_for_chunks {
     (N = ($($N:ident)?)) => {
         /// It (as well as [`WriteChunk`]) can be moved ...
         /// ```
         /// // TODO: select correct module
         /// fn assert_send<X: Send>() {}
         /// assert_send::<rtrb::chunks::WriteChunkUninit<u8>>();
+        /// assert_send::<rtrb::chunks::WriteChunk<u8>>();
         /// ```
         /// ... but not shared between threads:
         /// ```compile_fail
         /// fn assert_sync<X: Sync>() {}
         /// assert_sync::<rtrb::chunks::WriteChunkUninit<u8>>();
         /// ```
+        /// ```compile_fail
+        /// # fn assert_sync<X: Sync>() {}
+        /// assert_sync::<rtrb::chunks::WriteChunk<u8>>();
+        /// ```
         // SAFETY: WriteChunkUninit only exists while a unique reference to the producer is held.
         // It is therefore safe to move it to another thread.
         unsafe impl<T: Send$(, const $N: usize)?> Send for WriteChunkUninit<'_, T$(, $N)?> {}
+
+        /// It (and any wrapper structs) can be moved ...
+        /// ```
+        /// // TODO: select correct module
+        /// fn assert_send<X: Send>() {}
+        /// assert_send::<rtrb::chunks::ReadChunk<u8>>();
+        /// ```
+        /// ... but not shared between threads:
+        /// ```compile_fail
+        /// fn assert_sync<X: Sync>() {}
+        /// assert_sync::<rtrb::chunks::ReadChunk<u8>>();
+        /// ```
+        // SAFETY: ReadChunk only exists while a unique reference to the consumer is held.
+        // It is therefore safe to move it to another thread.
+        unsafe impl<T: Send$(, const $N: usize)?> Send for ReadChunk<'_, T$(, $N)?> {}
     };
 }
