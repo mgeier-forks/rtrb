@@ -1,6 +1,6 @@
 //! TODO: move this to crate::array once macros are complete.
 
-use crate::{chunks::ChunkError, PopError, PushError};
+use crate::{PopError, PushError};
 
 storage_array! {
     padded = yes,

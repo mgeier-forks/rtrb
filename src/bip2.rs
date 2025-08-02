@@ -1,6 +1,6 @@
 //! A bi-partite ring buffer whose capacity is a power of two.
 
-use crate::{chunks::ChunkError, diy::IS_ABANDONED, PeekError, PopError, PushError};
+use crate::{chunks::ChunkError, diy::IS_ABANDONED, PopError, PushError};
 
 storage_vec! {
     padded = yes,

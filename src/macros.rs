@@ -75,6 +75,8 @@ macro_rules! storage_array {
         pub struct RingBuffer<T, const N: usize> {
             head: def_padded!($padded, AtomicUsize),
             tail: def_padded!($padded, AtomicUsize),
+            // TODO: pass this in as $($field:ident: $ty:ty,)* instead of $bip
+            #[allow(dead_code)]
             // TODO: measure whether CachePadded helps
             skip: def_only_bip!($bip, def_padded!($padded, AtomicUsize)),
             flags: AtomicU8,
@@ -1023,7 +1025,7 @@ macro_rules! impl_chunks_bip {
                 if slots < n {
                     // NB: We are only allowed to use `skip` if (collapsed) `tail < head`
                     //     (or if the buffer is full).
-                    let mut skip = b.skip.load(Ordering::Acquire);
+                    let skip = b.skip.load(Ordering::Acquire);
                     slots = skip - collapsed_head;
                     if slots == 0 {
                         // No more slots at the end of the buffer, let's wrap around.
