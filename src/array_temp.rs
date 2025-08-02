@@ -31,11 +31,6 @@ impl_chunks_mop! {
     N = (N)
 }
 
-impl_chunks_non_contiguous! {
-    'a = ('a),
-    N = (N)
-}
-
 impl_chunks_common! {
     N = (N)
 }

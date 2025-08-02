@@ -219,13 +219,25 @@ macro_rules! impl_everything_eventually {
             fn_consumer_next_head!(bip = $bip);
         }
 
-        def_write_chunk_uninit!(contiguous = $contiguous, Producer<$($a, )?T$(, $N)?>, N = ($($N)?));
+        struct_write_chunk_uninit!(contiguous = $contiguous, Producer<$($a, )?T$(, $N)?>, N = ($($N)?));
+        struct_write_chunk!(N = ($($N)?));
+        struct_read_chunk!(contiguous = $contiguous, Consumer<$($a, )?T$(, $N)?>, N = ($($N)?));
 
         impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
             fn_write_chunk_uninit_as_mut_sliceX!(contiguous = $contiguous);
             fn_write_chunk_uninit_drop_suffix!(contiguous = $contiguous);
             fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
             fn_write_chunk_uninit_commit_unchecked!(bip = $bip);
+        }
+
+        impl<T: Default$(, const $N: usize)?> WriteChunk<'_, T$(, $N)?> {
+            fn_write_chunk_as_mut_sliceX!(contiguous = $contiguous);
+        }
+
+        impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
+            fn_read_chunk_as_sliceX!(contiguous = $contiguous);
+            fn_read_chunk_as_mut_sliceX!(contiguous = $contiguous);
+            fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
         }
     };
 }
@@ -1473,7 +1485,7 @@ macro_rules! fn_X_chunk_X_len_and_is_empty {
     };
 }
 
-macro_rules! def_write_chunk_uninit {
+macro_rules! struct_write_chunk_uninit {
     (contiguous = yes , $producer:ty, N = ($($N:ident)?)) => {
         // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
@@ -1553,15 +1565,36 @@ macro_rules! def_write_chunk_uninit {
     };
 }
 
-macro_rules! impl_chunks_non_contiguous {
-    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
-        impl<T$(, const $N: usize)?> WriteChunk<'_, T$(, $N)?>
-        where
-            T: Default,
-        {
-            fn_write_chunk_as_mut_sliceX!(contiguous = no);
-        }
+macro_rules! struct_write_chunk {
+    (N = ($($N:ident)?)) => {
+        //#[derive(Debug, PartialEq, Eq)]
+        pub struct WriteChunk<'a, T$(, const $N: usize)?>(Option<WriteChunkUninit<'a, T$(, $N)?>>);
 
+        impl<T$(, const $N: usize)?> Drop for WriteChunk<'_, T$(, $N)?> {
+            fn drop(&mut self) {
+                // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
+                if let Some(mut chunk) = self.0.take() {
+                    // No part of the chunk has been committed, all slots are dropped.
+                    // SAFETY: All slots have been initialized in From::from().
+                    unsafe { chunk.drop_suffix(0) };
+                }
+            }
+        }
+    };
+}
+
+macro_rules! struct_read_chunk {
+    (contiguous = yes , $consumer:ty, N = ($($N:ident)?)) => {
+        // TODO: implement manually:
+        //#[derive(Debug, PartialEq, Eq)]
+        pub struct ReadChunk<'a, T$(, const $N: usize)?> {
+            ptr: *mut T,
+            len: usize,
+            consumer: &'a $consumer,
+        }
+    };
+    (contiguous = no , $consumer:ty, N = ($($N:ident)?)) => {
+        // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
         pub struct ReadChunk<'a, T$(, const $N: usize)?> {
             // Must be "mut" for drop_in_place()
@@ -1570,41 +1603,9 @@ macro_rules! impl_chunks_non_contiguous {
             // Must be "mut" for drop_in_place()
             second_ptr: *mut T,
             second_len: usize,
-            consumer: &'a Consumer<$($a, )?T$(, $N)?>,
+            consumer: &'a $consumer,
         }
-
-        impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
-            fn_read_chunk_as_sliceX!(contiguous = no);
-            fn_read_chunk_as_mut_sliceX!(contiguous = no);
-            fn_X_chunk_X_len_and_is_empty!(contiguous = no);
-        }
-    }
-}
-
-// bip and vrb
-macro_rules! impl_chunks_contiguous {
-    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
-
-        impl<T$(, const $N: usize)?> WriteChunk<'_, T$(, $N)?>
-        where
-            T: Default,
-        {
-            fn_write_chunk_as_mut_sliceX!(contiguous = yes);
-        }
-
-        //#[derive(Debug, PartialEq, Eq)]
-        pub struct ReadChunk<'a, T$(, const $N: usize)?> {
-            ptr: *mut T,
-            len: usize,
-            consumer: &'a Consumer<$($a, )?T$(, $N)?>,
-        }
-
-        impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
-            fn_read_chunk_as_sliceX!(contiguous = yes);
-            fn_read_chunk_as_mut_sliceX!(contiguous = yes);
-            fn_X_chunk_X_len_and_is_empty!(contiguous = yes);
-        }
-    }
+    };
 }
 
 macro_rules! impl_chunks_common {
@@ -1629,20 +1630,6 @@ macro_rules! impl_chunks_common {
                 let slots = self.len();
                 // SAFETY: Delegated to the caller.
                 unsafe { self.commit_unchecked(slots) };
-            }
-        }
-
-        //#[derive(Debug, PartialEq, Eq)]
-        pub struct WriteChunk<'a, T$(, const $N: usize)?>(Option<WriteChunkUninit<'a, T$(, $N)?>>);
-
-        impl<T$(, const $N: usize)?> Drop for WriteChunk<'_, T$(, $N)?> {
-            fn drop(&mut self) {
-                // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
-                if let Some(mut chunk) = self.0.take() {
-                    // No part of the chunk has been committed, all slots are dropped.
-                    // SAFETY: All slots have been initialized in From::from().
-                    unsafe { chunk.drop_suffix(0) };
-                }
             }
         }
 

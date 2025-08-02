@@ -92,10 +92,6 @@ impl_chunks_bip! {
     'a = (),
     N = ()
 }
-impl_chunks_contiguous! {
-    'a = (),
-    N = ()
-}
 impl_chunks_common! {
     N = ()
 }
