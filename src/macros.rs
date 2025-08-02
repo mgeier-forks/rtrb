@@ -189,7 +189,7 @@ macro_rules! impl_everything_eventually {
 
         // TODO: move error type to top level?
         use crate::chunks::ChunkError;
-        use crate::{PopError, PushError};
+        use crate::{PeekError, PopError, PushError};
 
         // SAFETY: RingBuffer is only mutated (using *interior mutablility*)
         // via Producer/Consumer (which are !Sync), all other access can be shared.
@@ -219,6 +219,7 @@ macro_rules! impl_everything_eventually {
 
         impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
             fn_consumer_pop!();
+            fn_consumer_peek!();
             fn_consumer_slots!(bip = $bip);
             fn_consumer_is_empty!();
             fn_pc_capacity!();
@@ -809,6 +810,38 @@ macro_rules! fn_consumer_pop {
                 Ok(value)
             } else {
                 Err(PopError::Empty)
+            }
+        }
+    };
+}
+
+macro_rules! fn_consumer_peek {
+    () => {
+        /// Attempts to read an element from the queue without removing it.
+        ///
+        /// # Errors
+        ///
+        /// If the queue is empty, an error is returned.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// // TODO: module-specific example!
+        /// use rtrb::{PeekError, RingBuffer};
+        ///
+        /// let (mut p, c) = RingBuffer::new(1);
+        ///
+        /// assert_eq!(c.peek(), Err(PeekError::Empty));
+        /// assert_eq!(p.push(10), Ok(()));
+        /// assert_eq!(c.peek(), Ok(&10));
+        /// assert_eq!(c.peek(), Ok(&10));
+        /// ```
+        pub fn peek(&self) -> Result<&T, PeekError> {
+            if let Some(head) = self.next_head() {
+                // SAFETY: head points to an initialized slot.
+                Ok(unsafe { &*self.buffer.slot_ptr(head) })
+            } else {
+                Err(PeekError::Empty)
             }
         }
     };
