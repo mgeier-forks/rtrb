@@ -164,24 +164,6 @@ macro_rules! init_padded {
     };
 }
 
-// TODO: longer name?
-macro_rules! let_skip {
-    (bip = yes, skip = $skip:ident, self = $self:ident) => {
-        let $skip = $self.skip.load(Ordering::Relaxed);
-    };
-    (bip = no, $($dummy:tt)*) => {};
-}
-
-// TODO: longer name?
-macro_rules! check_skip {
-    (bip = yes, skip = $skip:ident, self = $self:ident, head = $head:ident) => {
-        if $self.collapse_position($head) == $skip {
-            $head = $self.increment($head, $self.capacity() - $skip);
-        }
-    };
-    (bip = no, $($dummy:tt)*) => {};
-}
-
 // TODO: rename
 macro_rules! impl_everything_eventually {
     (
@@ -221,7 +203,15 @@ macro_rules! impl_everything_eventually {
 }
 
 macro_rules! fn_ring_buffer_drop_all_elements {
-    (bip = $bip:ident) => {
+    (bip = yes) => {
+        fn_ring_buffer_drop_all_elements_helper!(skip);
+    };
+    (bip = no) => {
+        fn_ring_buffer_drop_all_elements_helper!();
+    };
+}
+macro_rules! fn_ring_buffer_drop_all_elements_helper {
+    ($($skip:ident)?) => {
         /// Drop all elements that are still in the buffer.
         ///
         /// After this, head and tail indices are invalid.
@@ -237,11 +227,16 @@ macro_rules! fn_ring_buffer_drop_all_elements {
             // before destruction.  Relaxed ordering is sufficient here.
             let mut head = self.head.load(Ordering::Relaxed);
             let tail = self.tail.load(Ordering::Relaxed);
-            let_skip!(bip = $bip, skip = skip, self = self);
-
+            $(
+                let $skip = self.skip.load(Ordering::Relaxed);
+            )?
             // Loop over all slots that hold a value and drop them.
             while head != tail {
-                check_skip!(bip = $bip, skip = skip, self = self, head = head);
+                $(
+                    if self.collapse_position(head) == $skip {
+                        head = self.increment(head, self.capacity() - $skip);
+                    }
+                )?
                 // SAFETY: All slots between head and tail have been initialized.
                 unsafe { self.slot_ptr(head).drop_in_place() };
                 head = self.increment1(head);
