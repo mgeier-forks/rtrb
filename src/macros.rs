@@ -225,18 +225,21 @@ macro_rules! impl_everything_eventually {
 
         impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
             fn_write_chunk_uninit_as_mut_sliceX!(contiguous = $contiguous);
+            fn_write_chunk_uninit_commitX!();
             fn_write_chunk_uninit_drop_suffix!(contiguous = $contiguous);
             fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
             fn_write_chunk_uninit_commit_unchecked!(bip = $bip);
         }
 
-        impl<T: Default$(, const $N: usize)?> WriteChunk<'_, T$(, $N)?> {
+        impl<T$(, const $N: usize)?> WriteChunk<'_, T$(, $N)?> {
             fn_write_chunk_as_mut_sliceX!(contiguous = $contiguous);
+            fn_write_chunk_commitX!();
         }
 
         impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
             fn_read_chunk_as_sliceX!(contiguous = $contiguous);
             fn_read_chunk_as_mut_sliceX!(contiguous = $contiguous);
+            fn_read_chunk_commitX!();
             fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
         }
     };
@@ -1608,6 +1611,138 @@ macro_rules! struct_read_chunk {
     };
 }
 
+macro_rules! fn_write_chunk_uninit_commitX {
+    () => {
+        /// Makes the whole chunk available for reading.
+        ///
+        /// # Safety
+        ///
+        /// The caller must make sure that all elements have been initialized.
+        pub unsafe fn commit_all(self) {
+            let slots = self.len();
+            // SAFETY: Delegated to the caller.
+            unsafe { self.commit_unchecked(slots) };
+        }
+
+        /// Makes the first `n` slots of the chunk available for reading.
+        ///
+        /// # Panics
+        ///
+        /// Panics if `n` is greater than the number of slots in the chunk.
+        ///
+        /// # Safety
+        ///
+        /// The caller must make sure that the first `n` elements have been initialized.
+        pub unsafe fn commit(self, n: usize) {
+            assert!(n <= self.len(), "cannot commit more than chunk size");
+            // SAFETY: Delegated to the caller.
+            unsafe { self.commit_unchecked(n) };
+        }
+    };
+}
+
+macro_rules! fn_write_chunk_commitX {
+    () => {
+        /// Makes the whole chunk available for reading.
+        pub fn commit_all(mut self) {
+            // self.0 is always Some(chunk).
+            let chunk = self.0.take().unwrap();
+            // SAFETY: All slots have been initialized in From::from().
+            unsafe { chunk.commit_all() };
+            // `self` is dropped here, with `self.0` being set to `None`.
+        }
+
+        /// Makes the first `n` slots of the chunk available for reading.
+        ///
+        /// The rest of the chunk is dropped.
+        ///
+        /// # Panics
+        ///
+        /// Panics if `n` is greater than the number of slots in the chunk.
+        pub fn commit(mut self, n: usize) {
+            // self.0 is always Some(chunk).
+            let mut chunk = self.0.take().unwrap();
+            // SAFETY: All slots have been initialized in From::from().
+            unsafe {
+                // Slots at index `n` and higher are dropped ...
+                chunk.drop_suffix(n);
+                // ... everything below `n` is committed.
+                chunk.commit(n);
+            }
+            // `self` is dropped here, with `self.0` being set to `None`.
+        }
+    };
+}
+
+macro_rules! fn_read_chunk_commitX {
+    () => {
+        /// Drops all slots of the chunk, making the space available for writing again.
+        pub fn commit_all(self) {
+            let slots = self.len();
+            // SAFETY: self.len() initialized elements have been obtained in read_chunk().
+            unsafe { self.commit_unchecked(slots) };
+        }
+
+        /// Drops the first `n` slots of the chunk, making the space available for writing again.
+        ///
+        /// # Panics
+        ///
+        /// Panics if `n` is greater than the number of slots in the chunk.
+        ///
+        /// # Examples
+        ///
+        /// The following example shows that items are dropped when "committed"
+        /// (which is only relevant if `T` implements [`Drop`]).
+        ///
+        /// ```
+        /// // TODO: select correct module
+        /// use rtrb::RingBuffer;
+        ///
+        /// // Static variable to count all drop() invocations
+        /// static mut DROP_COUNT: i32 = 0;
+        /// #[derive(Debug)]
+        /// struct Thing;
+        /// impl Drop for Thing {
+        ///     fn drop(&mut self) { unsafe { DROP_COUNT += 1; } }
+        /// }
+        ///
+        /// // Scope to limit lifetime of ring buffer
+        /// {
+        ///     let (mut p, mut c) = RingBuffer::new(2);
+        ///
+        ///     assert!(p.push(Thing).is_ok()); // 1
+        ///     assert!(p.push(Thing).is_ok()); // 2
+        ///     if let Ok(thing) = c.pop() {
+        ///         // "thing" has been *moved* out of the queue but not yet dropped
+        ///         assert_eq!(unsafe { DROP_COUNT }, 0);
+        ///     } else {
+        ///         unreachable!();
+        ///     }
+        ///     // First Thing has been dropped when "thing" went out of scope:
+        ///     assert_eq!(unsafe { DROP_COUNT }, 1);
+        ///     assert!(p.push(Thing).is_ok()); // 3
+        ///
+        ///     if let Ok(chunk) = c.read_chunk(2) {
+        ///         assert_eq!(chunk.len(), 2);
+        ///         assert_eq!(unsafe { DROP_COUNT }, 1);
+        ///         chunk.commit(1); // Drops only one of the two Things
+        ///         assert_eq!(unsafe { DROP_COUNT }, 2);
+        ///     } else {
+        ///         unreachable!();
+        ///     }
+        ///     // The last Thing is still in the queue ...
+        ///     assert_eq!(unsafe { DROP_COUNT }, 2);
+        /// }
+        /// // ... and it is dropped when the ring buffer goes out of scope:
+        /// assert_eq!(unsafe { DROP_COUNT }, 3);
+        /// ```
+        pub fn commit(self, n: usize) {
+            assert!(n <= self.len(), "cannot commit more than chunk size");
+            // SAFETY: self.len() initialized elements have been obtained in read_chunk().
+            unsafe { self.commit_unchecked(n) };
+        }
+    };
+}
 macro_rules! impl_chunks_common {
     (N = ($($N:ident)?)) => {
         /// It (as well as [`WriteChunk`]) can be moved ...
@@ -1624,35 +1759,5 @@ macro_rules! impl_chunks_common {
         // SAFETY: WriteChunkUninit only exists while a unique reference to the producer is held.
         // It is therefore safe to move it to another thread.
         unsafe impl<T: Send$(, const $N: usize)?> Send for WriteChunkUninit<'_, T$(, $N)?> {}
-
-        impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
-            pub unsafe fn commit_all(self) {
-                let slots = self.len();
-                // SAFETY: Delegated to the caller.
-                unsafe { self.commit_unchecked(slots) };
-            }
-        }
-
-        impl<T$(, const $N: usize)?> WriteChunk<'_, T$(, $N)?>
-        where
-            T: Default,
-        {
-            pub fn commit_all(mut self) {
-                // self.0 is always Some(chunk).
-                let chunk = self.0.take().unwrap();
-                // SAFETY: All slots have been initialized in From::from().
-                unsafe { chunk.commit_all() };
-                // `self` is dropped here, with `self.0` being set to `None`.
-            }
-        }
-
-
-        impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
-            pub fn commit_all(self) {
-                let slots = self.len();
-                // SAFETY: self.len() initialized elements have been obtained in read_chunk().
-                unsafe { self.commit_unchecked(slots) };
-            }
-        }
     };
 }
