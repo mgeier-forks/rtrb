@@ -175,6 +175,8 @@ macro_rules! impl_everything_eventually {
     ) => {
         check_bip_contiguous!($bip, $contiguous);
 
+        use core::mem::MaybeUninit;
+
         // TODO: move definition here?
         #[allow(unused_imports)]
         use crate::diy::IS_ABANDONED;
@@ -216,6 +218,8 @@ macro_rules! impl_everything_eventually {
             fn_pc_capacity!();
             fn_consumer_next_head!(bip = $bip);
         }
+
+        def_write_chunk_uninit!(contiguous = $contiguous, Producer<$($a, )?T$(, $N)?>, N = ($($N)?));
 
         impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
             fn_write_chunk_uninit_as_mut_sliceX!(contiguous = $contiguous);
@@ -1469,21 +1473,54 @@ macro_rules! fn_X_chunk_X_len_and_is_empty {
     };
 }
 
-macro_rules! impl_chunks_non_contiguous {
-    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
-        use core::mem::MaybeUninit;
+macro_rules! def_write_chunk_uninit {
+    (contiguous = yes , $producer:ty, N = ($($N:ident)?)) => {
+        // TODO: implement manually:
+        //#[derive(Debug, PartialEq, Eq)]
+        pub struct WriteChunkUninit<'a, T$(, const $N: usize)?> {
+            ptr: *mut T,
+            len: usize,
+            producer: &'a $producer,
+        }
 
+        impl<'a, T$(, const $N: usize)?> WriteChunkUninit<'a, T$(, $N)?> {
+            unsafe fn new(producer: &'a $producer, n: usize, offset: usize) -> Self {
+                Self {
+                    // SAFETY: Caller must guarantee that `offset` is valid.
+                    ptr: unsafe { producer.buffer.data_ptr().add(offset) },
+                    len: n,
+                    producer,
+                }
+            }
+        }
+
+        impl<'a, T$(, const $N: usize)?> From<WriteChunkUninit<'a, T$(, $N)?>> for WriteChunk<'a, T$(, $N)?>
+        where
+            T: Default,
+        {
+            /// Fills all slots with the [`Default`] value.
+            fn from(chunk: WriteChunkUninit<'a, T$(, $N)?>) -> Self {
+                for i in 0..chunk.len {
+                    // SAFETY: i is in a valid range.
+                    unsafe { chunk.ptr.add(i).write(Default::default()) };
+                }
+                WriteChunk(Some(chunk))
+            }
+        }
+    };
+    (contiguous = no , $producer:ty, N = ($($N:ident)?)) => {
+        // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
         pub struct WriteChunkUninit<'a, T$(, const $N: usize)?> {
             first_ptr: *mut T,
             first_len: usize,
             second_ptr: *mut T,
             second_len: usize,
-            producer: &'a Producer<$($a, )?T$(, $N)?>,
+            producer: &'a $producer,
         }
 
         impl<'a, T$(, const $N: usize)?> WriteChunkUninit<'a, T$(, $N)?> {
-            unsafe fn new(producer: &'a Producer<'a, T$(, $N)?>, n: usize, offset: usize) -> Self {
+            unsafe fn new(producer: &'a $producer, n: usize, offset: usize) -> Self {
                 let first_len = n.min(producer.buffer.capacity() - offset);
                 Self {
                     // SAFETY: Caller must guarantee that `offset` is valid.
@@ -1513,7 +1550,11 @@ macro_rules! impl_chunks_non_contiguous {
                 WriteChunk(Some(chunk))
             }
         }
+    };
+}
 
+macro_rules! impl_chunks_non_contiguous {
+    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
         impl<T$(, const $N: usize)?> WriteChunk<'_, T$(, $N)?>
         where
             T: Default,
@@ -1543,39 +1584,6 @@ macro_rules! impl_chunks_non_contiguous {
 // bip and vrb
 macro_rules! impl_chunks_contiguous {
     ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
-        use core::mem::MaybeUninit;
-
-        //#[derive(Debug, PartialEq, Eq)]
-        pub struct WriteChunkUninit<'a, T$(, const $N: usize)?> {
-            ptr: *mut T,
-            len: usize,
-            producer: &'a Producer<$($a, )?T$(, $N)?>,
-        }
-
-        impl<'a, T$(, const $N: usize)?> WriteChunkUninit<'a, T$(, $N)?> {
-            unsafe fn new(producer: &'a Producer<$($a, )?T$(, $N)?>, n: usize, offset: usize) -> Self {
-                Self {
-                    // SAFETY: Caller must guarantee that `offset` is valid.
-                    ptr: unsafe { producer.buffer.data_ptr().add(offset) },
-                    len: n,
-                    producer,
-                }
-            }
-        }
-
-        impl<'a, T$(, const $N: usize)?> From<WriteChunkUninit<'a, T$(, $N)?>> for WriteChunk<'a, T$(, $N)?>
-        where
-            T: Default,
-        {
-            /// Fills all slots with the [`Default`] value.
-            fn from(chunk: WriteChunkUninit<'a, T$(, $N)?>) -> Self {
-                for i in 0..chunk.len {
-                    // SAFETY: i is in a valid range.
-                    unsafe { chunk.ptr.add(i).write(Default::default()) };
-                }
-                WriteChunk(Some(chunk))
-            }
-        }
 
         impl<T$(, const $N: usize)?> WriteChunk<'_, T$(, $N)?>
         where
