@@ -223,6 +223,8 @@ macro_rules! impl_everything_eventually {
         struct_write_chunk!(N = ($($N)?));
         struct_read_chunk!(contiguous = $contiguous, Consumer<$($a, )?T$(, $N)?>, N = ($($N)?));
 
+        impl_send_for_write_chunk_uninited!(N = ($($N)?));
+
         impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
             fn_write_chunk_uninit_as_mut_sliceX!(contiguous = $contiguous);
             fn_write_chunk_uninit_commitX!();
@@ -1743,7 +1745,8 @@ macro_rules! fn_read_chunk_commitX {
         }
     };
 }
-macro_rules! impl_chunks_common {
+
+macro_rules! impl_send_for_write_chunk_uninited {
     (N = ($($N:ident)?)) => {
         /// It (as well as [`WriteChunk`]) can be moved ...
         /// ```

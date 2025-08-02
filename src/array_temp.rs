@@ -30,7 +30,3 @@ impl_chunks_mop! {
     'a = ('a),
     N = (N)
 }
-
-impl_chunks_common! {
-    N = (N)
-}
