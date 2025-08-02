@@ -28,11 +28,6 @@ def_producer_consumer_ref! {
 
 // "chunks" stuff.
 
-impl_chunks_non_bip! {
-    'a = ('a),
-    N = (N)
-}
-
 impl_chunks_mop! {
     'a = ('a),
     N = (N)

@@ -212,17 +212,14 @@ macro_rules! impl_everything_eventually {
             fn_write_chunk_uninit_as_mut_sliceX!(contiguous = $contiguous);
             fn_write_chunk_uninit_drop_suffix!(contiguous = $contiguous);
             fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
+            fn_write_chunk_uninit_commit_unchecked!(bip = $bip);
         }
     };
 }
 
 macro_rules! check_bip_contiguous {
-    (yes, no) => {
-        compile_error!("`bip = yes` requires `contiguous = yes`");
-    };
-    (no, yes) => {
-        compile_error!("`bip = no` requires `contiguous = no`");
-    };
+    (yes, no) => { compile_error!("`bip = yes` requires `contiguous = yes`"); };
+    (no, yes) => { /* This is used for "vrb". */ };
     (yes, yes) => {};
     (no, no) => {};
 }
@@ -983,51 +980,47 @@ macro_rules! impl_chunks_mop {
     }
 }
 
-// mop and vrb
-macro_rules! impl_chunks_non_bip {
-    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
-        impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
-            unsafe fn commit_unchecked(self, n: usize) -> usize {
-                let p = self.producer;
-                let tail = p.buffer.increment(p.cached_tail.get(), n);
-                p.buffer.tail.store(tail, Ordering::Release);
-                p.cached_tail.set(tail);
-                n
+macro_rules! fn_write_chunk_uninit_commit_unchecked {
+    (bip = yes) => {
+        unsafe fn commit_unchecked(self, n: usize) -> usize {
+            if n == 0 {
+                // NB: No slots will be skipped, both `tail` and `skip` remain unchanged.
+                // This is the same as if the function wasn't called at all.
+                return n;
             }
+            let b = &self.producer.buffer;
+            let mut tail = self.producer.cached_tail.get();
+            let collapsed_tail = b.collapse_position(tail);
+            if self.ptr == b.data_ptr() && collapsed_tail != 0 {
+                // NB: It is safe to store `skip` before `tail`, because the consumer
+                // will potentially only read between `head` and (the old) `tail`,
+                // without looking at `skip`.
+                // Storing `tail` before `skip` would be problematic, however, because
+                // the consumer would see new data at the beginning of the buffer,
+                // but wouldn't know that the end has to be skipped.
+                b.skip.store(collapsed_tail, Ordering::Release);
+                // TODO: make this a reusable function?
+                tail = b.increment(tail, b.capacity() - collapsed_tail);
+            }
+            tail = b.increment(tail, n);
+            b.tail.store(tail, Ordering::Release);
+            self.producer.cached_tail.set(tail);
+            n
         }
-    }
+    };
+    (bip = no) => {
+        unsafe fn commit_unchecked(self, n: usize) -> usize {
+            let p = self.producer;
+            let tail = p.buffer.increment(p.cached_tail.get(), n);
+            p.buffer.tail.store(tail, Ordering::Release);
+            p.cached_tail.set(tail);
+            n
+        }
+    };
 }
 
 macro_rules! impl_chunks_bip {
     ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
-        impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
-            unsafe fn commit_unchecked(self, n: usize) -> usize {
-                if n == 0 {
-                    // NB: No slots will be skipped, both `tail` and `skip` remain unchanged.
-                    // This is the same as if the function wasn't called at all.
-                    return n;
-                }
-                let b = &self.producer.buffer;
-                let mut tail = self.producer.cached_tail.get();
-                let collapsed_tail = b.collapse_position(tail);
-                if self.ptr == b.data_ptr() && collapsed_tail != 0 {
-                    // NB: It is safe to store `skip` before `tail`, because the consumer
-                    // will potentially only read between `head` and (the old) `tail`,
-                    // without looking at `skip`.
-                    // Storing `tail` before `skip` would be problematic, however, because
-                    // the consumer would see new data at the beginning of the buffer,
-                    // but wouldn't know that the end has to be skipped.
-                    b.skip.store(collapsed_tail, Ordering::Release);
-                    // TODO: make this a reusable function?
-                    tail = b.increment(tail, b.capacity() - collapsed_tail);
-                }
-                tail = b.increment(tail, n);
-                b.tail.store(tail, Ordering::Release);
-                self.producer.cached_tail.set(tail);
-                n
-            }
-        }
-
         // TODO: separate version for non-bip but contiguous (i.e. vrb)
         impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
             unsafe fn commit_unchecked(self, n: usize) -> usize {
