@@ -22,9 +22,9 @@ impl_everything_eventually! {
 }
 
 // TODO: bip option?
-def_producer_consumer_boxed! {}
+def_producer_consumer_arc! {}
 
-def_boxed_ring_buffer! {}
+def_arc_ring_buffer! {}
 
 impl_producer_consumer_bip! {
     'a = (),

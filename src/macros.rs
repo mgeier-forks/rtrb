@@ -30,7 +30,7 @@ macro_rules! storage_vec {
             #[allow(clippy::new_ret_no_self)]
             pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
                 let capacity = Self::update_capacity(capacity);
-                BoxedRingBuffer::new(Self {
+                ArcRingBuffer::new(Self {
                     head: init_padded!($padded, AtomicUsize::new(0)),
                     tail: init_padded!($padded, AtomicUsize::new(0)),
                     skip: init_only_bip!($bip, init_padded!($padded, AtomicUsize::new(capacity))),
@@ -351,14 +351,14 @@ macro_rules! fn_ring_buffer_distance {
     };
 }
 
-macro_rules! def_producer_consumer_boxed {
+macro_rules! def_producer_consumer_arc {
     () => {
         use core::cell::Cell;
 
         // TODO: manual impls:
         //#[derive(Debug, PartialEq, Eq)]
         pub struct Producer<T> {
-            buffer: BoxedRingBuffer<T>,
+            buffer: ArcRingBuffer<T>,
             cached_head: Cell<usize>,
             cached_tail: Cell<usize>,
         }
@@ -366,27 +366,27 @@ macro_rules! def_producer_consumer_boxed {
         // TODO: manual impls:
         //#[derive(Debug, PartialEq, Eq)]
         pub struct Consumer<T> {
-            buffer: BoxedRingBuffer<T>,
+            buffer: ArcRingBuffer<T>,
             cached_head: Cell<usize>,
             cached_tail: Cell<usize>,
         }
     };
 }
 
-macro_rules! def_boxed_ring_buffer {
+macro_rules! def_arc_ring_buffer {
     () => {
         use alloc::boxed::Box;
         use core::ptr::NonNull;
 
         /// Non-public helper type.
         //#[derive(Debug, PartialEq, Eq)]
-        struct BoxedRingBuffer<T> {
+        struct ArcRingBuffer<T> {
             ptr: NonNull<RingBuffer<T>>,
         }
 
-        unsafe impl<T: Send> Send for BoxedRingBuffer<T> {}
+        unsafe impl<T: Send> Send for ArcRingBuffer<T> {}
 
-        impl<T> BoxedRingBuffer<T> {
+        impl<T> ArcRingBuffer<T> {
             #[allow(clippy::new_ret_no_self)]
             fn new(rb: RingBuffer<T>) -> (Producer<T>, Consumer<T>) {
                 debug_assert_eq!(rb.flags.load(Ordering::Relaxed) & IS_ABANDONED, 0);
@@ -409,7 +409,7 @@ macro_rules! def_boxed_ring_buffer {
             }
         }
 
-        impl<T> Drop for BoxedRingBuffer<T> {
+        impl<T> Drop for ArcRingBuffer<T> {
             fn drop(&mut self) {
                 // SAFETY: must point to initialized Storage.
                 let flags: &AtomicU8 = unsafe { &self.ptr.as_ref().flags };
@@ -452,7 +452,7 @@ macro_rules! def_boxed_ring_buffer {
             }
         }
 
-        impl<T> core::ops::Deref for BoxedRingBuffer<T> {
+        impl<T> core::ops::Deref for ArcRingBuffer<T> {
             type Target = RingBuffer<T>;
 
             fn deref(&self) -> &Self::Target {
