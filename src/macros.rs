@@ -175,6 +175,9 @@ macro_rules! impl_everything_eventually {
     ) => {
         check_bip_contiguous!($bip, $contiguous);
 
+        // TODO: move error type to top level?
+        use crate::chunks::ChunkError;
+
         // SAFETY: RingBuffer is only mutated via Producer/Consumer (which are !Sync),
         // all other access can be shared.
         unsafe impl<T: Send$(, const $N: usize)?> Sync for RingBuffer<T$(, $N)?> {}
@@ -194,6 +197,7 @@ macro_rules! impl_everything_eventually {
 
         impl<$($a, )?T$(, const $N: usize)?> Producer<$($a, )?T$(, $N)?> {
             fn_producer_push!();
+            fn_producer_write_chunk_uninit!(bip = $bip, N = ($($N)?));
             fn_producer_slots!();
             fn_producer_is_full!();
             fn_pc_capacity!();
@@ -218,8 +222,12 @@ macro_rules! impl_everything_eventually {
 }
 
 macro_rules! check_bip_contiguous {
-    (yes, no) => { compile_error!("`bip = yes` requires `contiguous = yes`"); };
-    (no, yes) => { /* This is used for "vrb". */ };
+    (yes, no) => {
+        compile_error!("`bip = yes` requires `contiguous = yes`");
+    };
+    (no, yes) => {
+        // This is used for "vrb".
+    };
     (yes, yes) => {};
     (no, no) => {};
 }
@@ -1019,6 +1027,105 @@ macro_rules! fn_write_chunk_uninit_commit_unchecked {
     };
 }
 
+macro_rules! fn_producer_write_chunk_uninit {
+    (bip = yes, N = ($($N:ident)?)) => {
+        pub fn write_chunk_uninit(
+            &mut self,
+            n: usize,
+        ) -> Result<WriteChunkUninit<'_, T$(, $N)?>, ChunkError> {
+            let mut head = self.cached_head.get();
+            let tail = self.cached_tail.get();
+            let b = &self.buffer;
+            // TODO: check if everything is compatible with power-of-2 addressing.
+            let mut slots = 0;
+            let mut head_has_been_refreshed = false;
+            // Collapsing the indices makes it impossible to distinguish empty and full,
+            // so we check for emptiness before collapsing.
+            let is_empty = head == tail;
+            let mut collapsed_head = b.collapse_position(head);
+            let collapsed_tail = b.collapse_position(tail);
+            if !is_empty && collapsed_tail <= collapsed_head {
+                // Is there enough space between `tail` and `head`?
+                slots = collapsed_head - collapsed_tail;
+                if slots < n {
+                    // Refresh head ...
+                    head = b.head.load(Ordering::Acquire);
+                    self.cached_head.set(head);
+                    collapsed_head = b.collapse_position(head);
+                    head_has_been_refreshed = true;
+                    // ... and try again.
+                    let is_empty = head == tail;
+                    if !is_empty && collapsed_tail <= collapsed_head {
+                        // `head` did not wrap around.
+                        slots = collapsed_head - collapsed_tail;
+                        if slots < n {
+                            return Err(ChunkError::TooFewSlots(slots));
+                        }
+                    } else {
+                        // `head` did wrap around, we'll continue below.
+                    }
+                }
+            } else {
+                // No need to refresh `head`, it cannot overtake `tail`.
+            }
+            let offset;
+            if slots < n {
+                // Is there enough space at the end of the buffer?
+                slots = b.capacity() - collapsed_tail;
+                if slots < n {
+                    // Nope, let's check the beginning.
+
+                    // TODO: interaction/reuse with slots() et al.?
+
+                    slots = slots.max(collapsed_head);
+                    if slots < n {
+                        // TODO: check if this early return/local variable is an actual optimization?
+                        if head_has_been_refreshed {
+                            return Err(ChunkError::TooFewSlots(slots));
+                        }
+                        head = b.head.load(Ordering::Acquire);
+                        self.cached_head.set(head);
+                        collapsed_head = b.collapse_position(head);
+                        slots = slots.max(collapsed_head);
+                        if slots < n {
+                            return Err(ChunkError::TooFewSlots(slots));
+                        }
+                    }
+                    // NB: `tail` will be (conditionally) reset in `commit_unchecked()`.
+                    offset = 0;
+                } else {
+                    offset = collapsed_tail;
+                }
+            } else {
+                offset = collapsed_tail;
+            }
+            // SAFETY: `offset` has been set to a valid position.
+            Ok(unsafe { WriteChunkUninit::new(self, n, offset) })
+        }
+    };
+    (bip = no, N = ($($N:ident)?)) => {
+        pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T$(, $N)?>, ChunkError> {
+            let head = self.cached_head.get();
+            let tail = self.cached_tail.get();
+            let b = &self.buffer;
+            // Check if the queue has *possibly* not enough slots.
+            if b.capacity() - b.distance(head, tail) < n {
+                // Refresh the head ...
+                let head = b.head.load(Ordering::Acquire);
+                self.cached_head.set(head);
+                // ... and check if there *really* are not enough slots.
+                let slots = b.capacity() - b.distance(head, tail);
+                if slots < n {
+                    return Err(ChunkError::TooFewSlots(slots));
+                }
+            }
+            let offset = b.collapse_position(tail);
+            // SAFETY: `offset` has been set to a valid position.
+            Ok(unsafe { WriteChunkUninit::new(self, n, offset) })
+        }
+    };
+}
+
 macro_rules! impl_chunks_bip {
     ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
         // TODO: separate version for non-bip but contiguous (i.e. vrb)
@@ -1042,84 +1149,6 @@ macro_rules! impl_chunks_bip {
                 T: Default,
             {
                 self.write_chunk_uninit(n).map(WriteChunk::from)
-            }
-
-            pub fn write_chunk_uninit(
-                &mut self,
-                n: usize,
-            ) -> Result<WriteChunkUninit<'_, T$(, $N)?>, ChunkError> {
-                let mut head = self.cached_head.get();
-                let tail = self.cached_tail.get();
-                let b = &self.buffer;
-                // TODO: check if everything is compatible with power-of-2 addressing.
-                let mut slots = 0;
-                let mut head_has_been_refreshed = false;
-                // Collapsing the indices makes it impossible to distinguish empty and full,
-                // so we check for emptiness before collapsing.
-                let is_empty = head == tail;
-                let mut collapsed_head = b.collapse_position(head);
-                let collapsed_tail = b.collapse_position(tail);
-                if !is_empty && collapsed_tail <= collapsed_head {
-                    // Is there enough space between `tail` and `head`?
-                    slots = collapsed_head - collapsed_tail;
-                    if slots < n {
-                        // Refresh head ...
-                        head = b.head.load(Ordering::Acquire);
-                        self.cached_head.set(head);
-                        collapsed_head = b.collapse_position(head);
-                        head_has_been_refreshed = true;
-                        // ... and try again.
-                        let is_empty = head == tail;
-                        if !is_empty && collapsed_tail <= collapsed_head {
-                            // `head` did not wrap around.
-                            slots = collapsed_head - collapsed_tail;
-                            if slots < n {
-                                return Err(ChunkError::TooFewSlots(slots));
-                            }
-                        } else {
-                            // `head` did wrap around, we'll continue below.
-                        }
-                    }
-                } else {
-                    // No need to refresh `head`, it cannot overtake `tail`.
-                }
-                let offset;
-                if slots < n {
-                    // Is there enough space at the end of the buffer?
-                    slots = b.capacity() - collapsed_tail;
-                    if slots < n {
-                        // Nope, let's check the beginning.
-
-                        // TODO: interaction/reuse with slots() et al.?
-
-                        slots = slots.max(collapsed_head);
-                        if slots < n {
-                            // TODO: check if this early return/local variable is an actual optimization?
-                            if head_has_been_refreshed {
-                                return Err(ChunkError::TooFewSlots(slots));
-                            }
-                            head = b.head.load(Ordering::Acquire);
-                            self.cached_head.set(head);
-                            collapsed_head = b.collapse_position(head);
-                            slots = slots.max(collapsed_head);
-                            if slots < n {
-                                return Err(ChunkError::TooFewSlots(slots));
-                            }
-                        }
-                        // NB: `tail` will be (conditionally) reset in `commit_unchecked()`.
-                        offset = 0;
-                    } else {
-                        offset = collapsed_tail;
-                    }
-                } else {
-                    offset = collapsed_tail;
-                }
-                Ok(WriteChunkUninit {
-                    // SAFETY: `offset` has been set to a valid position.
-                    ptr: unsafe { b.data_ptr().add(offset) },
-                    len: n,
-                    producer: self,
-                })
             }
         }
 
@@ -1451,6 +1480,20 @@ macro_rules! impl_chunks_non_contiguous {
             producer: &'a Producer<$($a, )?T$(, $N)?>,
         }
 
+        impl<'a, T$(, const $N: usize)?> WriteChunkUninit<'a, T$(, $N)?> {
+            unsafe fn new(producer: &'a Producer<'a, T$(, $N)?>, n: usize, offset: usize) -> Self {
+                let first_len = n.min(producer.buffer.capacity() - offset);
+                Self {
+                    // SAFETY: Caller must guarantee that `offset` is valid.
+                    first_ptr: unsafe { producer.buffer.data_ptr().add(offset) },
+                    first_len,
+                    second_ptr: producer.buffer.data_ptr(),
+                    second_len: n - first_len,
+                    producer,
+                }
+            }
+        }
+
         impl<'a, T$(, const $N: usize)?> From<WriteChunkUninit<'a, T$(, $N)?>> for WriteChunk<'a, T$(, $N)?>
         where
             T: Default,
@@ -1505,6 +1548,17 @@ macro_rules! impl_chunks_contiguous {
             ptr: *mut T,
             len: usize,
             producer: &'a Producer<$($a, )?T$(, $N)?>,
+        }
+
+        impl<'a, T$(, const $N: usize)?> WriteChunkUninit<'a, T$(, $N)?> {
+            unsafe fn new(producer: &'a Producer<$($a, )?T$(, $N)?>, n: usize, offset: usize) -> Self {
+                Self {
+                    // SAFETY: Caller must guarantee that `offset` is valid.
+                    ptr: unsafe { producer.buffer.data_ptr().add(offset) },
+                    len: n,
+                    producer,
+                }
+            }
         }
 
         impl<'a, T$(, const $N: usize)?> From<WriteChunkUninit<'a, T$(, $N)?>> for WriteChunk<'a, T$(, $N)?>

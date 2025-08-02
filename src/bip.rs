@@ -27,7 +27,7 @@
 //! Implementations in other languages:
 //! <https://github.com/willemt/bipbuffer> (C)
 
-use crate::{chunks::ChunkError, diy::IS_ABANDONED, PeekError, PopError, PushError};
+use crate::{diy::IS_ABANDONED, PeekError, PopError, PushError};
 
 storage_vec! {
     padded = yes,
