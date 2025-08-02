@@ -43,6 +43,7 @@ TODO: some more docs, maybe links? [`RingBuffer::new()`].
 
 impl_everything_eventually! {
     bip = yes,
+    contiguous = yes,
     pow2 = no,
     'a = (),
     N = ()
@@ -82,11 +83,6 @@ impl<T> Producer<T> {
     pub fn slots_two(&self) -> usize {
         todo!()
     }
-    // TODO: disable public is_full for bip?
-    // not useful for contiguous chunks!?!
-    pub fn is_full(&self) -> bool {
-        todo!()
-    }
     pub fn is_abandoned(&self) -> bool {
         todo!()
     }
@@ -97,10 +93,6 @@ impl<T> Consumer<T> {
         todo!()
     }
 
-    // TODO: disable public is_empty for bip?
-    pub fn is_empty(&self) -> bool {
-        todo!()
-    }
     pub fn is_abandoned(&self) -> bool {
         todo!()
     }

@@ -168,10 +168,13 @@ macro_rules! init_padded {
 macro_rules! impl_everything_eventually {
     (
         bip = $bip:ident,
+        contiguous = $contiguous:ident,
         pow2 = $pow2:ident,
         'a = ($($a:lifetime)?),
         N = ($($N:ident)?)
     ) => {
+        check_bip_contiguous!($bip, $contiguous);
+
         // SAFETY: RingBuffer is only mutated via Producer/Consumer (which are !Sync),
         // all other access can be shared.
         unsafe impl<T: Send$(, const $N: usize)?> Sync for RingBuffer<T$(, $N)?> {}
@@ -204,7 +207,24 @@ macro_rules! impl_everything_eventually {
             fn_pc_capacity!();
             fn_consumer_next_head!(bip = $bip);
         }
+
+        impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
+            fn_write_chunk_uninit_as_mut_sliceX!(contiguous = $contiguous);
+            fn_write_chunk_uninit_drop_suffix!(contiguous = $contiguous);
+            fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
+        }
     };
+}
+
+macro_rules! check_bip_contiguous {
+    (yes, no) => {
+        compile_error!("`bip = yes` requires `contiguous = yes`");
+    };
+    (no, yes) => {
+        compile_error!("`bip = no` requires `contiguous = no`");
+    };
+    (yes, yes) => {};
+    (no, no) => {};
 }
 
 macro_rules! fn_ring_buffer_drop_all_elements {
@@ -786,6 +806,8 @@ assert_eq!(c.slots(), 0);
 }
 macro_rules! fn_consumer_slots {
     (bip = yes) => {
+        #[doc = fn_consumer_slots_docstring!()]
+        ///
         /// TODO: [`read_chunk()`](Consumer::read_chunk) might not provide the full number of free slots
         ///
         /// TODO: see alternative "slots" variations
@@ -808,9 +830,10 @@ macro_rules! fn_consumer_slots {
         }
     };
     (bip = no) => {
+        #[doc = fn_consumer_slots_docstring!()]
         pub fn slots(&self) -> usize {
             let b = &self.buffer;
-            let tail = b.indices().tail().load(Ordering::Acquire);
+            let tail = b.tail.load(Ordering::Acquire);
             self.cached_tail.set(tail);
             b.distance(self.cached_head.get(), tail)
         }
@@ -1204,7 +1227,8 @@ macro_rules! fn_write_chunk_uninit_as_mut_sliceX {
     (contiguous = yes) => {
         /// Returns a slice for writing to the requested slots.
         ///
-        /// The extension trait [`CopyToUninit`] can be used to safely copy data into this slice.
+        /// The extension trait [`CopyToUninit`](crate::CopyToUninit) can be used
+        /// to safely copy data into this slice.
         #[doc = fn_write_chunk_uninit_as_mut_sliceX_docstring!()]
         pub fn as_mut_slice(&mut self) -> &mut [MaybeUninit<T>] {
             // SAFETY: The pointer and length have been computed correctly in write_chunk_uninit().
@@ -1217,7 +1241,8 @@ macro_rules! fn_write_chunk_uninit_as_mut_sliceX {
         /// The first slice can only be empty if `0` slots have been requested.
         /// If the first slice contains all requested slots, the second one is empty.
         ///
-        /// The extension trait [`CopyToUninit`] can be used to safely copy data into those slices.
+        /// The extension trait [`CopyToUninit`](crate::CopyToUninit) can be used
+        /// to safely copy data into those slices.
         #[doc = fn_write_chunk_uninit_as_mut_sliceX_docstring!()]
         pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
             // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit().
@@ -1433,12 +1458,6 @@ macro_rules! impl_chunks_non_contiguous {
             producer: &'a Producer<$($a, )?T$(, $N)?>,
         }
 
-        impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
-            fn_write_chunk_uninit_as_mut_sliceX!(contiguous = no);
-            fn_write_chunk_uninit_drop_suffix!(contiguous = no);
-            fn_X_chunk_X_len_and_is_empty!(contiguous = no);
-        }
-
         impl<'a, T$(, const $N: usize)?> From<WriteChunkUninit<'a, T$(, $N)?>> for WriteChunk<'a, T$(, $N)?>
         where
             T: Default,
@@ -1493,12 +1512,6 @@ macro_rules! impl_chunks_contiguous {
             ptr: *mut T,
             len: usize,
             producer: &'a Producer<$($a, )?T$(, $N)?>,
-        }
-
-        impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
-            fn_write_chunk_uninit_as_mut_sliceX!(contiguous = yes);
-            fn_write_chunk_uninit_drop_suffix!(contiguous = yes);
-            fn_X_chunk_X_len_and_is_empty!(contiguous = yes);
         }
 
         impl<'a, T$(, const $N: usize)?> From<WriteChunkUninit<'a, T$(, $N)?>> for WriteChunk<'a, T$(, $N)?>

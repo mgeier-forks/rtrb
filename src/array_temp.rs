@@ -1,6 +1,6 @@
 //! TODO: move this to crate::array once macros are complete.
 
-use crate::{CopyToUninit, PopError, PushError};
+use crate::{PopError, PushError};
 
 storage_array! {
     padded = yes,
@@ -16,6 +16,7 @@ TODO: ...
 
 impl_everything_eventually! {
     bip = no,
+    contiguous = no,
     pow2 = no,
     'a = ('a),
     N = (N)
