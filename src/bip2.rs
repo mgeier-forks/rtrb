@@ -22,10 +22,3 @@ impl_everything_eventually! {
 }
 
 def_arc_ring_buffer! {}
-
-// "chunks" stuff.
-
-impl_chunks_bip! {
-    'a = (),
-    N = ()
-}

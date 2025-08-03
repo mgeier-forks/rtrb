@@ -22,10 +22,3 @@ impl_everything_eventually! {
     'a = ('a),
     N = (N)
 }
-
-// "chunks" stuff.
-
-impl_chunks_bip! {
-    'a = ('a),
-    N = (N)
-}

@@ -170,6 +170,15 @@ macro_rules! init_padded {
     };
 }
 
+macro_rules! choice {
+    (yes, $yes:expr, $no:expr) => {
+        $yes
+    };
+    (no, $yes:expr, $no:expr) => {
+        $no
+    };
+}
+
 // TODO: rename
 macro_rules! impl_everything_eventually {
     (
@@ -219,6 +228,7 @@ macro_rules! impl_everything_eventually {
         impl<$($a, )?T$(, const $N: usize)?> Producer<$($a, )?T$(, $N)?> {
             fn_producer_push!();
             fn_producer_write_chunk_uninit!(bip = $bip, WriteChunkUninit<'_, T$(, $N)?>);
+            fn_producer_write_chunk!(contiguous = $contiguous, WriteChunk<'_, T$(, $N)?>);
             fn_producer_slots!();
             fn_producer_is_full!();
             fn_pc_capacity!();
@@ -230,6 +240,7 @@ macro_rules! impl_everything_eventually {
         impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
             fn_consumer_pop!();
             fn_consumer_peek!();
+            fn_consumer_read_chunk!(bip = $bip, ReadChunk<'_, T$(, $N)?>);
             fn_consumer_slots!(bip = $bip);
             fn_consumer_is_empty!();
             fn_pc_capacity!();
@@ -265,6 +276,8 @@ macro_rules! impl_everything_eventually {
             fn_read_chunk_commit_all!();
             fn_read_chunk_commit!();
             fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
+
+            fn_read_chunk_uninit_commit_unchecked!(contiguous = $contiguous);
         }
     };
 }
@@ -1047,30 +1060,6 @@ macro_rules! fn_consumer_next_head {
     };
 }
 
-macro_rules! impl_chunks_mop {
-    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
-        impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
-            unsafe fn commit_unchecked(self, n: usize) -> usize {
-                let first_len = self.first_len.min(n);
-                for i in 0..first_len {
-                    // SAFETY: The caller must make sure that there are n initialized elements.
-                    unsafe { self.first_ptr.add(i).drop_in_place() };
-                }
-                let second_len = self.second_len.min(n - first_len);
-                for i in 0..second_len {
-                    // SAFETY: The caller must make sure that there are n initialized elements.
-                    unsafe { self.second_ptr.add(i).drop_in_place() };
-                }
-                let c = self.consumer;
-                let head = c.buffer.increment(c.cached_head.get(), n);
-                c.buffer.head.store(head, Ordering::Release);
-                c.cached_head.set(head);
-                n
-            }
-        }
-    }
-}
-
 macro_rules! fn_write_chunk_uninit_commit_unchecked {
     (bip = yes) => {
         unsafe fn commit_unchecked(self, n: usize) -> usize {
@@ -1105,6 +1094,41 @@ macro_rules! fn_write_chunk_uninit_commit_unchecked {
             let tail = p.buffer.increment(p.cached_tail.get(), n);
             p.buffer.tail.store(tail, Ordering::Release);
             p.cached_tail.set(tail);
+            n
+        }
+    };
+}
+
+macro_rules! fn_read_chunk_uninit_commit_unchecked {
+    (contiguous = yes) => {
+        unsafe fn commit_unchecked(self, n: usize) -> usize {
+            for i in 0..n {
+                // SAFETY: The caller must make sure that there are n initialized elements.
+                unsafe { self.ptr.add(i).drop_in_place() };
+            }
+            let b = &self.consumer.buffer;
+            let head = b.increment(self.consumer.cached_head.get(), n);
+            b.head.store(head, Ordering::Release);
+            self.consumer.cached_head.set(head);
+            n
+        }
+    };
+    (contiguous = no) => {
+        unsafe fn commit_unchecked(self, n: usize) -> usize {
+            let first_len = self.first_len.min(n);
+            for i in 0..first_len {
+                // SAFETY: The caller must make sure that there are n initialized elements.
+                unsafe { self.first_ptr.add(i).drop_in_place() };
+            }
+            let second_len = self.second_len.min(n - first_len);
+            for i in 0..second_len {
+                // SAFETY: The caller must make sure that there are n initialized elements.
+                unsafe { self.second_ptr.add(i).drop_in_place() };
+            }
+            let c = self.consumer;
+            let head = c.buffer.increment(c.cached_head.get(), n);
+            c.buffer.head.store(head, Ordering::Release);
+            c.cached_head.set(head);
             n
         }
     };
@@ -1206,107 +1230,122 @@ macro_rules! fn_producer_write_chunk_uninit {
     };
 }
 
-macro_rules! impl_chunks_bip {
-    ('a = ($($a:lifetime)?), N = ($($N:ident)?)) => {
-        // TODO: separate version for non-bip but contiguous (i.e. vrb)
-        impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
-            unsafe fn commit_unchecked(self, n: usize) -> usize {
-                for i in 0..n {
-                    // SAFETY: The caller must make sure that there are n initialized elements.
-                    unsafe { self.ptr.add(i).drop_in_place() };
-                }
-                let b = &self.consumer.buffer;
-                let head = b.increment(self.consumer.cached_head.get(), n);
-                b.head.store(head, Ordering::Release);
-                self.consumer.cached_head.set(head);
-                n
-            }
+macro_rules! fn_producer_write_chunk {
+    (contiguous = $contiguous:ident, $chunk:ty) => {
+        /// Returns `n` slots (initially containing their [`Default`] value) for writing.
+        ///
+        #[doc = choice!( $contiguous, "\
+        [`WriteChunk::as_mut_slice()`]", "\
+        [`WriteChunk::as_mut_slices()`]")]
+        /// provides mutable access to the slots.
+        /// After writing to those slots, they explicitly have to be made available
+        /// to be read by the [`Consumer`] by calling [`WriteChunk::commit()`]
+        /// or [`WriteChunk::commit_all()`].
+        ///
+        /// For an alternative that does not require the trait bound [`Default`],
+        /// see [`Producer::write_chunk_uninit()`].
+        ///
+        /// If items are supposed to be moved from an iterator into the ring buffer,
+        /// [`Producer::write_chunk_uninit()`] followed by [`WriteChunkUninit::fill_from_iter()`]
+        /// can be used.
+        ///
+        /// # Errors
+        ///
+        /// If not enough slots are available, an error
+        /// (containing the number of available slots) is returned.
+        /// Use [`Producer::slots()`] to obtain the number of available slots beforehand.
+        ///
+        /// TODO: mention different types of slots...() for bip?
+        ///
+        /// # Examples
+        ///
+        /// See the documentation of the [`chunks`](crate::chunks#examples) module.
+        pub fn write_chunk(&mut self, n: usize) -> Result<$chunk, ChunkError>
+        where
+            T: Default,
+        {
+            self.write_chunk_uninit(n).map(WriteChunk::from)
         }
+    };
+}
 
-        impl<$($a, )?T$(, const $N: usize)?> Producer<$($a, )?T$(, $N)?> {
-            pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T$(, $N)?>, ChunkError>
-            where
-                T: Default,
-            {
-                self.write_chunk_uninit(n).map(WriteChunk::from)
-            }
-        }
-
-        impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
-            pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T$(, $N)?>, ChunkError> {
-                let b = &self.buffer;
-                let mut head = self.cached_head.get();
-                let mut tail = self.cached_tail.get();
-                let mut slots = 0;
-                let mut tail_has_been_refreshed = false;
-                // Collapsing the indices makes it impossible to distinguish empty and full,
-                // so we check for emptiness before collapsing.
-                let is_empty = head == tail;
-                let mut collapsed_head = b.collapse_position(head);
-                let mut collapsed_tail = b.collapse_position(tail);
-                if is_empty || collapsed_head < collapsed_tail {
-                    slots = collapsed_tail - collapsed_head;
-                    if slots < n {
-                        // Refresh the tail ...
-                        tail = b.tail.load(Ordering::Acquire);
-                        tail_has_been_refreshed = true;
-                        self.cached_tail.set(tail);
-                        collapsed_tail = b.collapse_position(tail);
-                        // ... and check again.
-                        let is_empty = head == tail;
-                        if is_empty || collapsed_head < collapsed_tail {
-                            // `tail` did not wrap around.
-                            slots = collapsed_tail - collapsed_head;
-                            if slots < n {
-                                return Err(ChunkError::TooFewSlots(slots));
-                            }
-                        } else {
-                            // `tail` did wrap around, we'll continue below.
-                        }
-                    }
-                } else {
-                    // No need to refresh `tail`, it cannot overtake `head`.
-                }
+macro_rules! fn_consumer_read_chunk {
+    (bip = yes, $chunk:ty) => {
+        pub fn read_chunk(&mut self, n: usize) -> Result<$chunk, ChunkError> {
+            let b = &self.buffer;
+            let mut head = self.cached_head.get();
+            let mut tail = self.cached_tail.get();
+            let mut slots = 0;
+            let mut tail_has_been_refreshed = false;
+            // Collapsing the indices makes it impossible to distinguish empty and full,
+            // so we check for emptiness before collapsing.
+            let is_empty = head == tail;
+            let mut collapsed_head = b.collapse_position(head);
+            let mut collapsed_tail = b.collapse_position(tail);
+            if is_empty || collapsed_head < collapsed_tail {
+                slots = collapsed_tail - collapsed_head;
                 if slots < n {
-                    // NB: We are only allowed to use `skip` if (collapsed) `tail < head`
-                    //     (or if the buffer is full).
-                    let skip = b.skip.load(Ordering::Acquire);
-                    slots = skip - collapsed_head;
-                    if slots == 0 {
-                        // No more slots at the end of the buffer, let's wrap around.
-                        if skip != b.capacity() {
-                            b.skip.store(b.capacity(), Ordering::Release);
-                        }
-                        head = b.increment(head, b.capacity() - collapsed_head);
-                        // NB: `skip` is stored before `head`.
-                        b.head.store(head, Ordering::Release);
-                        self.cached_head.set(head);
-                        collapsed_head = b.collapse_position(head);
+                    // Refresh the tail ...
+                    tail = b.tail.load(Ordering::Acquire);
+                    tail_has_been_refreshed = true;
+                    self.cached_tail.set(tail);
+                    collapsed_tail = b.collapse_position(tail);
+                    // ... and check again.
+                    let is_empty = head == tail;
+                    if is_empty || collapsed_head < collapsed_tail {
+                        // `tail` did not wrap around.
                         slots = collapsed_tail - collapsed_head;
                         if slots < n {
-                            if tail_has_been_refreshed {
-                                return Err(ChunkError::TooFewSlots(slots));
-                            }
-                            tail = b.tail.load(Ordering::Acquire);
-                            self.cached_tail.set(tail);
-                            collapsed_tail = b.collapse_position(tail);
-                            slots = collapsed_tail - collapsed_head;
+                            return Err(ChunkError::TooFewSlots(slots));
                         }
-
-                    }
-                    if slots < n {
-                        return Err(ChunkError::TooFewSlots(slots));
+                    } else {
+                        // `tail` did wrap around, we'll continue below.
                     }
                 }
-                let offset = collapsed_head;
-                Ok(ReadChunk {
-                    // SAFETY: ...
-                    ptr: unsafe { b.data_ptr().add(offset) },
-                    len: n,
-                    consumer: self,
-                })
+            } else {
+                // No need to refresh `tail`, it cannot overtake `head`.
             }
+            if slots < n {
+                // NB: We are only allowed to use `skip` if (collapsed) `tail < head`
+                //     (or if the buffer is full).
+                let skip = b.skip.load(Ordering::Acquire);
+                slots = skip - collapsed_head;
+                if slots == 0 {
+                    // No more slots at the end of the buffer, let's wrap around.
+                    if skip != b.capacity() {
+                        b.skip.store(b.capacity(), Ordering::Release);
+                    }
+                    head = b.increment(head, b.capacity() - collapsed_head);
+                    // NB: `skip` is stored before `head`.
+                    b.head.store(head, Ordering::Release);
+                    self.cached_head.set(head);
+                    collapsed_head = b.collapse_position(head);
+                    slots = collapsed_tail - collapsed_head;
+                    if slots < n {
+                        if tail_has_been_refreshed {
+                            return Err(ChunkError::TooFewSlots(slots));
+                        }
+                        tail = b.tail.load(Ordering::Acquire);
+                        self.cached_tail.set(tail);
+                        collapsed_tail = b.collapse_position(tail);
+                        slots = collapsed_tail - collapsed_head;
+                    }
+                }
+                if slots < n {
+                    return Err(ChunkError::TooFewSlots(slots));
+                }
+            }
+            let offset = collapsed_head;
+            Ok(ReadChunk {
+                // SAFETY: ...
+                ptr: unsafe { b.data_ptr().add(offset) },
+                len: n,
+                consumer: self,
+            })
         }
+    };
+    (bip = no, $chunk:ty) => {
+        compile_error!("TODO");
     };
 }
 

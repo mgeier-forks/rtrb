@@ -84,10 +84,3 @@ impl<T> Producer<T> {
         todo!()
     }
 }
-
-// "chunks" stuff.
-
-impl_chunks_bip! {
-    'a = (),
-    N = ()
-}
