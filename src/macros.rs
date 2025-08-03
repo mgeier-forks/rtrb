@@ -585,7 +585,7 @@ macro_rules! fn_ring_buffer_consumer {
 
 macro_rules! struct_producer {
     (arc = yes, N = ($($N:ident)?)) => {
-        $(compile_error!(concat!("`N = (", stringify!($N), ")` is not supported with `arc = yes`")))?
+        $(compile_error!(concat!("`N = (", stringify!($N), ")` is not supported with `arc = yes`"));)?
 
         // TODO: manual impls:
         //#[derive(Debug, PartialEq, Eq)]
