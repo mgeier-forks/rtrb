@@ -244,6 +244,7 @@ macro_rules! impl_everything_eventually {
             fn_producer_write_chunk!(contiguous = $contiguous, WriteChunk<'_, T$(, $N)?>);
             // TODO: documentation specific to bip:
             fn_producer_slots!();
+            fn_producer_slots_contiguousX!(bip = $bip);
             fn_producer_is_full!();
             fn_pc_capacity!();
             fn_producer_next_tail!();
@@ -711,6 +712,57 @@ macro_rules! fn_producer_slots {
             b.capacity() - b.distance(head, self.cached_tail.get())
         }
     };
+}
+
+macro_rules! fn_producer_slots_contiguousX {
+    (bip = yes) => {
+        // TODO: inline?
+        fn slots_contiguous_something(&self) -> (usize, bool) {
+            // TODO: code reuse with write_chunk_uninit() and next_tail()
+            let b = &self.buffer;
+            let mut head = self.cached_head.get();
+            let tail = self.cached_tail.get();
+            let is_empty = head == tail;
+            let mut collapsed_head = b.collapse_position(head);
+            let collapsed_tail = b.collapse_position(tail);
+            if is_empty || collapsed_head < collapsed_tail {
+                let slots = b.capacity() - collapsed_tail;
+                debug_assert!(slots != 0 || b.capacity() == 0);
+                return (slots, false);
+            }
+            head = b.head.load(Ordering::Acquire);
+            self.cached_head.set(head);
+            collapsed_head = b.collapse_position(head);
+            (collapsed_head - collapsed_tail, true)
+        }
+
+        pub fn slots_without_skipping(&self) -> usize {
+            self.slots_contiguous_something().0
+        }
+
+        pub fn slots_contiguous_with_potential_followup(&self) -> (usize, usize) {
+            let (slots, refreshed) = self.slots_contiguous_something();
+            if refreshed {
+                return (slots, 0);
+            }
+            let b = &self.buffer;
+            let head = b.head.load(Ordering::Acquire);
+            self.cached_head.set(head);
+            let tail = self.cached_tail.get();
+            (slots, b.collapse_position(head) - b.collapse_position(tail))
+        }
+
+        /// The maximum number of slots that write_chunk() ... can provide.
+        ///
+        /// ... this can change at any time, up to ..., depending on ...
+        ///
+        /// ... using this value might lead to skipping ... use ... to avoid ...
+        pub fn slots_contiguous_max(&self) -> usize {
+            let (one, two) = self.slots_contiguous_with_potential_followup();
+            one.max(two)
+        }
+    };
+    (bip = no) => {};
 }
 
 macro_rules! fn_producer_is_full {
