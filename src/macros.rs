@@ -26,10 +26,12 @@ macro_rules! storage_vec_helper {
         // TODO: manually derive Debug
         //#[derive(Debug)]
         pub struct RingBuffer<T> {
-            head: def_padded!($padded, AtomicUsize),
-            tail: def_padded!($padded, AtomicUsize),
-            // TODO: measure whether CachePadded helps
-            $($skip: def_padded!($padded, AtomicUsize),)?
+            head: choice_ty!($padded, CachePadded<AtomicUsize>, AtomicUsize),
+            tail: choice_ty!($padded, CachePadded<AtomicUsize>, AtomicUsize),
+            $(
+                // TODO: measure whether CachePadded helps
+                $skip: choice_ty!($padded, CachePadded<AtomicUsize>, AtomicUsize),
+            )?
             flags: AtomicU8,
             data_ptr: *mut T,
             capacity: usize,
@@ -43,9 +45,17 @@ macro_rules! storage_vec_helper {
             pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
                 let capacity = Self::update_capacity(capacity);
                 ArcRingBuffer::new(Self {
-                    head: init_padded!($padded, AtomicUsize::new(0)),
-                    tail: init_padded!($padded, AtomicUsize::new(0)),
-                    $($skip: init_padded!($padded, AtomicUsize::new(capacity)),)?
+                    head: choice!($padded,
+                        CachePadded::new(AtomicUsize::new(0)),
+                        AtomicUsize::new(0)),
+                    tail: choice!($padded,
+                        CachePadded::new(AtomicUsize::new(0)),
+                        AtomicUsize::new(0)),
+                    $(
+                        $skip: choice!($padded,
+                            CachePadded::new(AtomicUsize::new(capacity)),
+                            AtomicUsize::new(capacity)),
+                    )?
                     flags: AtomicU8::new(0),
                     data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
                     capacity,
@@ -94,10 +104,12 @@ macro_rules! storage_array_helper {
         // TODO: manually derive Debug
         //#[derive(Debug)]
         pub struct RingBuffer<T, const N: usize> {
-            head: def_padded!($padded, AtomicUsize),
-            tail: def_padded!($padded, AtomicUsize),
-            // TODO: measure whether CachePadded helps
-            $($skip: def_padded!($padded, AtomicUsize),)?
+            head: choice_ty!($padded, CachePadded<AtomicUsize>, AtomicUsize),
+            tail: choice_ty!($padded, CachePadded<AtomicUsize>, AtomicUsize),
+            $(
+                // TODO: measure whether CachePadded helps
+                $skip: choice_ty!($padded, CachePadded<AtomicUsize>, AtomicUsize),
+            )?
             flags: AtomicU8,
             /// The static array holding slots.
             ///
@@ -119,9 +131,17 @@ macro_rules! storage_array_helper {
                     );
                 }
                 Self {
-                    head: init_padded!($padded, AtomicUsize::new(0)),
-                    tail: init_padded!($padded, AtomicUsize::new(0)),
-                    $($skip: init_padded!($padded, AtomicUsize::new(N)),)?
+                    head: choice!($padded,
+                        CachePadded::new(AtomicUsize::new(0)),
+                        AtomicUsize::new(0)),
+                    tail: choice!($padded,
+                        CachePadded::new(AtomicUsize::new(0)),
+                        AtomicUsize::new(0)),
+                    $(
+                        $skip: choice!($padded,
+                            CachePadded::new(AtomicUsize::new(N)),
+                            AtomicUsize::new(N)),
+                    )?
                     flags: AtomicU8::new(0),
                     slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
                 }
@@ -152,29 +172,20 @@ macro_rules! storage_array_helper {
     };
 }
 
-macro_rules! def_padded {
-    (yes, $ty:ty) => {
-        CachePadded<$ty>
-    };
-    (no, $ty:ty) => {
-        $ty
-    };
-}
-
-macro_rules! init_padded {
-    (yes, $init:expr) => {
-        CachePadded::new($init)
-    };
-    (no, $init:expr) => {
-        $init
-    };
-}
-
 macro_rules! choice {
     (yes, $yes:expr, $no:expr) => {
         $yes
     };
     (no, $yes:expr, $no:expr) => {
+        $no
+    };
+}
+
+macro_rules! choice_ty {
+    (yes, $yes:ty, $no:ty) => {
+        $yes
+    };
+    (no, $yes:ty, $no:ty) => {
         $no
     };
 }
