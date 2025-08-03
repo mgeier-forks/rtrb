@@ -1336,16 +1336,30 @@ macro_rules! fn_consumer_read_chunk {
                 }
             }
             let offset = collapsed_head;
-            Ok(ReadChunk {
-                // SAFETY: ...
-                ptr: unsafe { b.data_ptr().add(offset) },
-                len: n,
-                consumer: self,
-            })
+            // SAFETY: `offset` has been set to a valid position.
+            Ok(unsafe { ReadChunk::new(self, n, offset) })
         }
     };
     (bip = no, $chunk:ty) => {
-        compile_error!("TODO");
+        pub fn read_chunk(&mut self, n: usize) -> Result<$chunk, ChunkError> {
+            let head = self.cached_head.get();
+            let tail = self.cached_tail.get();
+            let b = &self.buffer;
+            // Check if the queue has *possibly* not enough slots.
+            if b.distance(head, tail) < n {
+                // Refresh the tail ...
+                let tail = b.tail.load(Ordering::Acquire);
+                self.cached_tail.set(tail);
+                // ... and check if there *really* are not enough slots.
+                let slots = b.distance(head, tail);
+                if slots < n {
+                    return Err(ChunkError::TooFewSlots(slots));
+                }
+            }
+            let offset = b.collapse_position(head);
+            // SAFETY: `offset` has been set to a valid position.
+            Ok(unsafe { ReadChunk::new(self, n, offset) })
+        }
     };
 }
 
@@ -1705,13 +1719,24 @@ macro_rules! struct_write_chunk {
 }
 
 macro_rules! struct_read_chunk {
-    (contiguous = yes , $consumer:ty, N = ($($N:ident)?)) => {
+    (contiguous = yes, $consumer:ty, N = ($($N:ident)?)) => {
         // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
         pub struct ReadChunk<'a, T$(, const $N: usize)?> {
             ptr: *mut T,
             len: usize,
             consumer: &'a $consumer,
+        }
+
+        impl<'a, T$(, const $N: usize)?> ReadChunk<'a, T$(, $N)?> {
+            unsafe fn new(consumer: &'a $consumer, n: usize, offset: usize) -> Self {
+                Self {
+                    // SAFETY: Caller must guarantee that `offset` is valid.
+                    ptr: unsafe { consumer.buffer.data_ptr().add(offset) },
+                    len: n,
+                    consumer,
+                }
+            }
         }
     };
     (contiguous = no , $consumer:ty, N = ($($N:ident)?)) => {
@@ -1725,6 +1750,21 @@ macro_rules! struct_read_chunk {
             second_ptr: *mut T,
             second_len: usize,
             consumer: &'a $consumer,
+        }
+
+        impl<'a, T$(, const $N: usize)?> ReadChunk<'a, T$(, $N)?> {
+            unsafe fn new(consumer: &'a $consumer, n: usize, offset: usize) -> Self {
+                let b = &consumer.buffer;
+                let first_len = n.min(b.capacity() - offset);
+                Self {
+                    // SAFETY: Caller must guarantee that `offset` is valid.
+                    first_ptr: unsafe { b.data_ptr().add(offset) },
+                    first_len,
+                    second_ptr: b.data_ptr(),
+                    second_len: n - first_len,
+                    consumer,
+                }
+            }
         }
     };
 }
