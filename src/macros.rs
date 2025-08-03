@@ -173,6 +173,7 @@ macro_rules! init_padded {
 // TODO: rename
 macro_rules! impl_everything_eventually {
     (
+        arc = $arc:ident,
         bip = $bip:ident,
         contiguous = $contiguous:ident,
         pow2 = $pow2:ident,
@@ -181,11 +182,14 @@ macro_rules! impl_everything_eventually {
     ) => {
         check_bip_contiguous!($bip, $contiguous);
 
+        use core::cell::Cell;
         use core::mem::MaybeUninit;
 
         // TODO: move definition here?
         #[allow(unused_imports)]
         use crate::diy::IS_ABANDONED;
+        #[allow(unused_imports)]
+        use crate::diy::{HAS_CONSUMER, HAS_PRODUCER};
 
         // TODO: move error type to top level?
         use crate::chunks::ChunkError;
@@ -200,6 +204,8 @@ macro_rules! impl_everything_eventually {
                 // SAFETY: See docstring.
                 unsafe { self.data_ptr().add(self.collapse_position(pos)) }
             }
+            fn_ring_buffer_producer!(arc = $arc, Producer<T$(, $N)?>);
+            fn_ring_buffer_consumer!(arc = $arc, Consumer<T$(, $N)?>);
             fn_ring_buffer_drop_all_elements!(bip = $bip);
             fn_ring_buffer_update_capacity!(pow2 = $pow2);
             fn_ring_buffer_collapse_position!(pow2 = $pow2);
@@ -207,6 +213,8 @@ macro_rules! impl_everything_eventually {
             fn_ring_buffer_increment1!(pow2 = $pow2);
             fn_ring_buffer_distance!(pow2 = $pow2);
         }
+
+        struct_producer!(arc = $arc, N = ($($N)?));
 
         impl<$($a, )?T$(, const $N: usize)?> Producer<$($a, )?T$(, $N)?> {
             fn_producer_push!();
@@ -216,6 +224,8 @@ macro_rules! impl_everything_eventually {
             fn_pc_capacity!();
             fn_producer_next_tail!();
         }
+
+        struct_consumer!(arc = $arc, N = ($($N)?));
 
         impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
             fn_consumer_pop!();
@@ -409,28 +419,6 @@ macro_rules! fn_ring_buffer_distance {
     };
 }
 
-macro_rules! def_producer_consumer_arc {
-    () => {
-        use core::cell::Cell;
-
-        // TODO: manual impls:
-        //#[derive(Debug, PartialEq, Eq)]
-        pub struct Producer<T> {
-            buffer: ArcRingBuffer<T>,
-            cached_head: Cell<usize>,
-            cached_tail: Cell<usize>,
-        }
-
-        // TODO: manual impls:
-        //#[derive(Debug, PartialEq, Eq)]
-        pub struct Consumer<T> {
-            buffer: ArcRingBuffer<T>,
-            cached_head: Cell<usize>,
-            cached_tail: Cell<usize>,
-        }
-    };
-}
-
 macro_rules! def_arc_ring_buffer {
     () => {
         use alloc::boxed::Box;
@@ -522,10 +510,59 @@ macro_rules! def_arc_ring_buffer {
     };
 }
 
-macro_rules! def_producer_consumer_ref {
-    (N = ($($N:ident)?)) => {
-        use core::cell::Cell;
+macro_rules! fn_ring_buffer_producer {
+    (arc = yes, $producer:ty) => {};
+    (arc = no, $producer:ty) => {
+        pub fn producer(&self) -> Option<$producer> {
+            let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
+            if old_flags & HAS_PRODUCER == 0 {
+                let head = self.head.load(Ordering::Relaxed);
+                let tail = self.tail.load(Ordering::Relaxed);
+                Some(Producer {
+                    buffer: self,
+                    cached_head: Cell::new(head),
+                    cached_tail: Cell::new(tail),
+                })
+            } else {
+                None
+            }
+        }
+    };
+}
 
+macro_rules! fn_ring_buffer_consumer {
+    (arc = yes, $consumer:ty) => {};
+    (arc = no, $consumer:ty) => {
+        pub fn consumer(&self) -> Option<$consumer> {
+            let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
+            if old_flags & HAS_CONSUMER == 0 {
+                let head = self.head.load(Ordering::Relaxed);
+                let tail = self.tail.load(Ordering::Relaxed);
+                Some(Consumer {
+                    buffer: self,
+                    cached_head: Cell::new(head),
+                    cached_tail: Cell::new(tail),
+                })
+            } else {
+                None
+            }
+        }
+    };
+}
+
+macro_rules! struct_producer {
+    (arc = yes, N = ($($N:ident)?)) => {
+        $(compile_error!(concat!("`N = (", stringify!($N), ")` is not supported with `arc = yes`")))?
+
+        // TODO: manual impls:
+        //#[derive(Debug, PartialEq, Eq)]
+        pub struct Producer<T> {
+            buffer: ArcRingBuffer<T>,
+            cached_head: Cell<usize>,
+            cached_tail: Cell<usize>,
+        }
+    };
+    (arc = no, N = ($($N:ident)?)) => {
         // TODO: manual impls:
         //#[derive(Debug, PartialEq, Eq)]
         pub struct Producer<'a, T$(, const $N: usize)?> {
@@ -534,57 +571,32 @@ macro_rules! def_producer_consumer_ref {
             cached_tail: Cell<usize>,
         }
 
+        impl<T$(, const $N: usize)?> Drop for Producer<'_, T$(, $N)?>
+        {
+            fn drop(&mut self) {
+                let _ = self.buffer.flags.fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
+            }
+        }
+    };
+}
+
+macro_rules! struct_consumer {
+    (arc = yes, N = ($($N:ident)?)) => {
+        // TODO: manual impls:
+        //#[derive(Debug, PartialEq, Eq)]
+        pub struct Consumer<T> {
+            buffer: ArcRingBuffer<T>,
+            cached_head: Cell<usize>,
+            cached_tail: Cell<usize>,
+        }
+    };
+    (arc = no, N = ($($N:ident)?)) => {
         // TODO: manual impls:
         //#[derive(Debug, PartialEq, Eq)]
         pub struct Consumer<'a, T$(, const $N: usize)?> {
             buffer: &'a RingBuffer<T$(, $N)?>,
             cached_head: Cell<usize>,
             cached_tail: Cell<usize>,
-        }
-
-        use crate::diy::{HAS_CONSUMER, HAS_PRODUCER};
-
-        impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
-            pub fn producer(&self) -> Option<Producer<T$(, $N)?>> {
-                let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
-                if old_flags & HAS_PRODUCER == 0 {
-                    let head = self.head.load(Ordering::Relaxed);
-                    let tail = self.tail.load(Ordering::Relaxed);
-                    Some(
-                        Producer {
-                            buffer: self,
-                            cached_head: Cell::new(head),
-                            cached_tail: Cell::new(tail),
-                        }
-                    )
-                } else {
-                    None
-                }
-            }
-
-            pub fn consumer(&self) -> Option<Consumer<T$(, $N)?>> {
-                let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
-                if old_flags & HAS_CONSUMER == 0 {
-                    let head = self.head.load(Ordering::Relaxed);
-                    let tail = self.tail.load(Ordering::Relaxed);
-                    Some(
-                        Consumer{
-                            buffer: self,
-                            cached_head: Cell::new(head),
-                            cached_tail: Cell::new(tail),
-                        }
-                    )
-                } else {
-                    None
-                }
-            }
-        }
-
-        impl<T$(, const $N: usize)?> Drop for Producer<'_, T$(, $N)?>
-        {
-            fn drop(&mut self) {
-                let _ = self.buffer.flags.fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
-            }
         }
 
         impl<T$(, const $N: usize)?> Drop for Consumer<'_, T$(, $N)?>

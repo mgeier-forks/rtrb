@@ -15,14 +15,11 @@ TODO: some more docs, maybe links? [`RingBuffer::new()`].
 }
 
 impl_everything_eventually! {
+    arc = no,
     bip = yes,
     contiguous = yes,
     pow2 = no,
     'a = ('a),
-    N = (N)
-}
-
-def_producer_consumer_ref! {
     N = (N)
 }
 

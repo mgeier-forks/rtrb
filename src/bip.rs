@@ -40,14 +40,13 @@ TODO: some more docs, maybe links? [`RingBuffer::new()`].
 }
 
 impl_everything_eventually! {
+    arc = yes,
     bip = yes,
     contiguous = yes,
     pow2 = no,
     'a = (),
     N = ()
 }
-
-def_producer_consumer_arc! {}
 
 def_arc_ring_buffer! {}
 
