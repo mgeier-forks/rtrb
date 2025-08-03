@@ -244,21 +244,26 @@ macro_rules! impl_everything_eventually {
 
         impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
             fn_write_chunk_uninit_as_mut_sliceX!(contiguous = $contiguous);
-            fn_write_chunk_uninit_commitX!();
-            fn_write_chunk_uninit_drop_suffix!(contiguous = $contiguous);
+            fn_write_chunk_uninit_commit_all!();
+            fn_write_chunk_uninit_commit!();
             fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
+
+            fn_write_chunk_uninit_drop_suffix!(contiguous = $contiguous);
             fn_write_chunk_uninit_commit_unchecked!(bip = $bip);
         }
 
         impl<T$(, const $N: usize)?> WriteChunk<'_, T$(, $N)?> {
             fn_write_chunk_as_mut_sliceX!(contiguous = $contiguous);
-            fn_write_chunk_commitX!();
+            fn_write_chunk_commit_all!();
+            fn_write_chunk_commit!();
+            fn_write_chunk_len_and_is_empty!();
         }
 
         impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
             fn_read_chunk_as_sliceX!(contiguous = $contiguous);
             fn_read_chunk_as_mut_sliceX!(contiguous = $contiguous);
-            fn_read_chunk_commitX!();
+            fn_read_chunk_commit_all!();
+            fn_read_chunk_commit!();
             fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
         }
     };
@@ -1523,21 +1528,41 @@ macro_rules! fn_read_chunk_as_mut_sliceX {
 
 macro_rules! fn_X_chunk_X_len_and_is_empty {
     (contiguous = yes) => {
+        /// Returns the number of slots in the chunk.
         pub fn len(&self) -> usize {
             self.len
         }
 
+        /// Returns `true` if the chunk contains no slots.
         pub fn is_empty(&self) -> bool {
             self.len == 0
         }
     };
     (contiguous = no) => {
+        /// Returns the number of slots in the chunk.
         pub fn len(&self) -> usize {
             self.first_len + self.second_len
         }
 
+        /// Returns `true` if the chunk contains no slots.
         pub fn is_empty(&self) -> bool {
             self.first_len == 0
+        }
+    };
+}
+
+macro_rules! fn_write_chunk_len_and_is_empty {
+    () => {
+        /// Returns the number of slots in the chunk.
+        pub fn len(&self) -> usize {
+            // self.0 is always Some(chunk).
+            self.0.as_ref().unwrap().len()
+        }
+
+        /// Returns `true` if the chunk contains no slots.
+        pub fn is_empty(&self) -> bool {
+            // self.0 is always Some(chunk).
+            self.0.as_ref().unwrap().is_empty()
         }
     };
 }
@@ -1665,7 +1690,7 @@ macro_rules! struct_read_chunk {
     };
 }
 
-macro_rules! fn_write_chunk_uninit_commitX {
+macro_rules! fn_write_chunk_uninit_commit_all {
     () => {
         /// Makes the whole chunk available for reading.
         ///
@@ -1677,7 +1702,11 @@ macro_rules! fn_write_chunk_uninit_commitX {
             // SAFETY: Delegated to the caller.
             unsafe { self.commit_unchecked(slots) };
         }
+    };
+}
 
+macro_rules! fn_write_chunk_uninit_commit {
+    () => {
         /// Makes the first `n` slots of the chunk available for reading.
         ///
         /// # Panics
@@ -1695,7 +1724,7 @@ macro_rules! fn_write_chunk_uninit_commitX {
     };
 }
 
-macro_rules! fn_write_chunk_commitX {
+macro_rules! fn_write_chunk_commit_all {
     () => {
         /// Makes the whole chunk available for reading.
         pub fn commit_all(mut self) {
@@ -1705,7 +1734,11 @@ macro_rules! fn_write_chunk_commitX {
             unsafe { chunk.commit_all() };
             // `self` is dropped here, with `self.0` being set to `None`.
         }
+    };
+}
 
+macro_rules! fn_write_chunk_commit {
+    () => {
         /// Makes the first `n` slots of the chunk available for reading.
         ///
         /// The rest of the chunk is dropped.
@@ -1728,7 +1761,7 @@ macro_rules! fn_write_chunk_commitX {
     };
 }
 
-macro_rules! fn_read_chunk_commitX {
+macro_rules! fn_read_chunk_commit_all {
     () => {
         /// Drops all slots of the chunk, making the space available for writing again.
         pub fn commit_all(self) {
@@ -1736,7 +1769,11 @@ macro_rules! fn_read_chunk_commitX {
             // SAFETY: self.len() initialized elements have been obtained in read_chunk().
             unsafe { self.commit_unchecked(slots) };
         }
+    };
+}
 
+macro_rules! fn_read_chunk_commit {
+    () => {
         /// Drops the first `n` slots of the chunk, making the space available for writing again.
         ///
         /// # Panics
