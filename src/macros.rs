@@ -234,6 +234,8 @@ macro_rules! impl_everything_eventually {
             fn_ring_buffer_distance!(pow2 = $pow2);
         }
 
+        struct_arc_ring_buffer!(arc = $arc);
+
         struct_producer!(arc = $arc, N = ($($N)?));
 
         impl<$($a, )?T$(, const $N: usize)?> Producer<$($a, )?T$(, $N)?> {
@@ -449,8 +451,8 @@ macro_rules! fn_ring_buffer_distance {
     };
 }
 
-macro_rules! def_arc_ring_buffer {
-    () => {
+macro_rules! struct_arc_ring_buffer {
+    (arc = yes) => {
         use alloc::boxed::Box;
         use core::ptr::NonNull;
 
@@ -538,6 +540,7 @@ macro_rules! def_arc_ring_buffer {
             }
         }
     };
+    (arc = no) => {};
 }
 
 macro_rules! fn_ring_buffer_producer {

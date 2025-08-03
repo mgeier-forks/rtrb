@@ -48,8 +48,6 @@ impl_everything_eventually! {
     N = ()
 }
 
-def_arc_ring_buffer! {}
-
 /*
 impl<T, const C: u8, I: Indices> PartialEq for BipStorage<T, C, I> {
     fn eq(&self, other: &Self) -> bool {

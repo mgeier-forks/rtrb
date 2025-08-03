@@ -20,5 +20,3 @@ impl_everything_eventually! {
     'a = (),
     N = ()
 }
-
-def_arc_ring_buffer! {}
