@@ -268,6 +268,7 @@ macro_rules! impl_everything_eventually {
             fn_write_chunk_uninit_as_mut_sliceX!(contiguous = $contiguous);
             fn_write_chunk_uninit_commit_all!();
             fn_write_chunk_uninit_commit!();
+            fn_write_chunk_uninit_fill_from_iter!(contiguous = $contiguous);
             fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
 
             fn_write_chunk_uninit_drop_suffix!(contiguous = $contiguous);
@@ -1245,7 +1246,7 @@ macro_rules! fn_producer_write_chunk {
     (contiguous = $contiguous:ident, $chunk:ty) => {
         /// Returns `n` slots (initially containing their [`Default`] value) for writing.
         ///
-        #[doc = choice!( $contiguous, "\
+        #[doc = choice!($contiguous, "\
         [`WriteChunk::as_mut_slice()`]", "\
         [`WriteChunk::as_mut_slices()`]")]
         /// provides mutable access to the slots.
@@ -1814,6 +1815,55 @@ macro_rules! fn_write_chunk_uninit_commit {
     };
 }
 
+macro_rules! fn_write_chunk_uninit_fill_from_iter {
+    (contiguous = yes) => {
+        pub fn fill_from_iter<I>(self, iter: I) -> usize
+        where
+            I: IntoIterator<Item = T>,
+        {
+            let mut iter = iter.into_iter();
+            let mut iterated = 0;
+            for i in 0..self.len {
+                match iter.next() {
+                    Some(item) => {
+                        // SAFETY: It is allowed to write to this memory slot
+                        unsafe { self.ptr.add(i).write(item) };
+                        iterated += 1;
+                    }
+                    None => break,
+                }
+            }
+            // SAFETY: iterated slots have been initialized above
+            unsafe { self.commit_unchecked(iterated) }
+        }
+    };
+    (contiguous = no) => {
+        pub fn fill_from_iter<I>(self, iter: I) -> usize
+        where
+            I: IntoIterator<Item = T>,
+        {
+            let mut iter = iter.into_iter();
+            let mut iterated = 0;
+            'outer: for &(ptr, len) in &[
+                (self.first_ptr, self.first_len),
+                (self.second_ptr, self.second_len),
+            ] {
+                for i in 0..len {
+                    match iter.next() {
+                        Some(item) => {
+                            // SAFETY: It is allowed to write to this memory slot
+                            unsafe { ptr.add(i).write(item) };
+                            iterated += 1;
+                        }
+                        None => break 'outer,
+                    }
+                }
+            }
+            // SAFETY: iterated slots have been initialized above
+            unsafe { self.commit_unchecked(iterated) }
+        }
+    };
+}
 macro_rules! fn_write_chunk_commit_all {
     () => {
         /// Makes the whole chunk available for reading.
