@@ -48,34 +48,28 @@ impl_everything_eventually! {
     N = ()
 }
 
-/*
-impl<T, const C: u8, I: Indices> PartialEq for BipStorage<T, C, I> {
-    fn eq(&self, other: &Self) -> bool {
-        core::ptr::eq(self, other)
-    }
-}
-
-impl<T, const C: u8, I: Indices> Eq for BipStorage<T, C, I> {}
-*/
-
 impl<T> Producer<T> {
-    /// The maximum number of slots for contiguous writing.
-    // TODO: return a pair? or the max?
+    /// The maximum number of slots that write_chunk() ... can provide.
+    ///
+    /// ... this can change at any time, up to ..., depending on ...
     pub fn slots_contiguous(&self) -> usize {
         todo!()
     }
-    // TODO: different kinds of slots() functions? first and second, only first?
+    // TODO: return pair? without skipping, after skipping
+    // TODO: is it cheaper to return a pair instead of calling 2 functions?
     pub fn slots_contiguous1(&self) -> usize {
         todo!()
     }
-    // TODO: this is probably not meaningful? only "first" and "max"?
-    pub fn slots_contiguous2(&self) -> usize {
+    pub fn slots_contiguous_first(&self) -> usize {
         todo!()
     }
-    pub fn slots_one(&self) -> usize {
+    pub fn slots_without_wrapping(&self) -> usize {
         todo!()
     }
-    pub fn slots_two(&self) -> usize {
+    pub fn slots_without_wrap_around(&self) -> usize {
+        todo!()
+    }
+    pub fn slots_without_skipping(&self) -> usize {
         todo!()
     }
     pub fn is_abandoned(&self) -> bool {

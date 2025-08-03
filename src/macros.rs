@@ -242,6 +242,7 @@ macro_rules! impl_everything_eventually {
             fn_producer_push!();
             fn_producer_write_chunk_uninit!(bip = $bip, WriteChunkUninit<'_, T$(, $N)?>);
             fn_producer_write_chunk!(contiguous = $contiguous, WriteChunk<'_, T$(, $N)?>);
+            // TODO: documentation specific to bip:
             fn_producer_slots!();
             fn_producer_is_full!();
             fn_pc_capacity!();
@@ -254,7 +255,9 @@ macro_rules! impl_everything_eventually {
             fn_consumer_pop!();
             fn_consumer_peek!();
             fn_consumer_read_chunk!(bip = $bip, ReadChunk<'_, T$(, $N)?>);
+            // TODO: documentation specific to bip:
             fn_consumer_slots!(bip = $bip);
+            fn_consumer_slots_contiguousX!(bip = $bip);
             fn_consumer_is_empty!();
             fn_pc_capacity!();
             fn_consumer_next_head!(bip = $bip);
@@ -920,6 +923,7 @@ assert_eq!(c.slots(), 0);
 "
     };
 }
+
 macro_rules! fn_consumer_slots {
     (bip = yes) => {
         #[doc = fn_consumer_slots_docstring!()]
@@ -954,6 +958,89 @@ macro_rules! fn_consumer_slots {
             b.distance(self.cached_head.get(), tail)
         }
     };
+}
+
+macro_rules! fn_consumer_slots_contiguousX {
+    (bip = yes) => {
+        fn slots_contiguous_helper(&self) -> (usize, bool) {
+            // TODO: code reuse with read_chunk() and next_head()?
+            let b = &self.buffer;
+            let mut head = self.cached_head.get();
+            let mut tail = self.cached_tail.get();
+            let mut slots = 0;
+            let mut is_empty = head == tail;
+            let mut collapsed_head = b.collapse_position(head);
+            let mut collapsed_tail = b.collapse_position(tail);
+            if !is_empty && collapsed_tail <= collapsed_head {
+                // NB: We are only allowed to use `skip` if (collapsed) `tail < head`
+                //     (or if the buffer is full).
+                let skip = b.skip.load(Ordering::Acquire);
+                slots = skip - collapsed_head;
+                if slots != 0 {
+                    return (slots, false);
+                }
+                if skip != b.capacity() {
+                    b.skip.store(b.capacity(), Ordering::Release);
+                }
+                head = b.increment(head, b.capacity() - collapsed_head);
+                // NB: `skip` is stored before `head`.
+                b.head.store(head, Ordering::Release);
+                self.cached_head.set(head);
+                collapsed_head = b.collapse_position(head);
+            } else {
+                // nothing to do here, we have to refresh tail
+            }
+            tail = b.tail.load(Ordering::Acquire);
+            self.cached_tail.set(tail);
+            collapsed_tail = b.collapse_position(tail);
+            is_empty = head == tail;
+            if is_empty || collapsed_head < collapsed_tail {
+                debug_assert_eq!(slots, 0);
+                (collapsed_tail - collapsed_head, true)
+            } else {
+                (collapsed_tail, true)
+            }
+        }
+
+        /// Returns the maximum number of slots that are available for reading with
+        /// [`read_chunk()`](Consumer::read_chunk).
+        ///
+        /// ... this can change when the producer is writing stuff ...
+        ///
+        /// ... might be smaller than [`slots()`](Consumer::slots) because ...
+        // TODO: better name?
+        pub fn slots_contiguous_first(&self) -> usize {
+            self.slots_contiguous_helper().0
+        }
+
+        /// Returns the maximum number of slots that are available for reading with
+        /// [`read_chunk()`](Consumer::read_chunk) *twice*.
+        ///
+        /// The first number is the same as ... (which might be slightly more efficient)
+        ///
+        /// If the first number is `0`, the second is `0` as well.
+        // TODO: better name?
+        pub fn slots_contiguous_with_potential_followup(&self) -> (usize, usize) {
+            let (slots, refreshed) = self.slots_contiguous_helper();
+            if refreshed {
+                return (slots, 0);
+            }
+            let b = &self.buffer;
+            let head = self.cached_head.get();
+            let collapsed_head = b.collapse_position(head);
+            let tail = b.tail.load(Ordering::Acquire);
+            self.cached_tail.set(tail);
+            let collapsed_tail = b.collapse_position(tail);
+            let is_empty = head == tail;
+            if is_empty || collapsed_head < collapsed_tail {
+                debug_assert_eq!(slots, 0);
+                (collapsed_tail - collapsed_head, 0)
+            } else {
+                (slots, collapsed_tail)
+            }
+        }
+    };
+    (bip = no) => {};
 }
 
 macro_rules! fn_consumer_is_empty {
@@ -1152,9 +1239,9 @@ macro_rules! fn_read_chunk_uninit_commit_unchecked {
 macro_rules! fn_producer_write_chunk_uninit {
     (bip = yes, $chunk:ty) => {
         pub fn write_chunk_uninit(&mut self, n: usize) -> Result<$chunk, ChunkError> {
+            let b = &self.buffer;
             let mut head = self.cached_head.get();
             let tail = self.cached_tail.get();
-            let b = &self.buffer;
             // TODO: check if everything is compatible with power-of-2 addressing.
             let mut slots = 0;
             let mut head_has_been_refreshed = false;
