@@ -246,7 +246,7 @@ macro_rules! impl_everything_eventually {
         // via Producer/Consumer (which are !Sync), all other access can be shared.
         unsafe impl<T: Send$(, const $N: usize)?> Sync for RingBuffer<T$(, $N)?> {}
 
-        impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
+        impl_struct!(RingBuffer, array = $array,
             fn_ring_buffer_producer!(arc = $arc, Producer<T$(, $N)?>);
             fn_ring_buffer_consumer!(arc = $arc, Consumer<T$(, $N)?>);
             fn_ring_buffer_drop_all_elements!(bip = $bip);
@@ -256,13 +256,13 @@ macro_rules! impl_everything_eventually {
             fn_ring_buffer_increment!(pow2 = $pow2);
             fn_ring_buffer_increment1!(pow2 = $pow2);
             fn_ring_buffer_distance!(pow2 = $pow2);
-        }
+        );
 
         struct_arc_ring_buffer!(arc = $arc);
 
         struct_producer!(arc = $arc, N = ($($N)?));
 
-        impl<$($a, )?T$(, const $N: usize)?> Producer<$($a, )?T$(, $N)?> {
+        impl_struct_accessor!(Producer, arc = $arc, array = $array,
             fn_producer_push!(arc = $arc, array = $array, module = $module);
             fn_producer_write_chunk_uninit!(bip = $bip, WriteChunkUninit<'_, T$(, $N)?>);
             fn_producer_write_chunk!(contiguous = $contiguous, WriteChunk<'_, T$(, $N)?>);
@@ -272,11 +272,11 @@ macro_rules! impl_everything_eventually {
             fn_producer_is_full!(arc = $arc, array = $array, module = $module);
             fn_pc_capacity!(arc = $arc, array = $array, module = $module);
             fn_producer_next_tail!();
-        }
+        );
 
         struct_consumer!(arc = $arc, N = ($($N)?));
 
-        impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
+        impl_struct_accessor!(Consumer, arc = $arc, array = $array,
             fn_consumer_pop!(arc = $arc, array = $array, module = $module);
             fn_consumer_peek!(arc = $arc, array = $array, module = $module);
             fn_consumer_read_chunk!(bip = $bip, ReadChunk<'_, T$(, $N)?>);
@@ -286,7 +286,7 @@ macro_rules! impl_everything_eventually {
             fn_consumer_is_empty!(arc = $arc, array = $array, module = $module);
             fn_pc_capacity!(arc = $arc, array = $array, module = $module);
             fn_consumer_next_head!(bip = $bip);
-        }
+        );
 
         struct_write_chunk_uninit!(contiguous = $contiguous, Producer<$($a, )?T$(, $N)?>, N = ($($N)?));
         struct_write_chunk!(N = ($($N)?));
@@ -294,7 +294,7 @@ macro_rules! impl_everything_eventually {
 
         impl_send_for_chunks!(N = ($($N)?));
 
-        impl<T$(, const $N: usize)?> WriteChunkUninit<'_, T$(, $N)?> {
+        impl_struct_chunk!(WriteChunkUninit, array = $array,
             fn_write_chunk_uninit_as_mut_sliceX!(contiguous = $contiguous);
             fn_write_chunk_uninit_commit_all!();
             fn_write_chunk_uninit_commit!();
@@ -303,16 +303,16 @@ macro_rules! impl_everything_eventually {
 
             fn_write_chunk_uninit_drop_suffix!(contiguous = $contiguous);
             fn_write_chunk_uninit_commit_unchecked!(bip = $bip);
-        }
+        );
 
-        impl<T$(, const $N: usize)?> WriteChunk<'_, T$(, $N)?> {
+        impl_struct_chunk!(WriteChunk, array = $array,
             fn_write_chunk_as_mut_sliceX!(contiguous = $contiguous);
             fn_write_chunk_commit_all!();
             fn_write_chunk_commit!();
             fn_write_chunk_len_and_is_empty!();
-        }
+        );
 
-        impl<T$(, const $N: usize)?> ReadChunk<'_, T$(, $N)?> {
+        impl_struct_chunk!(ReadChunk, array = $array,
             fn_read_chunk_as_sliceX!(contiguous = $contiguous);
             fn_read_chunk_as_mut_sliceX!(contiguous = $contiguous);
             fn_read_chunk_commit_all!();
@@ -320,7 +320,7 @@ macro_rules! impl_everything_eventually {
             fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
 
             fn_read_chunk_uninit_commit_unchecked!(contiguous = $contiguous);
-        }
+        );
     };
 }
 
@@ -376,6 +376,55 @@ macro_rules! doctest_create_ring_buffer {
             $($prefix, )?
             "let mut c = rb.consumer().unwrap();",
         )
+    };
+}
+
+macro_rules! impl_struct {
+    ($name:ident, array = yes, $($items:item)*) => {
+        impl<T, const N: usize> $name<T, N> {
+            $($items)*
+        }
+    };
+    ($name:ident, array = no, $($items:item)*) => {
+        impl<T> $name<T> {
+            $($items)*
+        }
+    };
+}
+
+macro_rules! impl_struct_accessor {
+    ($name:ident, arc = yes, array = yes, $($items:item)*) => {
+        impl<T, const N: usize> $name<T, N> {
+            $($items)*
+        }
+    };
+    ($name:ident, arc = yes, array = no, $($items:item)*) => {
+        impl<T> $name<T> {
+            $($items)*
+        }
+    };
+    ($name:ident, arc = no, array = yes, $($items:item)*) => {
+        impl<T, const N: usize> $name<'_, T, N> {
+            $($items)*
+        }
+    };
+    ($name:ident, arc = no, array = no, $($items:item)*) => {
+        impl<T> $name<'_, T> {
+            $($items)*
+        }
+    };
+}
+
+macro_rules! impl_struct_chunk {
+    ($name:ident, array = yes, $($items:item)*) => {
+        impl<T, const N: usize> $name<'_, T, N> {
+            $($items)*
+        }
+    };
+    ($name:ident, array = no, $($items:item)*) => {
+        impl<T> $name<'_, T> {
+            $($items)*
+        }
     };
 }
 
