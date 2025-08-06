@@ -16,9 +16,11 @@ TODO: some more docs, maybe links? [`RingBuffer::new()`].
 
 impl_everything_eventually! {
     arc = no,
+    array = yes,
     bip = yes,
     contiguous = yes,
     pow2 = no,
+    module = "rtrb::bip_array",
     'a = ('a),
     N = (N)
 }

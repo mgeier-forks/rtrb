@@ -17,8 +17,8 @@ macro_rules! storage_vec {
 
 macro_rules! storage_vec_helper {
     (padded = $padded:ident, $($skip:ident)?, rb_doc = $rb_doc:expr) => {
-        use crate::atomic::*;
-        use crate::CachePadded;
+        use $crate::atomic::*;
+        use $crate::CachePadded;
         use alloc::vec::Vec;
         use core::mem::ManuallyDrop;
 
@@ -96,8 +96,8 @@ macro_rules! storage_array {
 
 macro_rules! storage_array_helper {
     (padded = $padded:ident, $($skip:ident)?, rb_doc = $rb_doc:expr) => {
-        use crate::atomic::*;
-        use crate::cache_padded::CachePadded;
+        use $crate::atomic::*;
+        use $crate::cache_padded::CachePadded;
         use core::cell::UnsafeCell;
 
         #[doc = $rb_doc]
@@ -194,9 +194,11 @@ macro_rules! choice_ty {
 macro_rules! impl_everything_eventually {
     (
         arc = $arc:ident,
+        array = $array:ident, // TODO: combine with "N"?
         bip = $bip:ident,
         contiguous = $contiguous:ident,
         pow2 = $pow2:ident,
+        module = $module:literal,
         'a = ($($a:lifetime)?),
         N = ($($N:ident)?)
     ) => {
@@ -207,13 +209,38 @@ macro_rules! impl_everything_eventually {
 
         // TODO: move definition here?
         #[allow(unused_imports)]
-        use crate::diy::IS_ABANDONED;
+        use $crate::diy::IS_ABANDONED;
         #[allow(unused_imports)]
-        use crate::diy::{HAS_CONSUMER, HAS_PRODUCER};
+        use $crate::diy::{HAS_CONSUMER, HAS_PRODUCER};
 
         // TODO: move error type to top level?
-        use crate::chunks::ChunkError;
-        use crate::{PeekError, PopError, PushError};
+        pub use $crate::chunks::ChunkError;
+
+        /// Error type for [`Consumer::peek()`].
+        #[doc(inline)]
+        pub use $crate::PeekError;
+        /// Error type for [`Consumer::pop()`].
+        #[doc(inline)]
+        pub use $crate::PopError;
+        /// Error type for [`Producer::push()`].
+        #[doc(inline)]
+        pub use $crate::PushError;
+
+        /// Extension trait providing a [`copy_to_uninit()`](CopyToUninit::copy_to_uninit)
+        /// method on built-in slices.
+        ///
+        /// This can be used to safely copy data to the
+        #[doc = choice!($contiguous,
+            "slice returned from [`WriteChunkUninit::as_mut_slice()`].",
+            "slices returned from [`WriteChunkUninit::as_mut_slices()`].")]
+        ///
+        /// To use this, the trait has to be brought into scope, e.g. with:
+        ///
+        /// ```
+        #[doc = concat!("use ", $module, "::CopyToUninit as _;")]
+        /// ```
+        #[doc(inline)]
+        pub use $crate::CopyToUninit;
 
         // SAFETY: RingBuffer is only mutated (using *interior mutablility*)
         // via Producer/Consumer (which are !Sync), all other access can be shared.
@@ -239,28 +266,28 @@ macro_rules! impl_everything_eventually {
         struct_producer!(arc = $arc, N = ($($N)?));
 
         impl<$($a, )?T$(, const $N: usize)?> Producer<$($a, )?T$(, $N)?> {
-            fn_producer_push!();
+            fn_producer_push!(arc = $arc, array = $array, module = $module);
             fn_producer_write_chunk_uninit!(bip = $bip, WriteChunkUninit<'_, T$(, $N)?>);
             fn_producer_write_chunk!(contiguous = $contiguous, WriteChunk<'_, T$(, $N)?>);
             // TODO: documentation specific to bip:
-            fn_producer_slots!();
+            fn_producer_slots!(arc = $arc, array = $array, module = $module);
             fn_producer_slots_contiguousX!(bip = $bip);
-            fn_producer_is_full!();
-            fn_pc_capacity!();
+            fn_producer_is_full!(arc = $arc, array = $array, module = $module);
+            fn_pc_capacity!(arc = $arc, array = $array, module = $module);
             fn_producer_next_tail!();
         }
 
         struct_consumer!(arc = $arc, N = ($($N)?));
 
         impl<$($a, )?T$(, const $N: usize)?> Consumer<$($a, )?T$(, $N)?> {
-            fn_consumer_pop!();
-            fn_consumer_peek!();
+            fn_consumer_pop!(arc = $arc, array = $array, module = $module);
+            fn_consumer_peek!(arc = $arc, array = $array, module = $module);
             fn_consumer_read_chunk!(bip = $bip, ReadChunk<'_, T$(, $N)?>);
             // TODO: documentation specific to bip:
-            fn_consumer_slots!(bip = $bip);
+            fn_consumer_slots!(arc = $arc, array = $array, bip = $bip, module = $module);
             fn_consumer_slots_contiguousX!(bip = $bip);
-            fn_consumer_is_empty!();
-            fn_pc_capacity!();
+            fn_consumer_is_empty!(arc = $arc, array = $array, module = $module);
+            fn_pc_capacity!(arc = $arc, array = $array, module = $module);
             fn_consumer_next_head!(bip = $bip);
         }
 
@@ -274,7 +301,7 @@ macro_rules! impl_everything_eventually {
             fn_write_chunk_uninit_as_mut_sliceX!(contiguous = $contiguous);
             fn_write_chunk_uninit_commit_all!();
             fn_write_chunk_uninit_commit!();
-            fn_write_chunk_uninit_fill_from_iter!(contiguous = $contiguous);
+            fn_write_chunk_uninit_fill_from_iter!(arc = $arc, array = $array, contiguous = $contiguous, module = $module);
             fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
 
             fn_write_chunk_uninit_drop_suffix!(contiguous = $contiguous);
@@ -292,7 +319,7 @@ macro_rules! impl_everything_eventually {
             fn_read_chunk_as_sliceX!(contiguous = $contiguous);
             fn_read_chunk_as_mut_sliceX!(contiguous = $contiguous);
             fn_read_chunk_commit_all!();
-            fn_read_chunk_commit!();
+            fn_read_chunk_commit!(arc = $arc, array = $array, module = $module);
             fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
 
             fn_read_chunk_uninit_commit_unchecked!(contiguous = $contiguous);
@@ -309,6 +336,50 @@ macro_rules! check_bip_contiguous {
     };
     (yes, yes) => {};
     (no, no) => {};
+}
+
+macro_rules! doctest_import {
+    ($module:literal, $items:literal$(, $prefix:literal)?) => {
+        concat!($($prefix, )?"use ", $module, "::", $items, ";")
+    };
+}
+
+macro_rules! doctest_create_ring_buffer {
+    (arc = yes, array = yes, capacity = $capacity:literal$(, $prefix:literal)?) => {
+        concat!(
+            $($prefix, )?
+            "let (mut p, mut c) = RingBuffer::<_, ",
+            $capacity,
+            ">::new();"
+        )
+    };
+    (arc = yes, array = no, capacity = $capacity:literal$(, $prefix:literal)?) => {
+        concat!($($prefix, )?"let (mut p, mut c) = RingBuffer::new(", $capacity, ");")
+    };
+    (arc = no, array = yes, capacity = $capacity:literal$(, $prefix:literal)?) => {
+        concat!(
+            $($prefix, )?
+            "let rb = RingBuffer::<_, ",
+            $capacity,
+            ">::new();\n",
+            $($prefix, )?
+            "let mut p = rb.producer().unwrap();\n",
+            $($prefix, )?
+            "let mut c = rb.consumer().unwrap();",
+        )
+    };
+    (arc = no, array = no, capacity = $capacity:literal$(, $prefix:literal)?) => {
+        concat!(
+            $($prefix, )?
+            "let rb = RingBuffer::new(",
+            $capacity,
+            ");\n",
+            $($prefix, )?
+            "let mut p = rb.producer().unwrap();\n",
+            $($prefix, )?
+            "let mut c = rb.consumer().unwrap();",
+        )
+    };
 }
 
 macro_rules! fn_ring_buffer_drop_all_elements {
@@ -646,7 +717,7 @@ macro_rules! struct_consumer {
 }
 
 macro_rules! fn_producer_push {
-    () => {
+    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
         /// Attempts to push an element into the queue.
         ///
         /// The element is *moved* into the ring buffer and its slot
@@ -659,10 +730,9 @@ macro_rules! fn_producer_push {
         /// # Examples
         ///
         /// ```
-        /// // TODO: module-specific example!
-        /// use rtrb::{RingBuffer, PushError};
+        #[doc = doctest_import!($module, "{PushError, RingBuffer}")]
         ///
-        /// let (mut p, c) = RingBuffer::new(1);
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1)]
         ///
         /// assert_eq!(p.push(10), Ok(()));
         /// assert_eq!(p.push(20), Err(PushError::Full(20)));
@@ -684,7 +754,7 @@ macro_rules! fn_producer_push {
 }
 
 macro_rules! fn_producer_slots {
-    () => {
+    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
         /// Returns the number of slots available for writing.
         ///
         /// Since items can be concurrently consumed on another thread, the actual number
@@ -698,12 +768,12 @@ macro_rules! fn_producer_slots {
         /// # Examples
         ///
         /// ```
-        /// // TODO: module-specific example!
-        /// use rtrb::RingBuffer;
+        #[doc = doctest_import!($module, "RingBuffer")]
         ///
-        /// let (p, c) = RingBuffer::<f32>::new(1024);
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1024)]
+        /// assert_eq!(p.push(0.5f32), Ok(()));
         ///
-        /// assert_eq!(p.slots(), 1024);
+        /// assert_eq!(p.slots(), 1023);
         /// ```
         pub fn slots(&self) -> usize {
             let b = &self.buffer;
@@ -766,7 +836,7 @@ macro_rules! fn_producer_slots_contiguousX {
 }
 
 macro_rules! fn_producer_is_full {
-    () => {
+    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
         /// Returns `true` if there are currently no slots available for writing.
         ///
         /// TODO: additional info about bip?
@@ -777,20 +847,22 @@ macro_rules! fn_producer_is_full {
         /// # Examples
         ///
         /// ```
-        /// // TODO: module-specific example!
-        /// use rtrb::RingBuffer;
+        #[doc = doctest_import!($module, "RingBuffer")]
         ///
-        /// let (p, c) = RingBuffer::<f32>::new(1);
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1)]
         ///
         /// assert!(!p.is_full());
+        /// assert_eq!(p.push(10), Ok(()));
+        /// assert!(p.is_full());
         /// ```
         ///
         /// Since items can be concurrently consumed on another thread, the ring buffer
         /// might not be full for long:
         ///
         /// ```
-        /// # use rtrb::RingBuffer;
-        /// # let (p, c) = RingBuffer::<f32>::new(1);
+        #[doc = doctest_import!($module, "RingBuffer", "# ")]
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1, "# ")]
+        /// # assert_eq!(p.push(10), Ok(()));
         /// if p.is_full() {
         ///     // The buffer might be full, but it might as well not be
         ///     // if an item was just consumed on another thread.
@@ -800,12 +872,15 @@ macro_rules! fn_producer_is_full {
         /// However, if it's not full, another thread cannot change that:
         ///
         /// ```
-        /// # use rtrb::RingBuffer;
-        /// # let (p, c) = RingBuffer::<f32>::new(1);
+        #[doc = doctest_import!($module, "RingBuffer", "# ")]
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1, "# ")]
+        /// # assert_eq!(p.push(10), Ok(()));
         /// if !p.is_full() {
         ///     // At least one slot is guaranteed to be available for writing.
         /// }
         /// ```
+        ///
+        /// TODO: example for "bip" when "skip" is set?
         pub fn is_full(&self) -> bool {
             self.next_tail().is_none()
         }
@@ -813,7 +888,7 @@ macro_rules! fn_producer_is_full {
 }
 
 macro_rules! fn_pc_capacity {
-    () => {
+    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
         /// Returns the total capacity of the queue.
         ///
         /// At any time, the capacity is subdivided into
@@ -825,12 +900,15 @@ macro_rules! fn_pc_capacity {
         /// # Examples
         ///
         /// ```
-        /// // TODO: module-specific example!
-        /// use rtrb::RingBuffer;
+        #[doc = doctest_import!($module, "RingBuffer")]
         ///
-        /// let (producer, consumer) = RingBuffer::<f32>::new(100);
-        /// assert_eq!(producer.capacity(), 100);
-        /// assert_eq!(consumer.capacity(), 100);
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 128)]
+        ///
+        /// assert_eq!(p.push(-0.7), Ok(()));
+        /// assert_eq!(p.slots(), 127);
+        /// assert_eq!(c.slots(), 1);
+        /// assert_eq!(p.capacity(), 128);
+        /// assert_eq!(c.capacity(), 128);
         /// ```
         pub fn capacity(&self) -> usize {
             self.buffer.capacity()
@@ -867,7 +945,7 @@ macro_rules! fn_producer_next_tail {
 }
 
 macro_rules! fn_consumer_pop {
-    () => {
+    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
         /// Attempts to pop an element from the queue.
         ///
         /// The element is *moved* out of the ring buffer and its slot
@@ -880,10 +958,9 @@ macro_rules! fn_consumer_pop {
         /// # Examples
         ///
         /// ```
-        /// // TODO: module-specific example!
-        /// use rtrb::{PopError, RingBuffer};
+        #[doc = doctest_import!($module, "{PopError, RingBuffer}")]
         ///
-        /// let (mut p, mut c) = RingBuffer::new(1);
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1)]
         ///
         /// assert_eq!(p.push(10), Ok(()));
         /// assert_eq!(c.pop(), Ok(10));
@@ -893,9 +970,8 @@ macro_rules! fn_consumer_pop {
         /// To obtain an [`Option<T>`](Option), use [`.ok()`](Result::ok) on the result.
         ///
         /// ```
-        /// // TODO: module-specific example!
-        /// # use rtrb::RingBuffer;
-        /// # let (mut p, mut c) = RingBuffer::new(1);
+        #[doc = doctest_import!($module, "RingBuffer", "# ")]
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1, "# ")]
         /// assert_eq!(p.push(20), Ok(()));
         /// assert_eq!(c.pop().ok(), Some(20));
         /// ```
@@ -916,7 +992,7 @@ macro_rules! fn_consumer_pop {
 }
 
 macro_rules! fn_consumer_peek {
-    () => {
+    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
         /// Attempts to read an element from the queue without removing it.
         ///
         /// # Errors
@@ -926,10 +1002,9 @@ macro_rules! fn_consumer_peek {
         /// # Examples
         ///
         /// ```
-        /// // TODO: module-specific example!
-        /// use rtrb::{PeekError, RingBuffer};
+        #[doc = doctest_import!($module, "{PeekError, RingBuffer}")]
         ///
-        /// let (mut p, c) = RingBuffer::new(1);
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1)]
         ///
         /// assert_eq!(c.peek(), Err(PeekError::Empty));
         /// assert_eq!(p.push(10), Ok(()));
@@ -948,8 +1023,9 @@ macro_rules! fn_consumer_peek {
 }
 
 macro_rules! fn_consumer_slots_docstring {
-    () => {
-        "
+    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
+        concat!(
+            "
 Returns the number of slots available for reading.
 
 Since items can be concurrently produced on another thread, the actual number
@@ -965,20 +1041,23 @@ TODO: insert bip specifics
 # Examples
 
 ```
-// TODO: module-specific example!
-use rtrb::RingBuffer;
-
-let (p, c) = RingBuffer::<f32>::new(1024);
+",
+            doctest_import!($module, "RingBuffer"),
+            doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1024),
+            "
 
 assert_eq!(c.slots(), 0);
+assert_eq!(p.push(0.0), Ok(()));
+assert_eq!(c.slots(), 1);
 ```
 "
+        )
     };
 }
 
 macro_rules! fn_consumer_slots {
-    (bip = yes) => {
-        #[doc = fn_consumer_slots_docstring!()]
+    (arc = $arc:ident, array = $array:ident, bip = yes, module = $module:literal) => {
+        #[doc = fn_consumer_slots_docstring!(arc = $arc, array = $array, module = $module)]
         ///
         /// TODO: [`read_chunk()`](Consumer::read_chunk) might not provide the full number of free slots
         ///
@@ -1001,8 +1080,8 @@ macro_rules! fn_consumer_slots {
             }
         }
     };
-    (bip = no) => {
-        #[doc = fn_consumer_slots_docstring!()]
+    (arc = $arc:ident, array = $array:ident, bip = no, module = $module:literal) => {
+        #[doc = fn_consumer_slots_docstring!(arc = $arc, array = $array, module = $module)]
         pub fn slots(&self) -> usize {
             let b = &self.buffer;
             let tail = b.tail.load(Ordering::Acquire);
@@ -1096,7 +1175,7 @@ macro_rules! fn_consumer_slots_contiguousX {
 }
 
 macro_rules! fn_consumer_is_empty {
-    () => {
+    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
         /// Returns `true` if there are currently no slots available for reading.
         ///
         /// TODO: additional info about bip?
@@ -1107,20 +1186,22 @@ macro_rules! fn_consumer_is_empty {
         /// # Examples
         ///
         /// ```
-        /// // TODO: module-specific example!
-        /// use rtrb::RingBuffer;
+        #[doc = doctest_import!($module, "RingBuffer")]
         ///
-        /// let (p, c) = RingBuffer::<f32>::new(1);
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1)]
         ///
         /// assert!(c.is_empty());
+        /// assert_eq!(p.push(0.0), Ok(()));
+        /// assert!(!c.is_empty());
         /// ```
         ///
         /// Since items can be concurrently produced on another thread, the ring buffer
         /// might not be empty for long:
         ///
         /// ```
-        /// # use rtrb::RingBuffer;
-        /// # let (p, c) = RingBuffer::<f32>::new(1);
+        #[doc = doctest_import!($module, "RingBuffer", "# ")]
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1, "# ")]
+        /// # assert_eq!(p.push(0.0), Ok(()));
         /// if c.is_empty() {
         ///     // The buffer might be empty, but it might as well not be
         ///     // if an item was just produced on another thread.
@@ -1130,8 +1211,9 @@ macro_rules! fn_consumer_is_empty {
         /// However, if it's not empty, another thread cannot change that:
         ///
         /// ```
-        /// # use rtrb::RingBuffer;
-        /// # let (p, c) = RingBuffer::<f32>::new(1);
+        #[doc = doctest_import!($module, "RingBuffer", "# ")]
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1, "# ")]
+        /// # assert_eq!(p.push(0.0), Ok(()));
         /// if !c.is_empty() {
         ///     // At least one slot is guaranteed to be available for reading.
         /// }
@@ -1536,7 +1618,7 @@ macro_rules! fn_write_chunk_uninit_as_mut_sliceX {
     (contiguous = yes) => {
         /// Returns a slice for writing to the requested slots.
         ///
-        /// The extension trait [`CopyToUninit`](crate::CopyToUninit) can be used
+        /// The extension trait [`CopyToUninit`] can be used
         /// to safely copy data into this slice.
         #[doc = fn_write_chunk_uninit_as_mut_sliceX_docstring!()]
         pub fn as_mut_slice(&mut self) -> &mut [MaybeUninit<T>] {
@@ -1958,8 +2040,9 @@ macro_rules! fn_write_chunk_uninit_commit {
 }
 
 macro_rules! fn_write_chunk_uninit_fill_from_iter_docstring {
-    () => {
-        "
+    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
+        concat!(
+            "
 
 Moves items from an iterator into the (uninitialized) slots of the chunk.
 
@@ -1973,10 +2056,11 @@ If the iterator contains too few items, only a part of the chunk
 is made available for reading:
 
 ```
-// TODO: select correct module
-use rtrb::{RingBuffer, PopError};
-
-let (mut p, mut c) = RingBuffer::new(4);
+",
+            doctest_import!($module, "{PopError, RingBuffer}"),
+            "\n\n",
+            doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 4),
+            "
 
 if let Ok(chunk) = p.write_chunk_uninit(3) {
     assert_eq!(chunk.fill_from_iter([10, 20]), 2);
@@ -1994,9 +2078,11 @@ To be able to keep using the iterator after the call,
 `&mut` (or [`Iterator::by_ref()`]) can be used.
 
 ```
-use rtrb::{RingBuffer, PopError};
-
-let (mut p, mut c) = RingBuffer::new(4);
+",
+            doctest_import!($module, "{PopError, RingBuffer}"),
+            "\n\n",
+            doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 4),
+            "
 
 let mut it = vec![10, 20, 30].into_iter();
 if let Ok(chunk) = p.write_chunk_uninit(2) {
@@ -2010,12 +2096,13 @@ assert_eq!(c.pop(), Err(PopError::Empty));
 assert_eq!(it.next(), Some(30));
 ```
 "
+        )
     };
 }
 
 macro_rules! fn_write_chunk_uninit_fill_from_iter {
-    (contiguous = yes) => {
-        #[doc = fn_write_chunk_uninit_fill_from_iter_docstring!()]
+    (arc = $arc:ident, array = $array:ident, contiguous = yes, module = $module:literal) => {
+        #[doc = fn_write_chunk_uninit_fill_from_iter_docstring!(arc = $arc, array = $array, module = $module)]
         pub fn fill_from_iter<I>(self, iter: I) -> usize
         where
             I: IntoIterator<Item = T>,
@@ -2036,8 +2123,8 @@ macro_rules! fn_write_chunk_uninit_fill_from_iter {
             unsafe { self.commit_unchecked(iterated) }
         }
     };
-    (contiguous = no) => {
-        #[doc = fn_write_chunk_uninit_fill_from_iter_docstring!()]
+    (arc = $arc:ident, array = $array:ident, contiguous = no, module = $module:literal) => {
+        #[doc = fn_write_chunk_uninit_fill_from_iter_docstring!(arc = $arc, array = $array, module = $module)]
         pub fn fill_from_iter<I>(self, iter: I) -> usize
         where
             I: IntoIterator<Item = T>,
@@ -2113,7 +2200,7 @@ macro_rules! fn_read_chunk_commit_all {
 }
 
 macro_rules! fn_read_chunk_commit {
-    () => {
+    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
         /// Drops the first `n` slots of the chunk, making the space available for writing again.
         ///
         /// # Panics
@@ -2126,8 +2213,7 @@ macro_rules! fn_read_chunk_commit {
         /// (which is only relevant if `T` implements [`Drop`]).
         ///
         /// ```
-        /// // TODO: select correct module
-        /// use rtrb::RingBuffer;
+        #[doc = doctest_import!($module, "RingBuffer")]
         ///
         /// // Static variable to count all drop() invocations
         /// static mut DROP_COUNT: i32 = 0;
@@ -2139,7 +2225,7 @@ macro_rules! fn_read_chunk_commit {
         ///
         /// // Scope to limit lifetime of ring buffer
         /// {
-        ///     let (mut p, mut c) = RingBuffer::new(2);
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 3, "    ")]
         ///
         ///     assert!(p.push(Thing).is_ok()); // 1
         ///     assert!(p.push(Thing).is_ok()); // 2

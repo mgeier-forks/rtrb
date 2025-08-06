@@ -564,7 +564,7 @@ where
     }
 }
 
-/// Error type for [`Consumer::pop()`](crate::Consumer::pop).
+#[doc(hidden)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PopError {
     /// The queue was empty.
@@ -582,7 +582,7 @@ impl fmt::Display for PopError {
     }
 }
 
-/// Error type for [`Consumer::peek()`](crate::Consumer::peek).
+#[doc(hidden)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PeekError {
     /// The queue was empty.
@@ -600,7 +600,7 @@ impl fmt::Display for PeekError {
     }
 }
 
-/// Error type for [`Producer::push()`](crate::Producer::push)].
+#[doc(hidden)]
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum PushError<T> {
     /// The queue was full.

@@ -641,17 +641,7 @@ impl<T> Consumer<T> {
     }
 }
 
-/// Extension trait used to provide a [`copy_to_uninit()`](CopyToUninit::copy_to_uninit)
-/// method on built-in slices.
-///
-/// This can be used to safely copy data to the slices returned from
-/// [`WriteChunkUninit::as_mut_slices()`].
-///
-/// To use this, the trait has to be brought into scope, e.g. with:
-///
-/// ```
-/// use rtrb::CopyToUninit;
-/// ```
+#[doc(hidden)]
 pub trait CopyToUninit<T: Copy> {
     /// Copies contents to a possibly uninitialized slice.
     fn copy_to_uninit<'a>(&self, dst: &'a mut [MaybeUninit<T>]) -> &'a mut [T];

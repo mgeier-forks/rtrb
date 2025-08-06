@@ -14,9 +14,12 @@ TODO: ...
 
 impl_everything_eventually! {
     arc = no,
+    array = yes,
     bip = no,
     contiguous = no,
     pow2 = no,
+    // TODO: update this:
+    module = "rtrb::array_temp",
     'a = ('a),
     N = (N)
 }
