@@ -194,7 +194,7 @@ macro_rules! choice_ty {
 macro_rules! impl_everything_eventually {
     (
         arc = $arc:ident,
-        array = $array:ident, // TODO: combine with "N"?
+        array = $array:ident,
         bip = $bip:ident,
         contiguous = $contiguous:ident,
         pow2 = $pow2:ident,
@@ -247,15 +247,12 @@ macro_rules! impl_everything_eventually {
         unsafe impl<T: Send$(, const $N: usize)?> Sync for RingBuffer<T$(, $N)?> {}
 
         impl<T$(, const $N: usize)?> RingBuffer<T$(, $N)?> {
-            unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
-                // SAFETY: See docstring.
-                unsafe { self.data_ptr().add(self.collapse_position(pos)) }
-            }
             fn_ring_buffer_producer!(arc = $arc, Producer<T$(, $N)?>);
             fn_ring_buffer_consumer!(arc = $arc, Consumer<T$(, $N)?>);
             fn_ring_buffer_drop_all_elements!(bip = $bip);
             fn_ring_buffer_update_capacity!(pow2 = $pow2);
             fn_ring_buffer_collapse_position!(pow2 = $pow2);
+            fn_ring_buffer_slot_ptr!();
             fn_ring_buffer_increment!(pow2 = $pow2);
             fn_ring_buffer_increment1!(pow2 = $pow2);
             fn_ring_buffer_distance!(pow2 = $pow2);
@@ -456,6 +453,15 @@ macro_rules! fn_ring_buffer_collapse_position {
             } else {
                 pos - self.capacity()
             }
+        }
+    };
+}
+
+macro_rules! fn_ring_buffer_slot_ptr {
+    () => {
+        unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
+            // SAFETY: See docstring.
+            unsafe { self.data_ptr().add(self.collapse_position(pos)) }
         }
     };
 }
