@@ -338,6 +338,12 @@ macro_rules! check_bip_contiguous {
     (no, no) => {};
 }
 
+macro_rules! docstring {
+    ($(#[doc = $line:expr])*) => {
+        concat!($($line, "\n"),*)
+    };
+}
+
 macro_rules! doctest_import {
     ($module:literal, $items:literal$(, $prefix:literal)?) => {
         concat!($($prefix, )?"use ", $module, "::", $items, ";")
@@ -728,22 +734,20 @@ macro_rules! fn_ring_buffer_consumer {
 }
 
 macro_rules! struct_producer_docstring {
-    () => {
-        "
-The producer side of a [`RingBuffer`].
-
-A `Producer` can be moved between threads,
-but references from different threads are not allowed
-(i.e. it is [`Send`] but not [`Sync`]).
-
-Individual elements can be moved into the ring buffer with [`Producer::push()`],
-multiple elements at once can be written with [`Producer::write_chunk()`]
-and [`Producer::write_chunk_uninit()`].
-
-The number of free slots currently available for writing can be obtained with
-[`Producer::slots()`].
-"
-    };
+    () => { docstring!(
+        /// The producer side of a [`RingBuffer`].
+        ///
+        /// A `Producer` can be moved between threads,
+        /// but references from different threads are not allowed
+        /// (i.e. it is [`Send`] but not [`Sync`]).
+        ///
+        /// Individual elements can be moved into the ring buffer with [`Producer::push()`],
+        /// multiple elements at once can be written with [`Producer::write_chunk()`]
+        /// and [`Producer::write_chunk_uninit()`].
+        ///
+        /// The number of free slots currently available for writing can be obtained with
+        /// [`Producer::slots()`].
+    )};
 }
 
 macro_rules! struct_producer {
@@ -792,21 +796,19 @@ macro_rules! struct_producer {
 }
 
 macro_rules! struct_consumer_docstring {
-    () => {
-        "
-The consumer side of a [`RingBuffer`].
-
-A `Consumer` can be moved between threads,
-but references from different threads are not allowed
-(i.e. it is [`Send`] but not [`Sync`]).
-
-Individual elements can be moved out of the ring buffer with [`Consumer::pop()`],
-multiple elements at once can be read with [`Consumer::read_chunk()`].
-
-The number of slots currently available for reading can be obtained with
-[`Consumer::slots()`].
-"
-    };
+    () => { docstring!(
+        /// The consumer side of a [`RingBuffer`].
+        ///
+        /// A `Consumer` can be moved between threads,
+        /// but references from different threads are not allowed
+        /// (i.e. it is [`Send`] but not [`Sync`]).
+        ///
+        /// Individual elements can be moved out of the ring buffer with [`Consumer::pop()`],
+        /// multiple elements at once can be read with [`Consumer::read_chunk()`].
+        ///
+        /// The number of slots currently available for reading can be obtained with
+        /// [`Consumer::slots()`].
+    )};
 }
 
 macro_rules! struct_consumer {
@@ -1161,36 +1163,30 @@ macro_rules! fn_consumer_peek {
 }
 
 macro_rules! fn_consumer_slots_docstring {
-    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
-        concat!(
-            "
-Returns the number of slots available for reading.
-
-Since items can be concurrently produced on another thread, the actual number
-of available slots may increase at any time
-(up to the [`capacity()`](Consumer::capacity)).
-
-To check for a single available slot,
-using [`is_empty()`](Consumer::is_empty) is often quicker
-(because it might not have to check an atomic variable).
-
-TODO: insert bip specifics
-
-# Examples
-
-```
-",
-            doctest_import!($module, "RingBuffer"),
-            doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1024),
-            "
-
-assert_eq!(c.slots(), 0);
-assert_eq!(p.push(0.0), Ok(()));
-assert_eq!(c.slots(), 1);
-```
-"
-        )
-    };
+    (arc = $arc:ident, array = $array:ident, module = $module:literal) => { docstring!(
+        /// Returns the number of slots available for reading.
+        ///
+        /// Since items can be concurrently produced on another thread, the actual number
+        /// of available slots may increase at any time
+        /// (up to the [`capacity()`](Consumer::capacity)).
+        ///
+        /// To check for a single available slot,
+        /// using [`is_empty()`](Consumer::is_empty) is often quicker
+        /// (because it might not have to check an atomic variable).
+        ///
+        /// TODO: insert bip specifics
+        ///
+        /// # Examples
+        ///
+        /// ```
+        #[doc = doctest_import!($module, "RingBuffer")]
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1024)]
+        ///
+        /// assert_eq!(c.slots(), 0);
+        /// assert_eq!(p.push(0.0), Ok(()));
+        /// assert_eq!(c.slots(), 1);
+        /// ```
+    )};
 }
 
 macro_rules! fn_consumer_slots {
@@ -1862,18 +1858,16 @@ macro_rules! fn_consumer_read_chunk {
 }
 
 macro_rules! fn_write_chunk_uninit_as_mut_sliceX_docstring {
-    () => {
-        "
-
-After writing to the slots, they are *not* automatically made available
-to be read by the [`Consumer`].
-This has to be explicitly done by calling [`commit()`](WriteChunkUninit::commit)
-or [`commit_all()`](WriteChunkUninit::commit_all).
-If items are written but *not* committed afterwards,
-they will *not* become available for reading and
-they will be leaked (which is only relevant if `T` implements [`Drop`]).
-"
-    };
+    () => { docstring!(
+        ///
+        /// After writing to the slots, they are *not* automatically made available
+        /// to be read by the [`Consumer`].
+        /// This has to be explicitly done by calling [`commit()`](WriteChunkUninit::commit)
+        /// or [`commit_all()`](WriteChunkUninit::commit_all).
+        /// If items are written but *not* committed afterwards,
+        /// they will *not* become available for reading and
+        /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
+    )};
 }
 
 macro_rules! fn_write_chunk_uninit_as_mut_sliceX {
@@ -1940,18 +1934,16 @@ macro_rules! fn_write_chunk_uninit_drop_suffix {
 }
 
 macro_rules! fn_write_chunk_as_mut_sliceX_docstring {
-    () => {
-        "
-
-After writing to the slots, they are *not* automatically made available
-to be read by the [`Consumer`].
-This has to be explicitly done by calling [`commit()`](WriteChunk::commit)
-or [`commit_all()`](WriteChunk::commit_all).
-If items are written but *not* committed afterwards,
-they will *not* become available for reading and
-they will eventually be dropped (if `T` implements [`Drop`]).
-"
-    };
+    () => { docstring!(
+        ///
+        /// After writing to the slots, they are *not* automatically made available
+        /// to be read by the [`Consumer`].
+        /// This has to be explicitly done by calling [`commit()`](WriteChunk::commit)
+        /// or [`commit_all()`](WriteChunk::commit_all).
+        /// If items are written but *not* committed afterwards,
+        /// they will *not* become available for reading and
+        /// they will eventually be dropped (if `T` implements [`Drop`]).
+    )};
 }
 
 macro_rules! fn_write_chunk_as_mut_sliceX {
@@ -1992,17 +1984,15 @@ macro_rules! fn_write_chunk_as_mut_sliceX {
 }
 
 macro_rules! fn_read_chunk_as_sliceX_docstring {
-    () => {
-        "
-
-The provided slots are *not* automatically made available
-to be written again by the [`Producer`].
-This has to be explicitly done by calling [`commit()`](ReadChunk::commit)
-or [`commit_all()`](ReadChunk::commit_all).
-Note that this runs the destructor of the committed items (if `T` implements [`Drop`]).
-You can \"peek\" at the contained values by simply not calling any of the \"commit\" methods.
-"
-    };
+    () => { docstring!(
+        ///
+        /// The provided slots are *not* automatically made available
+        /// to be written again by the [`Producer`].
+        /// This has to be explicitly done by calling [`commit()`](ReadChunk::commit)
+        /// or [`commit_all()`](ReadChunk::commit_all).
+        /// Note that this runs the destructor of the committed items (if `T` implements [`Drop`]).
+        /// You can "peek" at the contained values by simply not calling any of the "commit" methods.
+    )};
 }
 
 macro_rules! fn_read_chunk_as_sliceX {
@@ -2033,16 +2023,14 @@ macro_rules! fn_read_chunk_as_sliceX {
 }
 
 macro_rules! fn_read_chunk_as_mut_sliceX_docstring {
-    () => {
-        "
-
-In the vast majority of cases, mutable access is not required when
-reading data and the immutable version should be preferred. However,
-there are some scenarios where it might be desirable to perform
-operations on the data in-place without copying it to a separate buffer
-(e.g. streaming decryption), in which case this version can be used.
-"
-    };
+    () => { docstring!(
+        ///
+        /// In the vast majority of cases, mutable access is not required when
+        /// reading data and the immutable version should be preferred. However,
+        /// there are some scenarios where it might be desirable to perform
+        /// operations on the data in-place without copying it to a separate buffer
+        /// (e.g. streaming decryption), in which case this version can be used.
+    )};
 }
 
 macro_rules! fn_read_chunk_as_mut_sliceX {
@@ -2296,64 +2284,53 @@ macro_rules! fn_write_chunk_uninit_commit {
 }
 
 macro_rules! fn_write_chunk_uninit_fill_from_iter_docstring {
-    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
-        concat!(
-            "
-
-Moves items from an iterator into the (uninitialized) slots of the chunk.
-
-The number of moved items is returned.
-
-All moved items are automatically made availabe to be read by the [`Consumer`].
-
-# Examples
-
-If the iterator contains too few items, only a part of the chunk
-is made available for reading:
-
-```
-",
-            doctest_import!($module, "{PopError, RingBuffer}"),
-            "\n\n",
-            doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 4),
-            "
-
-if let Ok(chunk) = p.write_chunk_uninit(3) {
-    assert_eq!(chunk.fill_from_iter([10, 20]), 2);
-} else {
-    unreachable!();
-}
-assert_eq!(p.slots(), 2);
-assert_eq!(c.pop(), Ok(10));
-assert_eq!(c.pop(), Ok(20));
-assert_eq!(c.pop(), Err(PopError::Empty));
-```
-
-If the chunk size is too small, some items may remain in the iterator.
-To be able to keep using the iterator after the call,
-`&mut` (or [`Iterator::by_ref()`]) can be used.
-
-```
-",
-            doctest_import!($module, "{PopError, RingBuffer}"),
-            "\n\n",
-            doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 4),
-            "
-
-let mut it = vec![10, 20, 30].into_iter();
-if let Ok(chunk) = p.write_chunk_uninit(2) {
-    assert_eq!(chunk.fill_from_iter(&mut it), 2);
-} else {
-    unreachable!();
-}
-assert_eq!(c.pop(), Ok(10));
-assert_eq!(c.pop(), Ok(20));
-assert_eq!(c.pop(), Err(PopError::Empty));
-assert_eq!(it.next(), Some(30));
-```
-"
-        )
-    };
+    (arc = $arc:ident, array = $array:ident, module = $module:literal) => { docstring!(
+        /// Moves items from an iterator into the (uninitialized) slots of the chunk.
+        ///
+        /// The number of moved items is returned.
+        ///
+        /// All moved items are automatically made availabe to be read by the [`Consumer`].
+        ///
+        /// # Examples
+        ///
+        /// If the iterator contains too few items, only a part of the chunk
+        /// is made available for reading:
+        ///
+        /// ```
+        #[doc = doctest_import!($module, "{PopError, RingBuffer}")]
+        ///
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 4)]
+        /// if let Ok(chunk) = p.write_chunk_uninit(3) {
+        ///     assert_eq!(chunk.fill_from_iter([10, 20]), 2);
+        /// } else {
+        ///     unreachable!();
+        /// }
+        /// assert_eq!(p.slots(), 2);
+        /// assert_eq!(c.pop(), Ok(10));
+        /// assert_eq!(c.pop(), Ok(20));
+        /// assert_eq!(c.pop(), Err(PopError::Empty));
+        /// ```
+        ///
+        /// If the chunk size is too small, some items may remain in the iterator.
+        /// To be able to keep using the iterator after the call,
+        /// `&mut` (or [`Iterator::by_ref()`]) can be used.
+        ///
+        /// ```
+        #[doc = doctest_import!($module, "{PopError, RingBuffer}")]
+        ///
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 4)]
+        /// let mut it = vec![10, 20, 30].into_iter();
+        /// if let Ok(chunk) = p.write_chunk_uninit(2) {
+        ///     assert_eq!(chunk.fill_from_iter(&mut it), 2);
+        /// } else {
+        ///     unreachable!();
+        /// }
+        /// assert_eq!(c.pop(), Ok(10));
+        /// assert_eq!(c.pop(), Ok(20));
+        /// assert_eq!(c.pop(), Err(PopError::Empty));
+        /// assert_eq!(it.next(), Some(30));
+        /// ```
+    )}
 }
 
 macro_rules! fn_write_chunk_uninit_fill_from_iter {
