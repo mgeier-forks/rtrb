@@ -550,7 +550,7 @@ impl<S: Storage> Consumer<&S> {
 
 impl<S: Storage> Consumer<Ptr<S>> {
     pub fn is_abandoned(&self) -> bool {
-        self.buffer.flags().load(Ordering::SeqCst) & IS_ABANDONED != 0
+        self.buffer.flags().load(Ordering::Acquire) & IS_ABANDONED != 0
     }
 }
 

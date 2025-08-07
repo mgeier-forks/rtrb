@@ -19,6 +19,4 @@ impl_everything_eventually! {
     contiguous = yes,
     pow2 = yes,
     module = "rtrb::bip2",
-    'a = (),
-    N = ()
 }

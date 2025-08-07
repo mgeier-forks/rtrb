@@ -20,6 +20,4 @@ impl_everything_eventually! {
     pow2 = no,
     // TODO: update this:
     module = "rtrb::array_temp",
-    'a = ('a),
-    N = (N)
 }

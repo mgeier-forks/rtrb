@@ -21,6 +21,4 @@ impl_everything_eventually! {
     contiguous = yes,
     pow2 = no,
     module = "rtrb::bip_array",
-    'a = ('a),
-    N = (N)
 }
