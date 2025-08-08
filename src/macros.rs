@@ -41,10 +41,9 @@ macro_rules! storage_vec_helper {
         unsafe impl<T: Send> Send for RingBuffer<T> {}
 
         impl<T> RingBuffer<T> {
-            #[allow(clippy::new_ret_no_self)]
-            pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
-                let capacity = Self::update_capacity(capacity);
-                ArcRingBuffer::new(Self {
+            // Private helper function.
+            fn construct(capacity: usize) -> Self {
+                Self {
                     head: choice!($padded,
                         CachePadded::new(AtomicUsize::new(0)),
                         AtomicUsize::new(0)),
@@ -59,7 +58,7 @@ macro_rules! storage_vec_helper {
                     flags: AtomicU8::new(0),
                     data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
                     capacity,
-                })
+                }
             }
 
             fn capacity(&self) -> usize {
@@ -86,16 +85,16 @@ macro_rules! storage_vec_helper {
 }
 
 macro_rules! storage_array {
-    (padded = $padded:ident, bip = yes, rb_doc = $rb_doc:expr) => {
-        storage_array_helper!(padded = $padded, skip, rb_doc = $rb_doc);
+    (arc = $arc:ident, padded = $padded:ident, bip = yes, rb_doc = $rb_doc:expr) => {
+        storage_array_helper!(arc = $arc, padded = $padded, skip, rb_doc = $rb_doc);
     };
-    (padded = $padded:ident, bip = no, rb_doc = $rb_doc:expr) => {
-        storage_array_helper!(padded = $padded, , rb_doc = $rb_doc);
+    (arc = $arc:ident, padded = $padded:ident, bip = no, rb_doc = $rb_doc:expr) => {
+        storage_array_helper!(arc = $arc, padded = $padded, , rb_doc = $rb_doc);
     };
 }
 
 macro_rules! storage_array_helper {
-    (padded = $padded:ident, $($skip:ident)?, rb_doc = $rb_doc:expr) => {
+    (arc = $arc:ident, padded = $padded:ident, $($skip:ident)?, rb_doc = $rb_doc:expr) => {
         use $crate::atomic::*;
         use $crate::cache_padded::CachePadded;
         use core::cell::UnsafeCell;
@@ -123,13 +122,8 @@ macro_rules! storage_array_helper {
         unsafe impl<T: Send, const N: usize> Send for RingBuffer<T, N> {}
 
         impl<T, const N: usize> RingBuffer<T, N> {
-            pub const fn new() -> Self {
-                const {
-                    assert!(
-                        Self::update_capacity(N) == N,
-                        "`capacity` must be a power of two"
-                    );
-                }
+            // Private helper function.
+            const fn construct() -> Self {
                 Self {
                     head: choice!($padded,
                         CachePadded::new(AtomicUsize::new(0)),
@@ -164,6 +158,13 @@ macro_rules! storage_array_helper {
             }
         }
 
+        storage_array_impl_default_for_ring_buffer!(arc = $arc);
+    };
+}
+
+macro_rules! storage_array_impl_default_for_ring_buffer {
+    (arc = yes) => {};
+    (arc = no) => {
         impl<T, const N: usize> Default for RingBuffer<T, N> {
             fn default() -> Self {
                 Self::new()
@@ -242,9 +243,10 @@ macro_rules! impl_everything_eventually {
 
         // SAFETY: RingBuffer is only mutated (using *interior mutablility*)
         // via Producer/Consumer (which are !Sync), all other access can be shared.
-        unsafe_impl!(Sync, for = ty!(RingBuffer, array = $array), array = $array, params = (T: Send));
+        unsafe_impl!(Sync, for = ty!(RingBuffer, array = $array), array = $array, where T: Send);
 
         impl_!(ty!(RingBuffer, array = $array), array = $array, params = (T), items = {
+            fn_ring_buffer_new!(arc = $arc, array = $array, pow2 = $pow2, module = $module);
             fn_ring_buffer_producer!(arc = $arc, array = $array);
             fn_ring_buffer_consumer!(arc = $arc, array = $array);
 
@@ -257,7 +259,7 @@ macro_rules! impl_everything_eventually {
             fn_ring_buffer_distance!(pow2 = $pow2);
         });
 
-        struct_arc_ring_buffer!(arc = $arc);
+        struct_arc_ring_buffer!(arc = $arc, array = $array);
 
         struct_producer!(arc = $arc, array = $array);
 
@@ -417,13 +419,126 @@ macro_rules! impl_ {
 
 // Ideally, this should force the user to write the actual `unsafe` keyword.
 macro_rules! unsafe_impl {
-    ($(#[$attr:meta])* $what:ty, for = $for:ty, array = yes, params = ($($params:tt)+)) => {
+    ($(#[$attr:meta])* $what:ty, for = $for:ty, array = yes $(, where $($where:tt)+)?) => {
         #[allow(clippy::undocumented_unsafe_blocks)]
-        $(#[$attr])* unsafe impl<$($params)+, const N: usize> $what for $for {}
+        $(#[$attr])* unsafe impl<T, const N: usize> $what for $for $(where $($where)+)? {}
     };
-    ($(#[$attr:meta])* $what:ty, for = $for:ty, array = no, params = ($($params:tt)+)) => {
+    ($(#[$attr:meta])* $what:ty, for = $for:ty, array = no $(, where $($where:tt)+)?) => {
         #[allow(clippy::undocumented_unsafe_blocks)]
-        $(#[$attr])* unsafe impl<$($params)+> $what for $for {}
+        $(#[$attr])* unsafe impl<T> $what for $for $(where $($where)+)? {}
+    };
+}
+
+macro_rules! fn_ring_buffer_new {
+    (arc = yes, array = yes, pow2 = $pow2:ident, module = $module:literal) => {
+        /// Creates a ring buffer with a capacity of `N` and returns [`Producer`] and [`Consumer`].
+        ///
+        #[doc = choice!($pow2,
+            "`N` must be a power of two.",
+            "")]
+        ///
+        /// # Examples
+        ///
+        /// ```
+        #[doc = doctest_import!($module, "RingBuffer")]
+        ///
+        /// let (p, c) = RingBuffer::<f32, 128>::new();
+        /// ```
+        ///
+        /// Specifying an explicit type
+        /// is is only necessary if it cannot be deduced by the compiler.
+        ///
+        /// ```
+        #[doc = doctest_import!($module, "RingBuffer")]
+        ///
+        /// let (mut p, c) = RingBuffer::<_, 128>::new();
+        /// assert_eq!(p.push(0.0f32), Ok(()));
+        /// ```
+        #[allow(clippy::new_ret_no_self)]
+        pub fn new() -> (Producer<T, N>, Consumer<T, N>) {
+            const {
+                assert!(
+                    Self::update_capacity(N) == N,
+                    "`N` must be a power of two"
+                );
+            }
+            ArcRingBuffer::new(Self::construct())
+        }
+    };
+    (arc = yes, array = no, pow2 = $pow2:ident, module = $module:literal) => {
+        /// Creates a ring buffer
+        #[doc = choice!($pow2, "with at least", "with")]
+        /// the given `capacity` and returns [`Producer`] and [`Consumer`].
+        ///
+        #[doc = choice!($pow2,
+            "If the `capacity` isn't already a power of two, it is rounded up to the next one.",
+            "")]
+        ///
+        /// # Examples
+        ///
+        /// ```
+        #[doc = doctest_import!($module, "RingBuffer")]
+        ///
+        /// let (p, c) = RingBuffer::<f32>::new(100);
+        /// ```
+        ///
+        /// Specifying an explicit type with the [turbofish](https://turbo.fish/)
+        /// is is only necessary if it cannot be deduced by the compiler.
+        ///
+        /// ```
+        #[doc = doctest_import!($module, "RingBuffer")]
+        ///
+        /// let (mut p, c) = RingBuffer::new(100);
+        /// assert_eq!(p.push(0.0f32), Ok(()));
+        /// ```
+        #[allow(clippy::new_ret_no_self)]
+        pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
+            let capacity = Self::update_capacity(capacity);
+            ArcRingBuffer::new(Self::construct(capacity))
+        }
+    };
+    (arc = no, array = yes, pow2 = $pow2:ident, module = $module:literal) => {
+        /// Creates a ring buffer with a capacity of `N`.
+        ///
+        #[doc = choice!($pow2,
+            "`N` must be a power of two.",
+            "")]
+        ///
+        /// A (single) [`Producer`] for writing into the ring buffer can be created with
+        /// [`RingBuffer::producer()`].
+        /// A (single) [`Consumer`] for reading from the ring buffer can be created with
+        /// [`RingBuffer::consumer()`].
+        ///
+        /// # Examples
+        ///
+        /// ```
+        #[doc = doctest_import!($module, "RingBuffer")]
+        ///
+        /// let rb = RingBuffer::<f32, 128>::new();
+        /// ```
+        ///
+        /// Specifying an explicit type
+        /// is is only necessary if it cannot be deduced by the compiler.
+        ///
+        /// ```
+        #[doc = doctest_import!($module, "RingBuffer")]
+        ///
+        /// let rb = RingBuffer::<_, 128>::new();
+        /// let mut p = rb.producer().unwrap();
+        /// assert_eq!(p.push(0.0f32), Ok(()));
+        /// ```
+        pub const fn new() -> Self {
+            const {
+                assert!(
+                    Self::update_capacity(N) == N,
+                    "`N` must be a power of two"
+                );
+            }
+            Self::construct()
+        }
+    };
+    (arc = no, array = no, pow2 = $pow2:ident, module = $module:literal) => {
+        compile_error!("TODO")
     };
 }
 
@@ -581,22 +696,29 @@ macro_rules! fn_ring_buffer_distance {
 }
 
 macro_rules! struct_arc_ring_buffer {
-    (arc = yes) => {
+    (arc = yes, array = $array:ident) => {
         use alloc::boxed::Box;
         use core::ptr::NonNull;
 
-        /// Non-public helper type.
+        // Non-public helper type.
         //#[derive(Debug, PartialEq, Eq)]
-        struct ArcRingBuffer<T> {
-            ptr: NonNull<RingBuffer<T>>,
-        }
+        // TODO: make non-public!
+        struct_!(ArcRingBuffer, array = $array, params = (T), fields = {
+            ptr: NonNull<ty!(RingBuffer, array = $array)>,
+        });
 
         // SAFETY: If RingBuffer is Send, ArcRingBuffer is as well.
-        unsafe impl<T> Send for ArcRingBuffer<T> where RingBuffer<T>: Send {}
+        unsafe_impl!(
+            Send,
+            for = ty!(ArcRingBuffer, array = $array),
+            array = $array,
+            where ty!(RingBuffer, array = $array): Send);
 
-        impl<T> ArcRingBuffer<T> {
+        impl_!(ty!(ArcRingBuffer, array = $array), array = $array, params = (T), items = {
             #[allow(clippy::new_ret_no_self)]
-            fn new(rb: RingBuffer<T>) -> (Producer<T>, Consumer<T>) {
+            fn new(
+                rb: ty!(RingBuffer, array = $array)
+            ) -> (ty!(Producer, array = $array), ty!(Consumer, array = $array)) {
                 debug_assert_eq!(rb.flags.load(Ordering::Relaxed) & IS_ABANDONED, 0);
                 let head = rb.head.load(Ordering::Relaxed);
                 let tail = rb.tail.load(Ordering::Relaxed);
@@ -615,9 +737,9 @@ macro_rules! struct_arc_ring_buffer {
                 };
                 (p, c)
             }
-        }
+        });
 
-        impl<T> Drop for ArcRingBuffer<T> {
+        impl_!(Drop, for = ty!(ArcRingBuffer, array = $array), array = $array, params = (T), items = {
             fn drop(&mut self) {
                 // SAFETY: must point to initialized Storage.
                 let flags: &AtomicU8 = unsafe { &self.ptr.as_ref().flags };
@@ -647,11 +769,27 @@ macro_rules! struct_arc_ring_buffer {
                     }
                 }
             }
-        }
+        });
 
+        fn_arc_ring_buffer_drop_slow!(array = $array);
+
+        impl_!(core::ops::Deref, for = ty!(ArcRingBuffer, array = $array), array = $array, params = (T), items = {
+            type Target = ty!(RingBuffer, array = $array);
+
+            fn deref(&self) -> &Self::Target {
+                // SAFETY: There are never any mutable references.
+                unsafe { self.ptr.as_ref() }
+            }
+        });
+    };
+    (arc = no, array = $array:ident) => {};
+}
+
+macro_rules! fn_arc_ring_buffer_drop_slow_helper {
+    (params = ($($params:tt)*), args = ($($args:tt)*)) => {
         /// Non-inlined part of `Ref::drop()`.
         #[inline(never)]
-        unsafe fn drop_slow<T>(ptr: NonNull<RingBuffer<T>>) {
+        unsafe fn drop_slow<$($params)*>(ptr: NonNull<RingBuffer<$($args)*>>) {
             // SAFETY: This is allowed because the storage has been allocated with `Box::new()`.
             unsafe {
                 // Turn the pointer back into a `Box` and immediately drop it,
@@ -659,17 +797,16 @@ macro_rules! struct_arc_ring_buffer {
                 drop(Box::from_raw(ptr.as_ptr()));
             }
         }
-
-        impl<T> core::ops::Deref for ArcRingBuffer<T> {
-            type Target = RingBuffer<T>;
-
-            fn deref(&self) -> &Self::Target {
-                // SAFETY: There are never any mutable references.
-                unsafe { self.ptr.as_ref() }
-            }
-        }
     };
-    (arc = no) => {};
+}
+
+macro_rules! fn_arc_ring_buffer_drop_slow {
+    (array = yes) => {
+        fn_arc_ring_buffer_drop_slow_helper!(params = (T, const N: usize), args = (T, N));
+    };
+    (array = no) => {
+        fn_arc_ring_buffer_drop_slow_helper!(params = (T), args = (T));
+    };
 }
 
 macro_rules! ty {
@@ -767,7 +904,7 @@ macro_rules! struct_producer {
             /// all items remaining in the ring buffer will be dropped and the allocated memory
             /// will be deallocated.
             Producer, array = $array, params = (T), fields = {
-                buffer: ArcRingBuffer<T>,
+                buffer: ty!(ArcRingBuffer, array = $array),
                 cached_head: Cell<usize>,
                 cached_tail: Cell<usize>,
             }
@@ -828,7 +965,7 @@ macro_rules! struct_consumer {
             /// all items remaining in the ring buffer will be dropped and the allocated memory
             /// will be deallocated.
             Consumer, array = $array, params = (T), fields = {
-                buffer: ArcRingBuffer<T>,
+                buffer: ty!(ArcRingBuffer, array = $array),
                 cached_head: Cell<usize>,
                 cached_tail: Cell<usize>,
             }
@@ -2458,7 +2595,7 @@ macro_rules! fn_read_chunk_commit {
         ///
         /// // Scope to limit lifetime of ring buffer
         /// {
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 3, "    ")]
+        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 4, "    ")]
         ///
         ///     assert!(p.push(Thing).is_ok()); // 1
         ///     assert!(p.push(Thing).is_ok()); // 2
@@ -2517,7 +2654,7 @@ macro_rules! impl_send_for_chunks {
             /// # fn assert_sync<X: Sync>() {}
             #[doc = concat!("assert_sync::<", doctest_ty!(WriteChunk, u8, 8, array = $array), ">();")]
             /// ```
-            Send, for = ty!(WriteChunkUninit, array = $array, '_), array = $array, params = (T: Send));
+            Send, for = ty!(WriteChunkUninit, array = $array, '_), array = $array, where T: Send);
 
         // SAFETY: ReadChunk only exists while a unique reference to the consumer is held.
         // It is therefore safe to move it to another thread.
@@ -2534,6 +2671,6 @@ macro_rules! impl_send_for_chunks {
             /// fn assert_sync<X: Sync>() {}
             #[doc = concat!("assert_sync::<", doctest_ty!(ReadChunk, u8, 8, array = $array), ">();")]
             /// ```
-            Send, for = ty!(ReadChunk, array = $array, '_), array = $array, params = (T: Send));
+            Send, for = ty!(ReadChunk, array = $array, '_), array = $array, where T: Send);
     };
 }

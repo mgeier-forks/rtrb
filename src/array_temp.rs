@@ -1,6 +1,7 @@
 //! TODO: move this to crate::array once macros are complete.
 
 storage_array! {
+    arc = no,
     padded = yes,
     bip = no,
     rb_doc = "

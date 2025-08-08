@@ -3,6 +3,7 @@
 //! See [`rtrb::bip`](crate::bip) for a bi-partite ring buffer with dynamic storage.
 
 storage_array! {
+    arc = no,
     padded = yes,
     bip = yes,
     rb_doc = "
