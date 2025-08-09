@@ -400,11 +400,17 @@ macro_rules! doctest_ty {
 }
 
 macro_rules! struct_ {
-    ($(#[$attr:meta])* $name:ident, N = yes, params = ($($params:tt)+), fields = $fields:tt $($end:tt)?) => {
-        $(#[$attr])* pub struct $name<$($params)+, const N: usize> $fields $($end)?
+    ($(#[$attr:meta])* $name:ident<'a>, N = yes, $($body:tt)+) => {
+        $(#[$attr])* pub struct $name<'a, T, const N: usize> $($body)+
     };
-    ($(#[$attr:meta])* $name:ident, N = no, params = ($($params:tt)+), fields = $fields:tt $($end:tt)?) => {
-        $(#[$attr])* pub struct $name<$($params)+> $fields $($end)?
+    ($(#[$attr:meta])* $name:ident<'a>, N = no, $($body:tt)+) => {
+        $(#[$attr])* pub struct $name<'a, T> $($body)+
+    };
+    ($(#[$attr:meta])* $name:ident, N = yes, $($body:tt)+) => {
+        $(#[$attr])* pub struct $name<T, const N: usize> $($body)+
+    };
+    ($(#[$attr:meta])* $name:ident, N = no, $($body:tt)+) => {
+        $(#[$attr])* pub struct $name<T> $($body)+
     };
 }
 
@@ -717,7 +723,7 @@ macro_rules! struct_arc_ring_buffer {
         // Non-public helper type.
         //#[derive(Debug, PartialEq, Eq)]
         // TODO: make non-public!
-        struct_!(ArcRingBuffer, N = $N, params = (T), fields = {
+        struct_!(ArcRingBuffer, N = $N, {
             ptr: NonNull<generic!(RingBuffer, N = $N)>,
         });
 
@@ -929,7 +935,7 @@ macro_rules! struct_producer {
             /// When the `Producer` is dropped after the [`Consumer`] has already been dropped,
             /// all items remaining in the ring buffer will be dropped and the allocated memory
             /// will be deallocated.
-            Producer, N = $N, params = (T), fields = {
+            Producer, N = $N, {
                 buffer: generic!(ArcRingBuffer, N = $N),
                 cached_head: Cell<usize>,
                 cached_tail: Cell<usize>,
@@ -943,7 +949,7 @@ macro_rules! struct_producer {
             #[doc = struct_producer_docstring!()]
             ///
             /// A `Producer` can only be created with [`RingBuffer::producer()`].
-            Producer, N = $N, params = ('a, T), fields = {
+            Producer<'a>, N = $N, {
                 buffer: &'a generic!(RingBuffer, N = $N),
                 cached_head: Cell<usize>,
                 cached_tail: Cell<usize>,
@@ -990,7 +996,7 @@ macro_rules! struct_consumer {
             /// When the `Consumer` is dropped after the [`Producer`] has already been dropped,
             /// all items remaining in the ring buffer will be dropped and the allocated memory
             /// will be deallocated.
-            Consumer, N = $N, params = (T), fields = {
+            Consumer, N = $N, {
                 buffer: generic!(ArcRingBuffer, N = $N),
                 cached_head: Cell<usize>,
                 cached_tail: Cell<usize>,
@@ -1004,7 +1010,7 @@ macro_rules! struct_consumer {
             #[doc = struct_consumer_docstring!()]
             ///
             /// A `Consumer` can only be created with [`RingBuffer::consumer()`].
-            Consumer, N = $N, params = ('a, T), fields = {
+            Consumer<'a>, N = $N, {
                 buffer: &'a generic!(RingBuffer, N = $N),
                 cached_head: Cell<usize>,
                 cached_tail: Cell<usize>,
@@ -2273,7 +2279,7 @@ macro_rules! struct_write_chunk_uninit {
     (N = $N:ident, arc = $arc:ident, contiguous = yes) => {
         // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(WriteChunkUninit, N = $N, params = ('a, T), fields = {
+        struct_!(WriteChunkUninit<'a>, N = $N, {
             ptr: *mut T,
             len: usize,
             producer: &'a generic!(Producer, N = $N, arc = $arc),
@@ -2307,7 +2313,7 @@ macro_rules! struct_write_chunk_uninit {
     (N = $N:ident, arc = $arc:ident, contiguous = no) => {
         // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(WriteChunkUninit, N = $N, params = ('a, T), fields = {
+        struct_!(WriteChunkUninit<'a>, N = $N, {
             first_ptr: *mut T,
             first_len: usize,
             second_ptr: *mut T,
@@ -2352,7 +2358,7 @@ macro_rules! struct_write_chunk_uninit {
 macro_rules! struct_write_chunk {
     (N = $N:ident) => {
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(WriteChunk, N = $N, params = ('a, T), fields = (Option<generic!(WriteChunkUninit<'a>, N = $N)>););
+        struct_!(WriteChunk<'a>, N = $N, (Option<generic!(WriteChunkUninit<'a>, N = $N)>););
 
         impl_!(WriteChunk<'_>, trait = Drop, N = $N, {
             fn drop(&mut self) {
@@ -2371,7 +2377,7 @@ macro_rules! struct_read_chunk {
     (N = $N:ident, arc = $arc:ident, contiguous = yes) => {
         // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(ReadChunk, N = $N, params = ('a, T), fields = {
+        struct_!(ReadChunk<'a>, N = $N, {
             ptr: *mut T,
             len: usize,
             consumer: &'a generic!(Consumer, N = $N, arc = $arc),
@@ -2391,7 +2397,7 @@ macro_rules! struct_read_chunk {
     (N = $N:ident, arc = $arc:ident, contiguous = no) => {
         // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(ReadChunk, N = $N, params = ('a, T), fields = {
+        struct_!(ReadChunk<'a>, N = $N, {
             // Must be "mut" for drop_in_place()
             first_ptr: *mut T,
             first_len: usize,
