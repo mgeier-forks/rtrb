@@ -245,7 +245,7 @@ macro_rules! impl_everything_eventually {
         // via Producer/Consumer (which are !Sync), all other access can be shared.
         unsafe_impl!(Sync, for = ty!(RingBuffer, array = $array), array = $array, where T: Send);
 
-        impl_!(ty!(RingBuffer, array = $array), array = $array, params = (T), items = {
+        impl_!(RingBuffer, array = $array, {
             fn_ring_buffer_new!(arc = $arc, array = $array, pow2 = $pow2, module = $module);
             fn_ring_buffer_producer!(arc = $arc, array = $array);
             fn_ring_buffer_consumer!(arc = $arc, array = $array);
@@ -263,7 +263,7 @@ macro_rules! impl_everything_eventually {
 
         struct_producer!(arc = $arc, array = $array);
 
-        impl_!(ty!(Producer, arc = $arc, array = $array), array = $array, params = ('a, T), items = {
+        impl_!(Producer, arc = $arc, array = $array, {
             fn_producer_push!(arc = $arc, array = $array, module = $module);
             fn_producer_write_chunk_uninit!(array = $array, bip = $bip);
             fn_producer_write_chunk!(array = $array, contiguous = $contiguous);
@@ -279,7 +279,7 @@ macro_rules! impl_everything_eventually {
 
         struct_consumer!(arc = $arc, array = $array);
 
-        impl_!(ty!(Consumer, arc = $arc, array = $array), array = $array, params = ('a, T), items = {
+        impl_!(Consumer, arc = $arc, array = $array, {
             fn_consumer_pop!(arc = $arc, array = $array, module = $module);
             fn_consumer_peek!(arc = $arc, array = $array, module = $module);
             fn_consumer_read_chunk!(array = $array, bip = $bip);
@@ -299,7 +299,7 @@ macro_rules! impl_everything_eventually {
 
         impl_send_for_chunks!(array = $array, module = $module);
 
-        impl_!(ty!(WriteChunkUninit, array = $array, '_), array = $array, params = (T), items = {
+        impl_!(WriteChunkUninit<'_>, array = $array, {
             fn_write_chunk_uninit_as_mut_sliceX!(contiguous = $contiguous);
             fn_write_chunk_uninit_commit_all!();
             fn_write_chunk_uninit_commit!();
@@ -310,14 +310,14 @@ macro_rules! impl_everything_eventually {
             fn_write_chunk_uninit_commit_unchecked!(bip = $bip);
         });
 
-        impl_!(ty!(WriteChunk, array = $array, '_), array = $array, params = (T), items = {
+        impl_!(WriteChunk<'_>, array = $array, {
             fn_write_chunk_as_mut_sliceX!(contiguous = $contiguous);
             fn_write_chunk_commit_all!();
             fn_write_chunk_commit!();
             fn_write_chunk_len_and_is_empty!();
         });
 
-        impl_!(ty!(ReadChunk, array = $array, '_), array = $array, params = (T), items = {
+        impl_!(ReadChunk<'_>, array = $array, {
             fn_read_chunk_as_sliceX!(contiguous = $contiguous);
             fn_read_chunk_as_mut_sliceX!(contiguous = $contiguous);
             fn_read_chunk_commit_all!();
@@ -408,12 +408,31 @@ macro_rules! struct_ {
     };
 }
 
+// $body can start with a "where" clause, if needed.
 macro_rules! impl_ {
-    ($what:ty, $(for = $for:ty,)? array = yes, params = ($($params:tt)+), items = $items:tt) => {
-        impl<$($params)+, const N: usize> $what $(for $for)? $items
+    ($name:ident<'_>, $(trait = $trait:ty,)? array = yes, $($body:tt)+) => {
+        impl<T, const N: usize> $($trait for)? $name<'_, T, N> $($body)+
     };
-    ($what:ty, $(for = $for:ty,)? array = no, params = ($($params:tt)+), items = $items:tt) => {
-        impl<$($params)+> $what $(for $for)? $items
+    ($name:ident<'_>, $(trait = $trait:ty,)? array = no, $($body:tt)+) => {
+        impl<T> $($trait for)? $name<'_, T> $($body)+
+    };
+    ($name:ident<'a>, $(trait = $trait:ty,)? array = yes, $($body:tt)+) => {
+        impl<'a, T, const N: usize> $($trait for)? $name<'a, T, N> $($body)+
+    };
+    ($name:ident<'a>, $(trait = $trait:ty,)? array = no, $($body:tt)+) => {
+        impl<'a, T> $($trait for)? $name<'a, T> $($body)+
+    };
+    ($name:ident, $(trait = $trait:ty,)? $(arc = yes,)? array = yes, $($body:tt)+) => {
+        impl<T, const N: usize> $($trait for)? $name<T, N> $($body)+
+    };
+    ($name:ident, $(trait = $trait:ty,)? $(arc = yes,)? array = no, $($body:tt)+) => {
+        impl<T> $($trait for)? $name<T> $($body)+
+    };
+    ($name:ident, $(trait = $trait:ty,)? arc = no, array = yes, $($body:tt)+) => {
+        impl<'a, T, const N: usize> $($trait for)? $name<'a, T, N> $($body)+
+    };
+    ($name:ident, $(trait = $trait:ty,)? arc = no, array = no, $($body:tt)+) => {
+        impl<'a, T> $($trait for)? $name<'a, T> $($body)+
     };
 }
 
@@ -714,7 +733,7 @@ macro_rules! struct_arc_ring_buffer {
             array = $array,
             where ty!(RingBuffer, array = $array): Send);
 
-        impl_!(ty!(ArcRingBuffer, array = $array), array = $array, params = (T), items = {
+        impl_!(ArcRingBuffer, array = $array, {
             #[allow(clippy::new_ret_no_self)]
             fn new(
                 rb: ty!(RingBuffer, array = $array)
@@ -739,7 +758,7 @@ macro_rules! struct_arc_ring_buffer {
             }
         });
 
-        impl_!(Drop, for = ty!(ArcRingBuffer, array = $array), array = $array, params = (T), items = {
+        impl_!(ArcRingBuffer, trait = Drop, array = $array, {
             fn drop(&mut self) {
                 // SAFETY: must point to initialized Storage.
                 let flags: &AtomicU8 = unsafe { &self.ptr.as_ref().flags };
@@ -773,7 +792,7 @@ macro_rules! struct_arc_ring_buffer {
 
         fn_arc_ring_buffer_drop_slow!(array = $array);
 
-        impl_!(core::ops::Deref, for = ty!(ArcRingBuffer, array = $array), array = $array, params = (T), items = {
+        impl_!(ArcRingBuffer, trait = core::ops::Deref, array = $array, {
             type Target = ty!(RingBuffer, array = $array);
 
             fn deref(&self) -> &Self::Target {
@@ -924,7 +943,7 @@ macro_rules! struct_producer {
             }
         );
 
-        impl_!(Drop, for = ty!(Producer, array = $array, '_), array = $array, params = (T), items = {
+        impl_!(Producer<'_>, trait = Drop, array = $array, {
             fn drop(&mut self) {
                 let _ = self.buffer.flags.fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
             }
@@ -985,7 +1004,7 @@ macro_rules! struct_consumer {
             }
         );
 
-        impl_!(Drop, for = ty!(Consumer, array = $array, '_), array = $array, params = (T), items = {
+        impl_!(Consumer<'_>, trait = Drop, array = $array, {
             fn drop(&mut self) {
                 let _ = self.buffer.flags.fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
             }
@@ -2253,7 +2272,7 @@ macro_rules! struct_write_chunk_uninit {
             producer: &'a ty!(Producer, arc = $arc, array = $array),
         });
 
-        impl_!(ty!(WriteChunkUninit, array = $array, 'a), array = $array, params = ('a, T), items = {
+        impl_!(WriteChunkUninit<'a>, array = $array, {
             unsafe fn new(producer: &'a ty!(Producer, arc = $arc, array = $array), n: usize, offset: usize) -> Self {
                 Self {
                     // SAFETY: Caller must guarantee that `offset` is valid.
@@ -2264,7 +2283,10 @@ macro_rules! struct_write_chunk_uninit {
             }
         });
 
-        impl_!(From<ty!(WriteChunkUninit, array = $array, 'a)>, for = ty!(WriteChunk, array = $array, 'a), array = $array, params = ('a, T: Default), items = {
+        impl_!(WriteChunk<'a>, trait = From<ty!(WriteChunkUninit, array = $array, 'a)>, array = $array,
+        where
+            T: Default,
+        {
             /// Fills all slots with the [`Default`] value.
             fn from(chunk: ty!(WriteChunkUninit, array = $array, 'a)) -> Self {
                 for i in 0..chunk.len {
@@ -2286,7 +2308,7 @@ macro_rules! struct_write_chunk_uninit {
             producer: &'a ty!(Producer, arc = $arc, array = $array),
         });
 
-        impl_!(ty!(WriteChunkUninit, array = $array, 'a), array = $array, params = ('a, T), items = {
+        impl_!(WriteChunkUninit<'a>, array = $array, {
             unsafe fn new(producer: &'a ty!(Producer, arc = $arc, array = $array), n: usize, offset: usize) -> Self {
                 let first_len = n.min(producer.buffer.capacity() - offset);
                 Self {
@@ -2300,7 +2322,10 @@ macro_rules! struct_write_chunk_uninit {
             }
         });
 
-        impl_!(From<ty!(WriteChunkUninit, array = $array, 'a)>, for = ty!(WriteChunk, array = $array, 'a), array = $array, params = ('a, T: Default), items = {
+        impl_!(WriteChunk<'a>, trait = From<ty!(WriteChunkUninit, array = $array, 'a)>, array = $array,
+        where
+            T: Default,
+        {
             /// Fills all slots with the [`Default`] value.
             fn from(chunk: ty!(WriteChunkUninit, array = $array, 'a)) -> Self {
                 for i in 0..chunk.first_len {
@@ -2322,7 +2347,7 @@ macro_rules! struct_write_chunk {
         //#[derive(Debug, PartialEq, Eq)]
         struct_!(WriteChunk, array = $array, params = ('a, T), fields = (Option<ty!(WriteChunkUninit, array = $array, 'a)>););
 
-        impl_!(Drop, for = ty!(WriteChunk, array = $array, '_), array = $array, params = (T), items = {
+        impl_!(WriteChunk<'_>, trait = Drop, array = $array, {
             fn drop(&mut self) {
                 // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
                 if let Some(mut chunk) = self.0.take() {
@@ -2345,7 +2370,7 @@ macro_rules! struct_read_chunk {
             consumer: &'a ty!(Consumer, arc = $arc, array = $array),
         });
 
-        impl_!(ty!(ReadChunk, array = $array, 'a), array = $array, params = ('a, T), items = {
+        impl_!(ReadChunk<'a>, array = $array, {
             unsafe fn new(consumer: &'a ty!(Consumer, arc = $arc, array = $array), n: usize, offset: usize) -> Self {
                 Self {
                     // SAFETY: Caller must guarantee that `offset` is valid.
@@ -2369,7 +2394,7 @@ macro_rules! struct_read_chunk {
             consumer: &'a ty!(Consumer, arc = $arc, array = $array),
         });
 
-        impl_!(ty!(ReadChunk, array = $array, 'a), array = $array, params = ('a, T), items = {
+        impl_!(ReadChunk<'a>, array = $array, {
             unsafe fn new(consumer: &'a ty!(Consumer, arc = $arc, array = $array), n: usize, offset: usize) -> Self {
                 let b = &consumer.buffer;
                 let first_len = n.min(b.capacity() - offset);
