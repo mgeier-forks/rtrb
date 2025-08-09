@@ -243,7 +243,7 @@ macro_rules! impl_everything_eventually {
 
         // SAFETY: RingBuffer is only mutated (using *interior mutablility*)
         // via Producer/Consumer (which are !Sync), all other access can be shared.
-        unsafe_impl!(Sync, for = ty!(RingBuffer, array = $array), array = $array, where T: Send);
+        impl_!(RingBuffer, trait unsafe = Sync, array = $array, where T: Send {});
 
         impl_!(RingBuffer, array = $array, {
             fn_ring_buffer_new!(arc = $arc, array = $array, pow2 = $pow2, module = $module);
@@ -409,42 +409,31 @@ macro_rules! struct_ {
 }
 
 // $body can start with a "where" clause, if needed.
+// "unsafe" is in a somewhat strange position to avoid parsing ambiguities.
 macro_rules! impl_ {
-    ($name:ident<'_>, $(trait = $trait:ty,)? array = yes, $($body:tt)+) => {
-        impl<T, const N: usize> $($trait for)? $name<'_, T, N> $($body)+
+    ($(#[$attr:meta])* $name:ident<'_>, $(trait $($unsafe:ident)? = $trait:ty,)? array = yes, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl<T, const N: usize> $($trait for)? $name<'_, T, N> $($body)+
     };
-    ($name:ident<'_>, $(trait = $trait:ty,)? array = no, $($body:tt)+) => {
-        impl<T> $($trait for)? $name<'_, T> $($body)+
+    ($(#[$attr:meta])* $name:ident<'_>, $(trait $($unsafe:ident)? = $trait:ty,)? array = no, $($body:tt)+) => {
+        $($($unsafe)?)? impl<T> $($trait for)? $name<'_, T> $($body)+
     };
-    ($name:ident<'a>, $(trait = $trait:ty,)? array = yes, $($body:tt)+) => {
-        impl<'a, T, const N: usize> $($trait for)? $name<'a, T, N> $($body)+
+    ($(#[$attr:meta])* $name:ident<'a>, $(trait $($unsafe:ident)? = $trait:ty,)? array = yes, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl<'a, T, const N: usize> $($trait for)? $name<'a, T, N> $($body)+
     };
-    ($name:ident<'a>, $(trait = $trait:ty,)? array = no, $($body:tt)+) => {
-        impl<'a, T> $($trait for)? $name<'a, T> $($body)+
+    ($(#[$attr:meta])* $name:ident<'a>, $(trait $($unsafe:ident)? = $trait:ty,)? array = no, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl<'a, T> $($trait for)? $name<'a, T> $($body)+
     };
-    ($name:ident, $(trait = $trait:ty,)? $(arc = yes,)? array = yes, $($body:tt)+) => {
-        impl<T, const N: usize> $($trait for)? $name<T, N> $($body)+
+    ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? $(arc = yes,)? array = yes, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl<T, const N: usize> $($trait for)? $name<T, N> $($body)+
     };
-    ($name:ident, $(trait = $trait:ty,)? $(arc = yes,)? array = no, $($body:tt)+) => {
-        impl<T> $($trait for)? $name<T> $($body)+
+    ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? $(arc = yes,)? array = no, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl<T> $($trait for)? $name<T> $($body)+
     };
-    ($name:ident, $(trait = $trait:ty,)? arc = no, array = yes, $($body:tt)+) => {
-        impl<'a, T, const N: usize> $($trait for)? $name<'a, T, N> $($body)+
+    ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? arc = no, array = yes, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl<'a, T, const N: usize> $($trait for)? $name<'a, T, N> $($body)+
     };
-    ($name:ident, $(trait = $trait:ty,)? arc = no, array = no, $($body:tt)+) => {
-        impl<'a, T> $($trait for)? $name<'a, T> $($body)+
-    };
-}
-
-// Ideally, this should force the user to write the actual `unsafe` keyword.
-macro_rules! unsafe_impl {
-    ($(#[$attr:meta])* $what:ty, for = $for:ty, array = yes $(, where $($where:tt)+)?) => {
-        #[allow(clippy::undocumented_unsafe_blocks)]
-        $(#[$attr])* unsafe impl<T, const N: usize> $what for $for $(where $($where)+)? {}
-    };
-    ($(#[$attr:meta])* $what:ty, for = $for:ty, array = no $(, where $($where:tt)+)?) => {
-        #[allow(clippy::undocumented_unsafe_blocks)]
-        $(#[$attr])* unsafe impl<T> $what for $for $(where $($where)+)? {}
+    ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? arc = no, array = no, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl<'a, T> $($trait for)? $name<'a, T> $($body)+
     };
 }
 
@@ -727,11 +716,11 @@ macro_rules! struct_arc_ring_buffer {
         });
 
         // SAFETY: If RingBuffer is Send, ArcRingBuffer is as well.
-        unsafe_impl!(
-            Send,
-            for = ty!(ArcRingBuffer, array = $array),
+        impl_!(
+            ArcRingBuffer,
+            trait unsafe = Send,
             array = $array,
-            where ty!(RingBuffer, array = $array): Send);
+            where ty!(RingBuffer, array = $array): Send {});
 
         impl_!(ArcRingBuffer, array = $array, {
             #[allow(clippy::new_ret_no_self)]
@@ -2660,7 +2649,7 @@ macro_rules! impl_send_for_chunks {
     (array = $array:ident, module = $module:literal) => {
         // SAFETY: WriteChunkUninit only exists while a unique reference to the producer is held.
         // It is therefore safe to move it to another thread.
-        unsafe_impl!(
+        impl_!(
             /// It (as well as [`WriteChunk`]) can be moved ...
             /// ```
             #[doc = doctest_import!($module, "{WriteChunk, WriteChunkUninit}")]
@@ -2679,11 +2668,11 @@ macro_rules! impl_send_for_chunks {
             /// # fn assert_sync<X: Sync>() {}
             #[doc = concat!("assert_sync::<", doctest_ty!(WriteChunk, u8, 8, array = $array), ">();")]
             /// ```
-            Send, for = ty!(WriteChunkUninit, array = $array, '_), array = $array, where T: Send);
+            WriteChunkUninit<'_>, trait unsafe = Send, array = $array, where T: Send {});
 
         // SAFETY: ReadChunk only exists while a unique reference to the consumer is held.
         // It is therefore safe to move it to another thread.
-        unsafe_impl!(
+        impl_!(
             /// It (and any wrapper structs) can be moved ...
             /// ```
             #[doc = doctest_import!($module, "ReadChunk")]
@@ -2696,6 +2685,6 @@ macro_rules! impl_send_for_chunks {
             /// fn assert_sync<X: Sync>() {}
             #[doc = concat!("assert_sync::<", doctest_ty!(ReadChunk, u8, 8, array = $array), ">();")]
             /// ```
-            Send, for = ty!(ReadChunk, array = $array, '_), array = $array, where T: Send);
+            ReadChunk<'_>, trait unsafe = Send, array = $array, where T: Send {});
     };
 }
