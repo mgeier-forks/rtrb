@@ -14,8 +14,8 @@ TODO: ...
 }
 
 impl_everything_eventually! {
+    N = yes,
     arc = no,
-    array = yes,
     bip = no,
     contiguous = no,
     pow2 = no,

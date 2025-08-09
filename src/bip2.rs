@@ -13,8 +13,8 @@ TODO: some more docs, maybe links? [`RingBuffer::new()`].
 }
 
 impl_everything_eventually! {
+    N = no,
     arc = yes,
-    array = no,
     bip = yes,
     contiguous = yes,
     pow2 = yes,

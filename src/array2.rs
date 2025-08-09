@@ -12,8 +12,8 @@ Ring buffer using an array with a power-of-two size as storage.
 }
 
 impl_everything_eventually! {
+    N = yes,
     arc = no,
-    array = yes,
     bip = no,
     contiguous = no,
     pow2 = yes,

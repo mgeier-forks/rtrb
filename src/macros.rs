@@ -194,8 +194,8 @@ macro_rules! choice_ty {
 // TODO: rename
 macro_rules! impl_everything_eventually {
     (
+        N = $N:ident,
         arc = $arc:ident,
-        array = $array:ident,
         bip = $bip:ident,
         contiguous = $contiguous:ident,
         pow2 = $pow2:ident,
@@ -243,12 +243,12 @@ macro_rules! impl_everything_eventually {
 
         // SAFETY: RingBuffer is only mutated (using *interior mutablility*)
         // via Producer/Consumer (which are !Sync), all other access can be shared.
-        impl_!(RingBuffer, trait unsafe = Sync, array = $array, where T: Send {});
+        impl_!(RingBuffer, trait unsafe = Sync, N = $N, where T: Send {});
 
-        impl_!(RingBuffer, array = $array, {
-            fn_ring_buffer_new!(arc = $arc, array = $array, pow2 = $pow2, module = $module);
-            fn_ring_buffer_producer!(arc = $arc, array = $array);
-            fn_ring_buffer_consumer!(arc = $arc, array = $array);
+        impl_!(RingBuffer, N = $N, {
+            fn_ring_buffer_new!(N = $N, arc = $arc, pow2 = $pow2, module = $module);
+            fn_ring_buffer_producer!(N = $N, arc = $arc);
+            fn_ring_buffer_consumer!(N = $N, arc = $arc);
 
             fn_ring_buffer_drop_all_elements!(bip = $bip);
             fn_ring_buffer_update_capacity!(pow2 = $pow2);
@@ -259,69 +259,69 @@ macro_rules! impl_everything_eventually {
             fn_ring_buffer_distance!(pow2 = $pow2);
         });
 
-        struct_arc_ring_buffer!(arc = $arc, array = $array);
+        struct_arc_ring_buffer!(N = $N, arc = $arc);
 
-        struct_producer!(arc = $arc, array = $array);
+        struct_producer!(N = $N, arc = $arc);
 
-        impl_!(Producer, arc = $arc, array = $array, {
-            fn_producer_push!(arc = $arc, array = $array, module = $module);
-            fn_producer_write_chunk_uninit!(array = $array, bip = $bip);
-            fn_producer_write_chunk!(array = $array, contiguous = $contiguous);
+        impl_!(Producer, N = $N, arc = $arc, {
+            fn_producer_push!(N = $N, arc = $arc, module = $module);
+            fn_producer_write_chunk_uninit!(N = $N, bip = $bip);
+            fn_producer_write_chunk!(N = $N, contiguous = $contiguous);
             // TODO: documentation specific to bip:
-            fn_producer_slots!(arc = $arc, array = $array, module = $module);
+            fn_producer_slots!(N = $N, arc = $arc, module = $module);
             fn_producer_slots_contiguousX!(bip = $bip);
-            fn_producer_is_full!(arc = $arc, array = $array, module = $module);
-            fn_pc_capacity!(arc = $arc, array = $array, module = $module);
-            fn_producer_is_abandoned!(arc = $arc, array = $array, module = $module);
+            fn_producer_is_full!(N = $N, arc = $arc, module = $module);
+            fn_pc_capacity!(N = $N, arc = $arc, module = $module);
+            fn_producer_is_abandoned!(N = $N, arc = $arc, module = $module);
 
             fn_producer_next_tail!();
         });
 
-        struct_consumer!(arc = $arc, array = $array);
+        struct_consumer!(N = $N, arc = $arc);
 
-        impl_!(Consumer, arc = $arc, array = $array, {
-            fn_consumer_pop!(arc = $arc, array = $array, module = $module);
-            fn_consumer_peek!(arc = $arc, array = $array, module = $module);
-            fn_consumer_read_chunk!(array = $array, bip = $bip);
+        impl_!(Consumer, N = $N, arc = $arc, {
+            fn_consumer_pop!(N = $N, arc = $arc, module = $module);
+            fn_consumer_peek!(N = $N, arc = $arc, module = $module);
+            fn_consumer_read_chunk!(N = $N, bip = $bip);
             // TODO: documentation specific to bip:
-            fn_consumer_slots!(arc = $arc, array = $array, bip = $bip, module = $module);
+            fn_consumer_slots!(N = $N, arc = $arc, bip = $bip, module = $module);
             fn_consumer_slots_contiguousX!(bip = $bip);
-            fn_consumer_is_empty!(arc = $arc, array = $array, module = $module);
-            fn_pc_capacity!(arc = $arc, array = $array, module = $module);
-            fn_consumer_is_abandoned!(arc = $arc, array = $array, module = $module);
+            fn_consumer_is_empty!(N = $N, arc = $arc, module = $module);
+            fn_pc_capacity!(N = $N, arc = $arc, module = $module);
+            fn_consumer_is_abandoned!(N = $N, arc = $arc, module = $module);
 
             fn_consumer_next_head!(bip = $bip);
         });
 
-        struct_write_chunk_uninit!(arc = $arc, array = $array, contiguous = $contiguous);
-        struct_write_chunk!(array = $array);
-        struct_read_chunk!(arc = $arc, array = $array, contiguous = $contiguous);
+        struct_write_chunk_uninit!(N = $N, arc = $arc, contiguous = $contiguous);
+        struct_write_chunk!(N = $N);
+        struct_read_chunk!(N = $N, arc = $arc, contiguous = $contiguous);
 
-        impl_send_for_chunks!(array = $array, module = $module);
+        impl_send_for_chunks!(N = $N, module = $module);
 
-        impl_!(WriteChunkUninit<'_>, array = $array, {
+        impl_!(WriteChunkUninit<'_>, N = $N, {
             fn_write_chunk_uninit_as_mut_sliceX!(contiguous = $contiguous);
             fn_write_chunk_uninit_commit_all!();
             fn_write_chunk_uninit_commit!();
-            fn_write_chunk_uninit_fill_from_iter!(arc = $arc, array = $array, contiguous = $contiguous, module = $module);
+            fn_write_chunk_uninit_fill_from_iter!(N = $N, arc = $arc, contiguous = $contiguous, module = $module);
             fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
 
             fn_write_chunk_uninit_drop_suffix!(contiguous = $contiguous);
             fn_write_chunk_uninit_commit_unchecked!(bip = $bip);
         });
 
-        impl_!(WriteChunk<'_>, array = $array, {
+        impl_!(WriteChunk<'_>, N = $N, {
             fn_write_chunk_as_mut_sliceX!(contiguous = $contiguous);
             fn_write_chunk_commit_all!();
             fn_write_chunk_commit!();
             fn_write_chunk_len_and_is_empty!();
         });
 
-        impl_!(ReadChunk<'_>, array = $array, {
+        impl_!(ReadChunk<'_>, N = $N, {
             fn_read_chunk_as_sliceX!(contiguous = $contiguous);
             fn_read_chunk_as_mut_sliceX!(contiguous = $contiguous);
             fn_read_chunk_commit_all!();
-            fn_read_chunk_commit!(arc = $arc, array = $array, module = $module);
+            fn_read_chunk_commit!(N = $N, arc = $arc, module = $module);
             fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
 
             fn_read_chunk_uninit_commit_unchecked!(contiguous = $contiguous);
@@ -353,7 +353,7 @@ macro_rules! doctest_import {
 }
 
 macro_rules! doctest_create_ring_buffer {
-    (arc = yes, array = yes, capacity = $capacity:literal$(, $prefix:literal)?) => {
+    (N = yes, arc = yes, capacity = $capacity:literal$(, $prefix:literal)?) => {
         concat!(
             $($prefix, )?
             "let (mut p, mut c) = RingBuffer::<_, ",
@@ -361,10 +361,10 @@ macro_rules! doctest_create_ring_buffer {
             ">::new();"
         )
     };
-    (arc = yes, array = no, capacity = $capacity:literal$(, $prefix:literal)?) => {
+    (N = no, arc = yes, capacity = $capacity:literal$(, $prefix:literal)?) => {
         concat!($($prefix, )?"let (mut p, mut c) = RingBuffer::new(", $capacity, ");")
     };
-    (arc = no, array = yes, capacity = $capacity:literal$(, $prefix:literal)?) => {
+    (N = yes, arc = no, capacity = $capacity:literal$(, $prefix:literal)?) => {
         concat!(
             $($prefix, )?
             "let rb = RingBuffer::<_, ",
@@ -376,7 +376,7 @@ macro_rules! doctest_create_ring_buffer {
             "let mut c = rb.consumer().unwrap();",
         )
     };
-    (arc = no, array = no, capacity = $capacity:literal$(, $prefix:literal)?) => {
+    (N = no, arc = no, capacity = $capacity:literal$(, $prefix:literal)?) => {
         concat!(
             $($prefix, )?
             "let rb = RingBuffer::new(",
@@ -391,19 +391,19 @@ macro_rules! doctest_create_ring_buffer {
 }
 
 macro_rules! doctest_ty {
-    ($name:ident, $ty:ty, $N:literal, array = yes) => {
+    ($name:ident, $ty:ty, $N:literal, N = yes) => {
         concat!(stringify!($name), "<", stringify!($ty), ", ", $N, ">")
     };
-    ($name:ident, $ty:ty, $N:literal, array = no) => {
+    ($name:ident, $ty:ty, $N:literal, N = no) => {
         concat!(stringify!($name), "<", stringify!($ty), ">")
     };
 }
 
 macro_rules! struct_ {
-    ($(#[$attr:meta])* $name:ident, array = yes, params = ($($params:tt)+), fields = $fields:tt $($end:tt)?) => {
+    ($(#[$attr:meta])* $name:ident, N = yes, params = ($($params:tt)+), fields = $fields:tt $($end:tt)?) => {
         $(#[$attr])* pub struct $name<$($params)+, const N: usize> $fields $($end)?
     };
-    ($(#[$attr:meta])* $name:ident, array = no, params = ($($params:tt)+), fields = $fields:tt $($end:tt)?) => {
+    ($(#[$attr:meta])* $name:ident, N = no, params = ($($params:tt)+), fields = $fields:tt $($end:tt)?) => {
         $(#[$attr])* pub struct $name<$($params)+> $fields $($end)?
     };
 }
@@ -411,34 +411,40 @@ macro_rules! struct_ {
 // $body can start with a "where" clause, if needed.
 // "unsafe" is in a somewhat strange position to avoid parsing ambiguities.
 macro_rules! impl_ {
-    ($(#[$attr:meta])* $name:ident<'_>, $(trait $($unsafe:ident)? = $trait:ty,)? array = yes, $($body:tt)+) => {
-        $(#[$attr])* $($($unsafe)?)? impl<T, const N: usize> $($trait for)? $name<'_, T, N> $($body)+
-    };
-    ($(#[$attr:meta])* $name:ident<'_>, $(trait $($unsafe:ident)? = $trait:ty,)? array = no, $($body:tt)+) => {
-        $($($unsafe)?)? impl<T> $($trait for)? $name<'_, T> $($body)+
-    };
-    ($(#[$attr:meta])* $name:ident<'a>, $(trait $($unsafe:ident)? = $trait:ty,)? array = yes, $($body:tt)+) => {
-        $(#[$attr])* $($($unsafe)?)? impl<'a, T, const N: usize> $($trait for)? $name<'a, T, N> $($body)+
-    };
-    ($(#[$attr:meta])* $name:ident<'a>, $(trait $($unsafe:ident)? = $trait:ty,)? array = no, $($body:tt)+) => {
-        $(#[$attr])* $($($unsafe)?)? impl<'a, T> $($trait for)? $name<'a, T> $($body)+
-    };
-    ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? $(arc = yes,)? array = yes, $($body:tt)+) => {
+    ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? N = yes, arc = yes, $($body:tt)+) => {
         $(#[$attr])* $($($unsafe)?)? impl<T, const N: usize> $($trait for)? $name<T, N> $($body)+
     };
-    ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? $(arc = yes,)? array = no, $($body:tt)+) => {
+    ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? N = no, arc = yes, $($body:tt)+) => {
         $(#[$attr])* $($($unsafe)?)? impl<T> $($trait for)? $name<T> $($body)+
     };
-    ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? arc = no, array = yes, $($body:tt)+) => {
+    ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? N = yes, arc = no, $($body:tt)+) => {
         $(#[$attr])* $($($unsafe)?)? impl<'a, T, const N: usize> $($trait for)? $name<'a, T, N> $($body)+
     };
-    ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? arc = no, array = no, $($body:tt)+) => {
+    ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? N = no, arc = no, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl<'a, T> $($trait for)? $name<'a, T> $($body)+
+    };
+    ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? N = yes, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl<T, const N: usize> $($trait for)? $name<T, N> $($body)+
+    };
+    ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? N = no, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl<T> $($trait for)? $name<T> $($body)+
+    };
+    ($(#[$attr:meta])* $name:ident<'_>, $(trait $($unsafe:ident)? = $trait:ty,)? N = yes, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl<T, const N: usize> $($trait for)? $name<'_, T, N> $($body)+
+    };
+    ($(#[$attr:meta])* $name:ident<'_>, $(trait $($unsafe:ident)? = $trait:ty,)? N = no, $($body:tt)+) => {
+        $($($unsafe)?)? impl<T> $($trait for)? $name<'_, T> $($body)+
+    };
+    ($(#[$attr:meta])* $name:ident<'a>, $(trait $($unsafe:ident)? = $trait:ty,)? N = yes, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl<'a, T, const N: usize> $($trait for)? $name<'a, T, N> $($body)+
+    };
+    ($(#[$attr:meta])* $name:ident<'a>, $(trait $($unsafe:ident)? = $trait:ty,)? N = no, $($body:tt)+) => {
         $(#[$attr])* $($($unsafe)?)? impl<'a, T> $($trait for)? $name<'a, T> $($body)+
     };
 }
 
 macro_rules! fn_ring_buffer_new {
-    (arc = yes, array = yes, pow2 = $pow2:ident, module = $module:literal) => {
+    (N = yes, arc = yes, pow2 = $pow2:ident, module = $module:literal) => {
         /// Creates a ring buffer with a capacity of `N` and returns [`Producer`] and [`Consumer`].
         ///
         #[doc = choice!($pow2,
@@ -473,7 +479,7 @@ macro_rules! fn_ring_buffer_new {
             ArcRingBuffer::new(Self::construct())
         }
     };
-    (arc = yes, array = no, pow2 = $pow2:ident, module = $module:literal) => {
+    (N = no, arc = yes, pow2 = $pow2:ident, module = $module:literal) => {
         /// Creates a ring buffer
         #[doc = choice!($pow2, "with at least", "with")]
         /// the given `capacity` and returns [`Producer`] and [`Consumer`].
@@ -505,7 +511,7 @@ macro_rules! fn_ring_buffer_new {
             ArcRingBuffer::new(Self::construct(capacity))
         }
     };
-    (arc = no, array = yes, pow2 = $pow2:ident, module = $module:literal) => {
+    (N = yes, arc = no, pow2 = $pow2:ident, module = $module:literal) => {
         /// Creates a ring buffer with a capacity of `N`.
         ///
         #[doc = choice!($pow2,
@@ -545,7 +551,7 @@ macro_rules! fn_ring_buffer_new {
             Self::construct()
         }
     };
-    (arc = no, array = no, pow2 = $pow2:ident, module = $module:literal) => {
+    (N = no, arc = no, pow2 = $pow2:ident, module = $module:literal) => {
         compile_error!("TODO")
     };
 }
@@ -704,29 +710,29 @@ macro_rules! fn_ring_buffer_distance {
 }
 
 macro_rules! struct_arc_ring_buffer {
-    (arc = yes, array = $array:ident) => {
+    (N = $N:ident, arc = yes) => {
         use alloc::boxed::Box;
         use core::ptr::NonNull;
 
         // Non-public helper type.
         //#[derive(Debug, PartialEq, Eq)]
         // TODO: make non-public!
-        struct_!(ArcRingBuffer, array = $array, params = (T), fields = {
-            ptr: NonNull<ty!(RingBuffer, array = $array)>,
+        struct_!(ArcRingBuffer, N = $N, params = (T), fields = {
+            ptr: NonNull<ty!(RingBuffer, N = $N)>,
         });
 
         // SAFETY: If RingBuffer is Send, ArcRingBuffer is as well.
         impl_!(
             ArcRingBuffer,
             trait unsafe = Send,
-            array = $array,
-            where ty!(RingBuffer, array = $array): Send {});
+            N = $N,
+            where ty!(RingBuffer, N = $N): Send {});
 
-        impl_!(ArcRingBuffer, array = $array, {
+        impl_!(ArcRingBuffer, N = $N, {
             #[allow(clippy::new_ret_no_self)]
             fn new(
-                rb: ty!(RingBuffer, array = $array)
-            ) -> (ty!(Producer, array = $array), ty!(Consumer, array = $array)) {
+                rb: ty!(RingBuffer, N = $N)
+            ) -> (ty!(Producer, N = $N), ty!(Consumer, N = $N)) {
                 debug_assert_eq!(rb.flags.load(Ordering::Relaxed) & IS_ABANDONED, 0);
                 let head = rb.head.load(Ordering::Relaxed);
                 let tail = rb.tail.load(Ordering::Relaxed);
@@ -747,7 +753,7 @@ macro_rules! struct_arc_ring_buffer {
             }
         });
 
-        impl_!(ArcRingBuffer, trait = Drop, array = $array, {
+        impl_!(ArcRingBuffer, trait = Drop, N = $N, {
             fn drop(&mut self) {
                 // SAFETY: must point to initialized Storage.
                 let flags: &AtomicU8 = unsafe { &self.ptr.as_ref().flags };
@@ -779,10 +785,10 @@ macro_rules! struct_arc_ring_buffer {
             }
         });
 
-        fn_arc_ring_buffer_drop_slow!(array = $array);
+        fn_arc_ring_buffer_drop_slow!(N = $N);
 
-        impl_!(ArcRingBuffer, trait = core::ops::Deref, array = $array, {
-            type Target = ty!(RingBuffer, array = $array);
+        impl_!(ArcRingBuffer, trait = core::ops::Deref, N = $N, {
+            type Target = ty!(RingBuffer, N = $N);
 
             fn deref(&self) -> &Self::Target {
                 // SAFETY: There are never any mutable references.
@@ -790,7 +796,7 @@ macro_rules! struct_arc_ring_buffer {
             }
         });
     };
-    (arc = no, array = $array:ident) => {};
+    (N = $N:ident, arc = no) => {};
 }
 
 macro_rules! fn_arc_ring_buffer_drop_slow_helper {
@@ -809,39 +815,39 @@ macro_rules! fn_arc_ring_buffer_drop_slow_helper {
 }
 
 macro_rules! fn_arc_ring_buffer_drop_slow {
-    (array = yes) => {
+    (N = yes) => {
         fn_arc_ring_buffer_drop_slow_helper!(params = (T, const N: usize), args = (T, N));
     };
-    (array = no) => {
+    (N = no) => {
         fn_arc_ring_buffer_drop_slow_helper!(params = (T), args = (T));
     };
 }
 
 macro_rules! ty {
-    ($name:ident, array = yes$(, $a:lifetime)?) => {
+    ($name:ident, N = yes$(, $a:lifetime)?) => {
         $name<$($a, )?T, N>
     };
-    ($name:ident, array = no$(, $a:lifetime)?) => {
+    ($name:ident, N = no$(, $a:lifetime)?) => {
         $name<$($a, )?T>
     };
-    ($name:ident, arc = yes, array = yes) => {
+    ($name:ident, N = yes, arc = yes) => {
         $name<T, N>
     };
-    ($name:ident, arc = yes, array = no) => {
+    ($name:ident, N = no, arc = yes) => {
         $name<T>
     };
-    ($name:ident, arc = no, array = yes) => {
+    ($name:ident, N = yes, arc = no) => {
         $name<'a, T, N>
     };
-    ($name:ident, arc = no, array = no) => {
+    ($name:ident, N = no, arc = no) => {
         $name<'a, T>
     };
 }
 
 macro_rules! fn_ring_buffer_producer {
-    (arc = yes, array = $array:ident) => {};
-    (arc = no, array = $array:ident) => {
-        pub fn producer(&self) -> Option<ty!(Producer, array = $array)> {
+    (N = $N:ident, arc = yes) => {};
+    (N = $N:ident, arc = no) => {
+        pub fn producer(&self) -> Option<ty!(Producer, N = $N)> {
             let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
             if old_flags & HAS_PRODUCER == 0 {
                 let head = self.head.load(Ordering::Relaxed);
@@ -859,9 +865,9 @@ macro_rules! fn_ring_buffer_producer {
 }
 
 macro_rules! fn_ring_buffer_consumer {
-    (arc = yes, array = $array:ident) => {};
-    (arc = no, array = $array:ident) => {
-        pub fn consumer(&self) -> Option<ty!(Consumer, array = $array)> {
+    (N = $N:ident, arc = yes) => {};
+    (N = $N:ident, arc = no) => {
+        pub fn consumer(&self) -> Option<ty!(Consumer, N = $N)> {
             let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
             if old_flags & HAS_CONSUMER == 0 {
                 let head = self.head.load(Ordering::Relaxed);
@@ -896,7 +902,7 @@ macro_rules! struct_producer_docstring {
 }
 
 macro_rules! struct_producer {
-    (arc = yes, array = $array:ident) => {
+    (N = $N:ident, arc = yes) => {
         // TODO: manual impls:
         //#[derive(Debug, PartialEq, Eq)]
         struct_!(
@@ -911,28 +917,28 @@ macro_rules! struct_producer {
             /// When the `Producer` is dropped after the [`Consumer`] has already been dropped,
             /// all items remaining in the ring buffer will be dropped and the allocated memory
             /// will be deallocated.
-            Producer, array = $array, params = (T), fields = {
-                buffer: ty!(ArcRingBuffer, array = $array),
+            Producer, N = $N, params = (T), fields = {
+                buffer: ty!(ArcRingBuffer, N = $N),
                 cached_head: Cell<usize>,
                 cached_tail: Cell<usize>,
             }
         );
     };
-    (arc = no, array = $array:ident) => {
+    (N = $N:ident, arc = no) => {
         // TODO: manual impls:
         //#[derive(Debug, PartialEq, Eq)]
         struct_!(
             #[doc = struct_producer_docstring!()]
             ///
             /// A `Producer` can only be created with [`RingBuffer::producer()`].
-            Producer, array = $array, params = ('a, T), fields = {
-                buffer: &'a ty!(RingBuffer, array = $array),
+            Producer, N = $N, params = ('a, T), fields = {
+                buffer: &'a ty!(RingBuffer, N = $N),
                 cached_head: Cell<usize>,
                 cached_tail: Cell<usize>,
             }
         );
 
-        impl_!(Producer<'_>, trait = Drop, array = $array, {
+        impl_!(Producer<'_>, trait = Drop, N = $N, {
             fn drop(&mut self) {
                 let _ = self.buffer.flags.fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
             }
@@ -957,7 +963,7 @@ macro_rules! struct_consumer_docstring {
 }
 
 macro_rules! struct_consumer {
-    (arc = yes, array = $array:ident) => {
+    (N = $N:ident, arc = yes) => {
         // TODO: manual impls:
         //#[derive(Debug, PartialEq, Eq)]
         struct_!(
@@ -972,28 +978,28 @@ macro_rules! struct_consumer {
             /// When the `Consumer` is dropped after the [`Producer`] has already been dropped,
             /// all items remaining in the ring buffer will be dropped and the allocated memory
             /// will be deallocated.
-            Consumer, array = $array, params = (T), fields = {
-                buffer: ty!(ArcRingBuffer, array = $array),
+            Consumer, N = $N, params = (T), fields = {
+                buffer: ty!(ArcRingBuffer, N = $N),
                 cached_head: Cell<usize>,
                 cached_tail: Cell<usize>,
             }
         );
     };
-    (arc = no, array = $array:ident) => {
+    (N = $N:ident, arc = no) => {
         // TODO: manual impls:
         //#[derive(Debug, PartialEq, Eq)]
         struct_!(
             #[doc = struct_consumer_docstring!()]
             ///
             /// A `Consumer` can only be created with [`RingBuffer::consumer()`].
-            Consumer, array = $array, params = ('a, T), fields = {
-                buffer: &'a ty!(RingBuffer, array = $array),
+            Consumer, N = $N, params = ('a, T), fields = {
+                buffer: &'a ty!(RingBuffer, N = $N),
                 cached_head: Cell<usize>,
                 cached_tail: Cell<usize>,
             }
         );
 
-        impl_!(Consumer<'_>, trait = Drop, array = $array, {
+        impl_!(Consumer<'_>, trait = Drop, N = $N, {
             fn drop(&mut self) {
                 let _ = self.buffer.flags.fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
             }
@@ -1002,7 +1008,7 @@ macro_rules! struct_consumer {
 }
 
 macro_rules! fn_producer_push {
-    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
+    (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
         /// Attempts to push an element into the queue.
         ///
         /// The element is *moved* into the ring buffer and its slot
@@ -1017,7 +1023,7 @@ macro_rules! fn_producer_push {
         /// ```
         #[doc = doctest_import!($module, "{PushError, RingBuffer}")]
         ///
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1)]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1)]
         ///
         /// assert_eq!(p.push(10), Ok(()));
         /// assert_eq!(p.push(20), Err(PushError::Full(20)));
@@ -1039,7 +1045,7 @@ macro_rules! fn_producer_push {
 }
 
 macro_rules! fn_producer_slots {
-    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
+    (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
         /// Returns the number of slots available for writing.
         ///
         /// Since items can be concurrently consumed on another thread, the actual number
@@ -1055,7 +1061,7 @@ macro_rules! fn_producer_slots {
         /// ```
         #[doc = doctest_import!($module, "RingBuffer")]
         ///
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1024)]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1024)]
         /// assert_eq!(p.push(0.5f32), Ok(()));
         ///
         /// assert_eq!(p.slots(), 1023);
@@ -1121,7 +1127,7 @@ macro_rules! fn_producer_slots_contiguousX {
 }
 
 macro_rules! fn_producer_is_full {
-    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
+    (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
         /// Returns `true` if there are currently no slots available for writing.
         ///
         /// TODO: additional info about bip?
@@ -1134,7 +1140,7 @@ macro_rules! fn_producer_is_full {
         /// ```
         #[doc = doctest_import!($module, "RingBuffer")]
         ///
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1)]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1)]
         ///
         /// assert!(!p.is_full());
         /// assert_eq!(p.push(10), Ok(()));
@@ -1146,7 +1152,7 @@ macro_rules! fn_producer_is_full {
         ///
         /// ```
         #[doc = doctest_import!($module, "RingBuffer", "# ")]
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1, "# ")]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1, "# ")]
         /// # assert_eq!(p.push(10), Ok(()));
         /// if p.is_full() {
         ///     // The buffer might be full, but it might as well not be
@@ -1158,7 +1164,7 @@ macro_rules! fn_producer_is_full {
         ///
         /// ```
         #[doc = doctest_import!($module, "RingBuffer", "# ")]
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1, "# ")]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1, "# ")]
         /// # assert_eq!(p.push(10), Ok(()));
         /// if !p.is_full() {
         ///     // At least one slot is guaranteed to be available for writing.
@@ -1173,7 +1179,7 @@ macro_rules! fn_producer_is_full {
 }
 
 macro_rules! fn_pc_capacity {
-    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
+    (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
         /// Returns the total capacity of the queue.
         ///
         /// At any time, the capacity is subdivided into
@@ -1187,7 +1193,7 @@ macro_rules! fn_pc_capacity {
         /// ```
         #[doc = doctest_import!($module, "RingBuffer")]
         ///
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 128)]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 128)]
         ///
         /// assert_eq!(p.push(-0.7), Ok(()));
         /// assert_eq!(p.slots(), 127);
@@ -1230,7 +1236,7 @@ macro_rules! fn_producer_next_tail {
 }
 
 macro_rules! fn_consumer_pop {
-    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
+    (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
         /// Attempts to pop an element from the queue.
         ///
         /// The element is *moved* out of the ring buffer and its slot
@@ -1245,7 +1251,7 @@ macro_rules! fn_consumer_pop {
         /// ```
         #[doc = doctest_import!($module, "{PopError, RingBuffer}")]
         ///
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1)]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1)]
         ///
         /// assert_eq!(p.push(10), Ok(()));
         /// assert_eq!(c.pop(), Ok(10));
@@ -1256,7 +1262,7 @@ macro_rules! fn_consumer_pop {
         ///
         /// ```
         #[doc = doctest_import!($module, "RingBuffer", "# ")]
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1, "# ")]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1, "# ")]
         /// assert_eq!(p.push(20), Ok(()));
         /// assert_eq!(c.pop().ok(), Some(20));
         /// ```
@@ -1277,7 +1283,7 @@ macro_rules! fn_consumer_pop {
 }
 
 macro_rules! fn_consumer_peek {
-    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
+    (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
         /// Attempts to read an element from the queue without removing it.
         ///
         /// # Errors
@@ -1289,7 +1295,7 @@ macro_rules! fn_consumer_peek {
         /// ```
         #[doc = doctest_import!($module, "{PeekError, RingBuffer}")]
         ///
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1)]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1)]
         ///
         /// assert_eq!(c.peek(), Err(PeekError::Empty));
         /// assert_eq!(p.push(10), Ok(()));
@@ -1308,7 +1314,7 @@ macro_rules! fn_consumer_peek {
 }
 
 macro_rules! fn_consumer_slots_docstring {
-    (arc = $arc:ident, array = $array:ident, module = $module:literal) => { docstring!(
+    (N = $N:ident, arc = $arc:ident, module = $module:literal) => { docstring!(
         /// Returns the number of slots available for reading.
         ///
         /// Since items can be concurrently produced on another thread, the actual number
@@ -1325,7 +1331,7 @@ macro_rules! fn_consumer_slots_docstring {
         ///
         /// ```
         #[doc = doctest_import!($module, "RingBuffer")]
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1024)]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1024)]
         ///
         /// assert_eq!(c.slots(), 0);
         /// assert_eq!(p.push(0.0), Ok(()));
@@ -1335,8 +1341,8 @@ macro_rules! fn_consumer_slots_docstring {
 }
 
 macro_rules! fn_consumer_slots {
-    (arc = $arc:ident, array = $array:ident, bip = yes, module = $module:literal) => {
-        #[doc = fn_consumer_slots_docstring!(arc = $arc, array = $array, module = $module)]
+    (N = $N:ident, arc = $arc:ident, bip = yes, module = $module:literal) => {
+        #[doc = fn_consumer_slots_docstring!(N = $N, arc = $arc, module = $module)]
         ///
         /// TODO: [`read_chunk()`](Consumer::read_chunk) might not provide the full number of free slots
         ///
@@ -1359,8 +1365,8 @@ macro_rules! fn_consumer_slots {
             }
         }
     };
-    (arc = $arc:ident, array = $array:ident, bip = no, module = $module:literal) => {
-        #[doc = fn_consumer_slots_docstring!(arc = $arc, array = $array, module = $module)]
+    (N = $N:ident, arc = $arc:ident, bip = no, module = $module:literal) => {
+        #[doc = fn_consumer_slots_docstring!(N = $N, arc = $arc, module = $module)]
         pub fn slots(&self) -> usize {
             let b = &self.buffer;
             let tail = b.tail.load(Ordering::Acquire);
@@ -1454,7 +1460,7 @@ macro_rules! fn_consumer_slots_contiguousX {
 }
 
 macro_rules! fn_consumer_is_empty {
-    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
+    (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
         /// Returns `true` if there are currently no slots available for reading.
         ///
         /// TODO: additional info about bip?
@@ -1467,7 +1473,7 @@ macro_rules! fn_consumer_is_empty {
         /// ```
         #[doc = doctest_import!($module, "RingBuffer")]
         ///
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1)]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1)]
         ///
         /// assert!(c.is_empty());
         /// assert_eq!(p.push(0.0), Ok(()));
@@ -1479,7 +1485,7 @@ macro_rules! fn_consumer_is_empty {
         ///
         /// ```
         #[doc = doctest_import!($module, "RingBuffer", "# ")]
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1, "# ")]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1, "# ")]
         /// # assert_eq!(p.push(0.0), Ok(()));
         /// if c.is_empty() {
         ///     // The buffer might be empty, but it might as well not be
@@ -1491,7 +1497,7 @@ macro_rules! fn_consumer_is_empty {
         ///
         /// ```
         #[doc = doctest_import!($module, "RingBuffer", "# ")]
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 1, "# ")]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1, "# ")]
         /// # assert_eq!(p.push(0.0), Ok(()));
         /// if !c.is_empty() {
         ///     // At least one slot is guaranteed to be available for reading.
@@ -1504,7 +1510,7 @@ macro_rules! fn_consumer_is_empty {
 }
 
 macro_rules! fn_producer_is_abandoned {
-    (arc = yes, array = $array:ident, module = $module:literal) => {
+    (N = $N:ident, arc = yes, module = $module:literal) => {
         /// Returns `true` if the corresponding [`Consumer`] has been destroyed.
         ///
         /// TODO: update this note:
@@ -1518,7 +1524,7 @@ macro_rules! fn_producer_is_abandoned {
         /// ```
         #[doc = doctest_import!($module, "RingBuffer")]
         ///
-        #[doc = doctest_create_ring_buffer!(arc = yes, array = $array, capacity = 7)]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = yes, capacity = 7)]
         /// assert!(!p.is_abandoned());
         /// assert_eq!(p.push(10), Ok(()));
         /// drop(c);
@@ -1533,7 +1539,7 @@ macro_rules! fn_producer_is_abandoned {
         ///
         /// ```
         #[doc = doctest_import!($module, "RingBuffer", "# ")]
-        #[doc = doctest_create_ring_buffer!(arc = yes, array = $array, capacity = 1, "# ")]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = yes, capacity = 1, "# ")]
         /// # assert_eq!(p.push(10), Ok(()));
         /// if !p.is_abandoned() {
         ///     // Right now, the consumer might still be alive, but it might as well not be
@@ -1545,7 +1551,7 @@ macro_rules! fn_producer_is_abandoned {
         ///
         /// ```
         #[doc = doctest_import!($module, "RingBuffer", "# ")]
-        #[doc = doctest_create_ring_buffer!(arc = yes, array = $array, capacity = 1, "# ")]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = yes, capacity = 1, "# ")]
         /// # assert_eq!(p.push(10), Ok(()));
         /// if p.is_abandoned() {
         ///     // The consumer does definitely not exist anymore.
@@ -1555,11 +1561,11 @@ macro_rules! fn_producer_is_abandoned {
             self.buffer.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
         }
     };
-    (arc = no, array = $array:ident, module = $module:literal) => {};
+    (N = $N:ident, arc = no, module = $module:literal) => {};
 }
 
 macro_rules! fn_consumer_is_abandoned {
-    (arc = yes, array = $array:ident, module = $module:literal) => {
+    (N = $N:ident, arc = yes, module = $module:literal) => {
         /// Returns `true` if the corresponding [`Producer`] has been destroyed.
         ///
         /// TODO: update this note:
@@ -1573,7 +1579,7 @@ macro_rules! fn_consumer_is_abandoned {
         /// ```
         #[doc = doctest_import!($module, "RingBuffer")]
         ///
-        #[doc = doctest_create_ring_buffer!(arc = yes, array = $array, capacity = 7)]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = yes, capacity = 7)]
         /// assert!(!c.is_abandoned());
         /// assert_eq!(p.push(10), Ok(()));
         /// drop(p);
@@ -1587,7 +1593,7 @@ macro_rules! fn_consumer_is_abandoned {
         ///
         /// ```
         #[doc = doctest_import!($module, "RingBuffer", "# ")]
-        #[doc = doctest_create_ring_buffer!(arc = yes, array = $array, capacity = 1, "# ")]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = yes, capacity = 1, "# ")]
         /// # assert_eq!(p.push(10), Ok(()));
         /// if !c.is_abandoned() {
         ///     // Right now, the producer might still be alive, but it might as well not be
@@ -1599,7 +1605,7 @@ macro_rules! fn_consumer_is_abandoned {
         ///
         /// ```
         #[doc = doctest_import!($module, "RingBuffer", "# ")]
-        #[doc = doctest_create_ring_buffer!(arc = yes, array = $array, capacity = 1, "# ")]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = yes, capacity = 1, "# ")]
         /// # assert_eq!(p.push(10), Ok(()));
         /// if c.is_abandoned() {
         ///     // The producer does definitely not exist anymore.
@@ -1609,7 +1615,7 @@ macro_rules! fn_consumer_is_abandoned {
             self.buffer.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
         }
     };
-    (arc = no, array = $array:ident, module = $module:literal) => {};
+    (N = $N:ident, arc = no, module = $module:literal) => {};
 }
 
 /// Get the `head` position for reading the next slot, if available.
@@ -1759,11 +1765,11 @@ macro_rules! fn_read_chunk_uninit_commit_unchecked {
 }
 
 macro_rules! fn_producer_write_chunk_uninit {
-    (array = $array:ident, bip = yes) => {
+    (N = $N:ident, bip = yes) => {
         pub fn write_chunk_uninit(
             &mut self,
             n: usize,
-) -> Result<ty!(WriteChunkUninit, array = $array, '_), ChunkError> {
+) -> Result<ty!(WriteChunkUninit, N = $N, '_), ChunkError> {
             let b = &self.buffer;
             let mut head = self.cached_head.get();
             let tail = self.cached_tail.get();
@@ -1834,11 +1840,11 @@ macro_rules! fn_producer_write_chunk_uninit {
             Ok(unsafe { WriteChunkUninit::new(self, n, offset) })
         }
     };
-    (array = $array:ident, bip = no) => {
+    (N = $N:ident, bip = no) => {
         pub fn write_chunk_uninit(
             &mut self,
             n: usize,
-) -> Result<ty!(WriteChunkUninit, array = $array, '_), ChunkError> {
+) -> Result<ty!(WriteChunkUninit, N = $N, '_), ChunkError> {
             let head = self.cached_head.get();
             let tail = self.cached_tail.get();
             let b = &self.buffer;
@@ -1861,7 +1867,7 @@ macro_rules! fn_producer_write_chunk_uninit {
 }
 
 macro_rules! fn_producer_write_chunk {
-    (array = $array:ident, contiguous = $contiguous:ident) => {
+    (N = $N:ident, contiguous = $contiguous:ident) => {
         /// Returns `n` slots (initially containing their [`Default`] value) for writing.
         ///
         #[doc = choice!($contiguous, "\
@@ -1893,7 +1899,7 @@ macro_rules! fn_producer_write_chunk {
         pub fn write_chunk(
             &mut self,
             n: usize,
-) -> Result<ty!(WriteChunk, array = $array, '_), ChunkError>
+) -> Result<ty!(WriteChunk, N = $N, '_), ChunkError>
         where
             T: Default,
         {
@@ -1903,11 +1909,11 @@ macro_rules! fn_producer_write_chunk {
 }
 
 macro_rules! fn_consumer_read_chunk {
-    (array = $array:ident, bip = yes) => {
+    (N = $N:ident, bip = yes) => {
         pub fn read_chunk(
             &mut self,
             n: usize,
-) -> Result<ty!(ReadChunk, array = $array, '_), ChunkError> {
+) -> Result<ty!(ReadChunk, N = $N, '_), ChunkError> {
             let b = &self.buffer;
             let mut head = self.cached_head.get();
             let mut tail = self.cached_tail.get();
@@ -1976,11 +1982,11 @@ macro_rules! fn_consumer_read_chunk {
             Ok(unsafe { ReadChunk::new(self, n, offset) })
         }
     };
-    (array = $array:ident, bip = no) => {
+    (N = $N:ident, bip = no) => {
         pub fn read_chunk(
             &mut self,
             n: usize,
-) -> Result<ty!(ReadChunk, array = $array, '_), ChunkError> {
+) -> Result<ty!(ReadChunk, N = $N, '_), ChunkError> {
             let head = self.cached_head.get();
             let tail = self.cached_tail.get();
             let b = &self.buffer;
@@ -2252,17 +2258,17 @@ macro_rules! fn_write_chunk_len_and_is_empty {
 }
 
 macro_rules! struct_write_chunk_uninit {
-    (arc = $arc:ident, array = $array:ident, contiguous = yes) => {
+    (N = $N:ident, arc = $arc:ident, contiguous = yes) => {
         // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(WriteChunkUninit, array = $array, params = ('a, T), fields = {
+        struct_!(WriteChunkUninit, N = $N, params = ('a, T), fields = {
             ptr: *mut T,
             len: usize,
-            producer: &'a ty!(Producer, arc = $arc, array = $array),
+            producer: &'a ty!(Producer, N = $N, arc = $arc),
         });
 
-        impl_!(WriteChunkUninit<'a>, array = $array, {
-            unsafe fn new(producer: &'a ty!(Producer, arc = $arc, array = $array), n: usize, offset: usize) -> Self {
+        impl_!(WriteChunkUninit<'a>, N = $N, {
+            unsafe fn new(producer: &'a ty!(Producer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
                 Self {
                     // SAFETY: Caller must guarantee that `offset` is valid.
                     ptr: unsafe { producer.buffer.data_ptr().add(offset) },
@@ -2272,12 +2278,12 @@ macro_rules! struct_write_chunk_uninit {
             }
         });
 
-        impl_!(WriteChunk<'a>, trait = From<ty!(WriteChunkUninit, array = $array, 'a)>, array = $array,
+        impl_!(WriteChunk<'a>, trait = From<ty!(WriteChunkUninit, N = $N, 'a)>, N = $N,
         where
             T: Default,
         {
             /// Fills all slots with the [`Default`] value.
-            fn from(chunk: ty!(WriteChunkUninit, array = $array, 'a)) -> Self {
+            fn from(chunk: ty!(WriteChunkUninit, N = $N, 'a)) -> Self {
                 for i in 0..chunk.len {
                     // SAFETY: i is in a valid range.
                     unsafe { chunk.ptr.add(i).write(Default::default()) };
@@ -2286,19 +2292,19 @@ macro_rules! struct_write_chunk_uninit {
             }
         });
     };
-    (arc = $arc:ident, array = $array:ident, contiguous = no) => {
+    (N = $N:ident, arc = $arc:ident, contiguous = no) => {
         // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(WriteChunkUninit, array = $array, params = ('a, T), fields = {
+        struct_!(WriteChunkUninit, N = $N, params = ('a, T), fields = {
             first_ptr: *mut T,
             first_len: usize,
             second_ptr: *mut T,
             second_len: usize,
-            producer: &'a ty!(Producer, arc = $arc, array = $array),
+            producer: &'a ty!(Producer, N = $N, arc = $arc),
         });
 
-        impl_!(WriteChunkUninit<'a>, array = $array, {
-            unsafe fn new(producer: &'a ty!(Producer, arc = $arc, array = $array), n: usize, offset: usize) -> Self {
+        impl_!(WriteChunkUninit<'a>, N = $N, {
+            unsafe fn new(producer: &'a ty!(Producer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
                 let first_len = n.min(producer.buffer.capacity() - offset);
                 Self {
                     // SAFETY: Caller must guarantee that `offset` is valid.
@@ -2311,12 +2317,12 @@ macro_rules! struct_write_chunk_uninit {
             }
         });
 
-        impl_!(WriteChunk<'a>, trait = From<ty!(WriteChunkUninit, array = $array, 'a)>, array = $array,
+        impl_!(WriteChunk<'a>, trait = From<ty!(WriteChunkUninit, N = $N, 'a)>, N = $N,
         where
             T: Default,
         {
             /// Fills all slots with the [`Default`] value.
-            fn from(chunk: ty!(WriteChunkUninit, array = $array, 'a)) -> Self {
+            fn from(chunk: ty!(WriteChunkUninit, N = $N, 'a)) -> Self {
                 for i in 0..chunk.first_len {
                     // SAFETY: i is in a valid range.
                     unsafe { chunk.first_ptr.add(i).write(Default::default()) };
@@ -2332,11 +2338,11 @@ macro_rules! struct_write_chunk_uninit {
 }
 
 macro_rules! struct_write_chunk {
-    (array = $array:ident) => {
+    (N = $N:ident) => {
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(WriteChunk, array = $array, params = ('a, T), fields = (Option<ty!(WriteChunkUninit, array = $array, 'a)>););
+        struct_!(WriteChunk, N = $N, params = ('a, T), fields = (Option<ty!(WriteChunkUninit, N = $N, 'a)>););
 
-        impl_!(WriteChunk<'_>, trait = Drop, array = $array, {
+        impl_!(WriteChunk<'_>, trait = Drop, N = $N, {
             fn drop(&mut self) {
                 // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
                 if let Some(mut chunk) = self.0.take() {
@@ -2350,17 +2356,17 @@ macro_rules! struct_write_chunk {
 }
 
 macro_rules! struct_read_chunk {
-    (arc = $arc:ident, array = $array:ident, contiguous = yes) => {
+    (N = $N:ident, arc = $arc:ident, contiguous = yes) => {
         // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(ReadChunk, array = $array, params = ('a, T), fields = {
+        struct_!(ReadChunk, N = $N, params = ('a, T), fields = {
             ptr: *mut T,
             len: usize,
-            consumer: &'a ty!(Consumer, arc = $arc, array = $array),
+            consumer: &'a ty!(Consumer, N = $N, arc = $arc),
         });
 
-        impl_!(ReadChunk<'a>, array = $array, {
-            unsafe fn new(consumer: &'a ty!(Consumer, arc = $arc, array = $array), n: usize, offset: usize) -> Self {
+        impl_!(ReadChunk<'a>, N = $N, {
+            unsafe fn new(consumer: &'a ty!(Consumer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
                 Self {
                     // SAFETY: Caller must guarantee that `offset` is valid.
                     ptr: unsafe { consumer.buffer.data_ptr().add(offset) },
@@ -2370,21 +2376,21 @@ macro_rules! struct_read_chunk {
             }
         });
     };
-    (arc = $arc:ident, array = $array:ident, contiguous = no) => {
+    (N = $N:ident, arc = $arc:ident, contiguous = no) => {
         // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(ReadChunk, array = $array, params = ('a, T), fields = {
+        struct_!(ReadChunk, N = $N, params = ('a, T), fields = {
             // Must be "mut" for drop_in_place()
             first_ptr: *mut T,
             first_len: usize,
             // Must be "mut" for drop_in_place()
             second_ptr: *mut T,
             second_len: usize,
-            consumer: &'a ty!(Consumer, arc = $arc, array = $array),
+            consumer: &'a ty!(Consumer, N = $N, arc = $arc),
         });
 
-        impl_!(ReadChunk<'a>, array = $array, {
-            unsafe fn new(consumer: &'a ty!(Consumer, arc = $arc, array = $array), n: usize, offset: usize) -> Self {
+        impl_!(ReadChunk<'a>, N = $N, {
+            unsafe fn new(consumer: &'a ty!(Consumer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
                 let b = &consumer.buffer;
                 let first_len = n.min(b.capacity() - offset);
                 Self {
@@ -2435,7 +2441,7 @@ macro_rules! fn_write_chunk_uninit_commit {
 }
 
 macro_rules! fn_write_chunk_uninit_fill_from_iter_docstring {
-    (arc = $arc:ident, array = $array:ident, module = $module:literal) => { docstring!(
+    (N = $N:ident, arc = $arc:ident, module = $module:literal) => { docstring!(
         /// Moves items from an iterator into the (uninitialized) slots of the chunk.
         ///
         /// The number of moved items is returned.
@@ -2450,7 +2456,7 @@ macro_rules! fn_write_chunk_uninit_fill_from_iter_docstring {
         /// ```
         #[doc = doctest_import!($module, "{PopError, RingBuffer}")]
         ///
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 4)]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 4)]
         /// if let Ok(chunk) = p.write_chunk_uninit(3) {
         ///     assert_eq!(chunk.fill_from_iter([10, 20]), 2);
         /// } else {
@@ -2469,7 +2475,7 @@ macro_rules! fn_write_chunk_uninit_fill_from_iter_docstring {
         /// ```
         #[doc = doctest_import!($module, "{PopError, RingBuffer}")]
         ///
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 4)]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 4)]
         /// let mut it = vec![10, 20, 30].into_iter();
         /// if let Ok(chunk) = p.write_chunk_uninit(2) {
         ///     assert_eq!(chunk.fill_from_iter(&mut it), 2);
@@ -2485,8 +2491,8 @@ macro_rules! fn_write_chunk_uninit_fill_from_iter_docstring {
 }
 
 macro_rules! fn_write_chunk_uninit_fill_from_iter {
-    (arc = $arc:ident, array = $array:ident, contiguous = yes, module = $module:literal) => {
-        #[doc = fn_write_chunk_uninit_fill_from_iter_docstring!(arc = $arc, array = $array, module = $module)]
+    (N = $N:ident, arc = $arc:ident, contiguous = yes, module = $module:literal) => {
+        #[doc = fn_write_chunk_uninit_fill_from_iter_docstring!(N = $N, arc = $arc, module = $module)]
         pub fn fill_from_iter<I>(self, iter: I) -> usize
         where
             I: IntoIterator<Item = T>,
@@ -2507,8 +2513,8 @@ macro_rules! fn_write_chunk_uninit_fill_from_iter {
             unsafe { self.commit_unchecked(iterated) }
         }
     };
-    (arc = $arc:ident, array = $array:ident, contiguous = no, module = $module:literal) => {
-        #[doc = fn_write_chunk_uninit_fill_from_iter_docstring!(arc = $arc, array = $array, module = $module)]
+    (N = $N:ident, arc = $arc:ident, contiguous = no, module = $module:literal) => {
+        #[doc = fn_write_chunk_uninit_fill_from_iter_docstring!(N = $N, arc = $arc, module = $module)]
         pub fn fill_from_iter<I>(self, iter: I) -> usize
         where
             I: IntoIterator<Item = T>,
@@ -2584,7 +2590,7 @@ macro_rules! fn_read_chunk_commit_all {
 }
 
 macro_rules! fn_read_chunk_commit {
-    (arc = $arc:ident, array = $array:ident, module = $module:literal) => {
+    (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
         /// Drops the first `n` slots of the chunk, making the space available for writing again.
         ///
         /// # Panics
@@ -2609,7 +2615,7 @@ macro_rules! fn_read_chunk_commit {
         ///
         /// // Scope to limit lifetime of ring buffer
         /// {
-        #[doc = doctest_create_ring_buffer!(arc = $arc, array = $array, capacity = 4, "    ")]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 4, "    ")]
         ///
         ///     assert!(p.push(Thing).is_ok()); // 1
         ///     assert!(p.push(Thing).is_ok()); // 2
@@ -2646,7 +2652,7 @@ macro_rules! fn_read_chunk_commit {
 }
 
 macro_rules! impl_send_for_chunks {
-    (array = $array:ident, module = $module:literal) => {
+    (N = $N:ident, module = $module:literal) => {
         // SAFETY: WriteChunkUninit only exists while a unique reference to the producer is held.
         // It is therefore safe to move it to another thread.
         impl_!(
@@ -2654,21 +2660,21 @@ macro_rules! impl_send_for_chunks {
             /// ```
             #[doc = doctest_import!($module, "{WriteChunk, WriteChunkUninit}")]
             /// fn assert_send<X: Send>() {}
-            #[doc = concat!("assert_send::<", doctest_ty!(WriteChunkUninit, u8, 8, array = $array), ">();")]
-            #[doc = concat!("assert_send::<", doctest_ty!(WriteChunk, u8, 8, array = $array), ">();")]
+            #[doc = concat!("assert_send::<", doctest_ty!(WriteChunkUninit, u8, 8, N = $N), ">();")]
+            #[doc = concat!("assert_send::<", doctest_ty!(WriteChunk, u8, 8, N = $N), ">();")]
             /// ```
             /// ... but not shared between threads:
             /// ```compile_fail
             #[doc = doctest_import!($module, "WriteChunkUninit", "# ")]
             /// fn assert_sync<X: Sync>() {}
-            #[doc = concat!("assert_sync::<", doctest_ty!(WriteChunkUninit, u8, 8, array = $array), ">();")]
+            #[doc = concat!("assert_sync::<", doctest_ty!(WriteChunkUninit, u8, 8, N = $N), ">();")]
             /// ```
             /// ```compile_fail
             #[doc = doctest_import!($module, "WriteChunk", "# ")]
             /// # fn assert_sync<X: Sync>() {}
-            #[doc = concat!("assert_sync::<", doctest_ty!(WriteChunk, u8, 8, array = $array), ">();")]
+            #[doc = concat!("assert_sync::<", doctest_ty!(WriteChunk, u8, 8, N = $N), ">();")]
             /// ```
-            WriteChunkUninit<'_>, trait unsafe = Send, array = $array, where T: Send {});
+            WriteChunkUninit<'_>, trait unsafe = Send, N = $N, where T: Send {});
 
         // SAFETY: ReadChunk only exists while a unique reference to the consumer is held.
         // It is therefore safe to move it to another thread.
@@ -2677,14 +2683,14 @@ macro_rules! impl_send_for_chunks {
             /// ```
             #[doc = doctest_import!($module, "ReadChunk")]
             /// fn assert_send<X: Send>() {}
-            #[doc = concat!("assert_send::<", doctest_ty!(ReadChunk, u8, 8, array = $array), ">();")]
+            #[doc = concat!("assert_send::<", doctest_ty!(ReadChunk, u8, 8, N = $N), ">();")]
             /// ```
             /// ... but not shared between threads:
             /// ```compile_fail
             #[doc = doctest_import!($module, "ReadChunk", "# ")]
             /// fn assert_sync<X: Sync>() {}
-            #[doc = concat!("assert_sync::<", doctest_ty!(ReadChunk, u8, 8, array = $array), ">();")]
+            #[doc = concat!("assert_sync::<", doctest_ty!(ReadChunk, u8, 8, N = $N), ">();")]
             /// ```
-            ReadChunk<'_>, trait unsafe = Send, array = $array, where T: Send {});
+            ReadChunk<'_>, trait unsafe = Send, N = $N, where T: Send {});
     };
 }
