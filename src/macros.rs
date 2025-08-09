@@ -718,7 +718,7 @@ macro_rules! struct_arc_ring_buffer {
         //#[derive(Debug, PartialEq, Eq)]
         // TODO: make non-public!
         struct_!(ArcRingBuffer, N = $N, params = (T), fields = {
-            ptr: NonNull<ty!(RingBuffer, N = $N)>,
+            ptr: NonNull<generic!(RingBuffer, N = $N)>,
         });
 
         // SAFETY: If RingBuffer is Send, ArcRingBuffer is as well.
@@ -726,13 +726,13 @@ macro_rules! struct_arc_ring_buffer {
             ArcRingBuffer,
             trait unsafe = Send,
             N = $N,
-            where ty!(RingBuffer, N = $N): Send {});
+            where generic!(RingBuffer, N = $N): Send {});
 
         impl_!(ArcRingBuffer, N = $N, {
             #[allow(clippy::new_ret_no_self)]
             fn new(
-                rb: ty!(RingBuffer, N = $N)
-            ) -> (ty!(Producer, N = $N), ty!(Consumer, N = $N)) {
+                rb: generic!(RingBuffer, N = $N)
+            ) -> (generic!(Producer, N = $N), generic!(Consumer, N = $N)) {
                 debug_assert_eq!(rb.flags.load(Ordering::Relaxed) & IS_ABANDONED, 0);
                 let head = rb.head.load(Ordering::Relaxed);
                 let tail = rb.tail.load(Ordering::Relaxed);
@@ -788,7 +788,7 @@ macro_rules! struct_arc_ring_buffer {
         fn_arc_ring_buffer_drop_slow!(N = $N);
 
         impl_!(ArcRingBuffer, trait = core::ops::Deref, N = $N, {
-            type Target = ty!(RingBuffer, N = $N);
+            type Target = generic!(RingBuffer, N = $N);
 
             fn deref(&self) -> &Self::Target {
                 // SAFETY: There are never any mutable references.
@@ -823,13 +823,7 @@ macro_rules! fn_arc_ring_buffer_drop_slow {
     };
 }
 
-macro_rules! ty {
-    ($name:ident, N = yes$(, $a:lifetime)?) => {
-        $name<$($a, )?T, N>
-    };
-    ($name:ident, N = no$(, $a:lifetime)?) => {
-        $name<$($a, )?T>
-    };
+macro_rules! generic {
     ($name:ident, N = yes, arc = yes) => {
         $name<T, N>
     };
@@ -842,12 +836,30 @@ macro_rules! ty {
     ($name:ident, N = no, arc = no) => {
         $name<'a, T>
     };
+    ($name:ident, N = yes) => {
+        $name<T, N>
+    };
+    ($name:ident, N = no) => {
+        $name<T>
+    };
+    ($name:ident<'_>, N = yes) => {
+        $name<'_, T, N>
+    };
+    ($name:ident<'_>, N = no) => {
+        $name<'_, T>
+    };
+    ($name:ident<'a>, N = yes) => {
+        $name<'a, T, N>
+    };
+    ($name:ident<'a>, N = no) => {
+        $name<'a, T>
+    };
 }
 
 macro_rules! fn_ring_buffer_producer {
     (N = $N:ident, arc = yes) => {};
     (N = $N:ident, arc = no) => {
-        pub fn producer(&self) -> Option<ty!(Producer, N = $N)> {
+        pub fn producer(&self) -> Option<generic!(Producer, N = $N)> {
             let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
             if old_flags & HAS_PRODUCER == 0 {
                 let head = self.head.load(Ordering::Relaxed);
@@ -867,7 +879,7 @@ macro_rules! fn_ring_buffer_producer {
 macro_rules! fn_ring_buffer_consumer {
     (N = $N:ident, arc = yes) => {};
     (N = $N:ident, arc = no) => {
-        pub fn consumer(&self) -> Option<ty!(Consumer, N = $N)> {
+        pub fn consumer(&self) -> Option<generic!(Consumer, N = $N)> {
             let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
             if old_flags & HAS_CONSUMER == 0 {
                 let head = self.head.load(Ordering::Relaxed);
@@ -918,7 +930,7 @@ macro_rules! struct_producer {
             /// all items remaining in the ring buffer will be dropped and the allocated memory
             /// will be deallocated.
             Producer, N = $N, params = (T), fields = {
-                buffer: ty!(ArcRingBuffer, N = $N),
+                buffer: generic!(ArcRingBuffer, N = $N),
                 cached_head: Cell<usize>,
                 cached_tail: Cell<usize>,
             }
@@ -932,7 +944,7 @@ macro_rules! struct_producer {
             ///
             /// A `Producer` can only be created with [`RingBuffer::producer()`].
             Producer, N = $N, params = ('a, T), fields = {
-                buffer: &'a ty!(RingBuffer, N = $N),
+                buffer: &'a generic!(RingBuffer, N = $N),
                 cached_head: Cell<usize>,
                 cached_tail: Cell<usize>,
             }
@@ -979,7 +991,7 @@ macro_rules! struct_consumer {
             /// all items remaining in the ring buffer will be dropped and the allocated memory
             /// will be deallocated.
             Consumer, N = $N, params = (T), fields = {
-                buffer: ty!(ArcRingBuffer, N = $N),
+                buffer: generic!(ArcRingBuffer, N = $N),
                 cached_head: Cell<usize>,
                 cached_tail: Cell<usize>,
             }
@@ -993,7 +1005,7 @@ macro_rules! struct_consumer {
             ///
             /// A `Consumer` can only be created with [`RingBuffer::consumer()`].
             Consumer, N = $N, params = ('a, T), fields = {
-                buffer: &'a ty!(RingBuffer, N = $N),
+                buffer: &'a generic!(RingBuffer, N = $N),
                 cached_head: Cell<usize>,
                 cached_tail: Cell<usize>,
             }
@@ -1769,7 +1781,7 @@ macro_rules! fn_producer_write_chunk_uninit {
         pub fn write_chunk_uninit(
             &mut self,
             n: usize,
-) -> Result<ty!(WriteChunkUninit, N = $N, '_), ChunkError> {
+) -> Result<generic!(WriteChunkUninit<'_>, N = $N), ChunkError> {
             let b = &self.buffer;
             let mut head = self.cached_head.get();
             let tail = self.cached_tail.get();
@@ -1844,7 +1856,7 @@ macro_rules! fn_producer_write_chunk_uninit {
         pub fn write_chunk_uninit(
             &mut self,
             n: usize,
-) -> Result<ty!(WriteChunkUninit, N = $N, '_), ChunkError> {
+) -> Result<generic!(WriteChunkUninit<'_>, N = $N), ChunkError> {
             let head = self.cached_head.get();
             let tail = self.cached_tail.get();
             let b = &self.buffer;
@@ -1899,7 +1911,7 @@ macro_rules! fn_producer_write_chunk {
         pub fn write_chunk(
             &mut self,
             n: usize,
-) -> Result<ty!(WriteChunk, N = $N, '_), ChunkError>
+) -> Result<generic!(WriteChunk<'_>, N = $N), ChunkError>
         where
             T: Default,
         {
@@ -1913,7 +1925,7 @@ macro_rules! fn_consumer_read_chunk {
         pub fn read_chunk(
             &mut self,
             n: usize,
-) -> Result<ty!(ReadChunk, N = $N, '_), ChunkError> {
+) -> Result<generic!(ReadChunk<'_>, N = $N), ChunkError> {
             let b = &self.buffer;
             let mut head = self.cached_head.get();
             let mut tail = self.cached_tail.get();
@@ -1986,7 +1998,7 @@ macro_rules! fn_consumer_read_chunk {
         pub fn read_chunk(
             &mut self,
             n: usize,
-) -> Result<ty!(ReadChunk, N = $N, '_), ChunkError> {
+) -> Result<generic!(ReadChunk<'_>, N = $N), ChunkError> {
             let head = self.cached_head.get();
             let tail = self.cached_tail.get();
             let b = &self.buffer;
@@ -2264,11 +2276,11 @@ macro_rules! struct_write_chunk_uninit {
         struct_!(WriteChunkUninit, N = $N, params = ('a, T), fields = {
             ptr: *mut T,
             len: usize,
-            producer: &'a ty!(Producer, N = $N, arc = $arc),
+            producer: &'a generic!(Producer, N = $N, arc = $arc),
         });
 
         impl_!(WriteChunkUninit<'a>, N = $N, {
-            unsafe fn new(producer: &'a ty!(Producer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
+            unsafe fn new(producer: &'a generic!(Producer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
                 Self {
                     // SAFETY: Caller must guarantee that `offset` is valid.
                     ptr: unsafe { producer.buffer.data_ptr().add(offset) },
@@ -2278,12 +2290,12 @@ macro_rules! struct_write_chunk_uninit {
             }
         });
 
-        impl_!(WriteChunk<'a>, trait = From<ty!(WriteChunkUninit, N = $N, 'a)>, N = $N,
+        impl_!(WriteChunk<'a>, trait = From<generic!(WriteChunkUninit<'a>, N = $N)>, N = $N,
         where
             T: Default,
         {
             /// Fills all slots with the [`Default`] value.
-            fn from(chunk: ty!(WriteChunkUninit, N = $N, 'a)) -> Self {
+            fn from(chunk: generic!(WriteChunkUninit<'a>, N = $N)) -> Self {
                 for i in 0..chunk.len {
                     // SAFETY: i is in a valid range.
                     unsafe { chunk.ptr.add(i).write(Default::default()) };
@@ -2300,11 +2312,11 @@ macro_rules! struct_write_chunk_uninit {
             first_len: usize,
             second_ptr: *mut T,
             second_len: usize,
-            producer: &'a ty!(Producer, N = $N, arc = $arc),
+            producer: &'a generic!(Producer, N = $N, arc = $arc),
         });
 
         impl_!(WriteChunkUninit<'a>, N = $N, {
-            unsafe fn new(producer: &'a ty!(Producer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
+            unsafe fn new(producer: &'a generic!(Producer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
                 let first_len = n.min(producer.buffer.capacity() - offset);
                 Self {
                     // SAFETY: Caller must guarantee that `offset` is valid.
@@ -2317,12 +2329,12 @@ macro_rules! struct_write_chunk_uninit {
             }
         });
 
-        impl_!(WriteChunk<'a>, trait = From<ty!(WriteChunkUninit, N = $N, 'a)>, N = $N,
+        impl_!(WriteChunk<'a>, trait = From<generic!(WriteChunkUninit<'a>, N = $N)>, N = $N,
         where
             T: Default,
         {
             /// Fills all slots with the [`Default`] value.
-            fn from(chunk: ty!(WriteChunkUninit, N = $N, 'a)) -> Self {
+            fn from(chunk: generic!(WriteChunkUninit<'a>, N = $N)) -> Self {
                 for i in 0..chunk.first_len {
                     // SAFETY: i is in a valid range.
                     unsafe { chunk.first_ptr.add(i).write(Default::default()) };
@@ -2340,7 +2352,7 @@ macro_rules! struct_write_chunk_uninit {
 macro_rules! struct_write_chunk {
     (N = $N:ident) => {
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(WriteChunk, N = $N, params = ('a, T), fields = (Option<ty!(WriteChunkUninit, N = $N, 'a)>););
+        struct_!(WriteChunk, N = $N, params = ('a, T), fields = (Option<generic!(WriteChunkUninit<'a>, N = $N)>););
 
         impl_!(WriteChunk<'_>, trait = Drop, N = $N, {
             fn drop(&mut self) {
@@ -2362,11 +2374,11 @@ macro_rules! struct_read_chunk {
         struct_!(ReadChunk, N = $N, params = ('a, T), fields = {
             ptr: *mut T,
             len: usize,
-            consumer: &'a ty!(Consumer, N = $N, arc = $arc),
+            consumer: &'a generic!(Consumer, N = $N, arc = $arc),
         });
 
         impl_!(ReadChunk<'a>, N = $N, {
-            unsafe fn new(consumer: &'a ty!(Consumer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
+            unsafe fn new(consumer: &'a generic!(Consumer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
                 Self {
                     // SAFETY: Caller must guarantee that `offset` is valid.
                     ptr: unsafe { consumer.buffer.data_ptr().add(offset) },
@@ -2386,11 +2398,11 @@ macro_rules! struct_read_chunk {
             // Must be "mut" for drop_in_place()
             second_ptr: *mut T,
             second_len: usize,
-            consumer: &'a ty!(Consumer, N = $N, arc = $arc),
+            consumer: &'a generic!(Consumer, N = $N, arc = $arc),
         });
 
         impl_!(ReadChunk<'a>, N = $N, {
-            unsafe fn new(consumer: &'a ty!(Consumer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
+            unsafe fn new(consumer: &'a generic!(Consumer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
                 let b = &consumer.buffer;
                 let first_len = n.min(b.capacity() - offset);
                 Self {
