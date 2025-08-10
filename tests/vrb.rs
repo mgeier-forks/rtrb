@@ -1,6 +1,6 @@
-#![cfg(feature = "mmap")]
+#![cfg(feature = "vrb")]
 
-use rtrb::mmap::RingBuffer;
+use rtrb::vrb::RingBuffer;
 
 #[test]
 fn basic() {

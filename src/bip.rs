@@ -40,6 +40,7 @@ TODO: some more docs, maybe links? [`RingBuffer::new()`].
 }
 
 impl_everything_eventually! {
+    storage = vec,
     N = no,
     arc = yes,
     bip = yes,

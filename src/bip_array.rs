@@ -16,6 +16,7 @@ TODO: some more docs, maybe links? [`RingBuffer::new()`].
 }
 
 impl_everything_eventually! {
+    storage = array,
     N = yes,
     arc = no,
     bip = yes,

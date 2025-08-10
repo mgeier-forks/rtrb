@@ -14,6 +14,7 @@ A ring buffer with elements stored in an [array] on the heap.
 }
 
 impl_everything_eventually! {
+    storage = array,
     N = yes,
     arc = yes,
     bip = no,

@@ -16,6 +16,7 @@ TODO: ...
 }
 
 impl_everything_eventually! {
+    storage = array,
     N = yes,
     arc = no,
     bip = no,

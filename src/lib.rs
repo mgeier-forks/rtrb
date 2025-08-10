@@ -77,9 +77,8 @@ pub mod bip;
 pub mod bip2;
 pub mod bip_array;
 pub mod embedded;
-
-#[cfg(feature = "mmap")]
-pub mod mmap;
+#[cfg(feature = "vrb")]
+pub mod vrb;
 
 // This is used in the documentation.
 #[allow(unused_imports)]

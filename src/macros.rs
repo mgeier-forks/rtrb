@@ -17,8 +17,6 @@ macro_rules! storage_vec {
 
 macro_rules! storage_vec_helper {
     (padded = $padded:ident, $($skip:ident)?, rb_doc = $rb_doc:expr) => {
-        use $crate::atomic::*;
-        use $crate::CachePadded;
         use alloc::vec::Vec;
         use core::mem::ManuallyDrop;
 
@@ -37,6 +35,7 @@ macro_rules! storage_vec_helper {
             capacity: usize,
         }
 
+        // TODO: move to common implementation?
         // SAFETY: If T can be moved between threads, RingBuffer can as well.
         unsafe impl<T: Send> Send for RingBuffer<T> {}
 
@@ -71,7 +70,7 @@ macro_rules! storage_vec_helper {
         }
 
         impl<T> Drop for RingBuffer<T> {
-            /// Drops all non-empty slots.
+            /// Drops all non-empty slots and deallocates the storage.
             fn drop(&mut self) {
                 // SAFETY: this is called exactly once, no references to any elements exist anymore.
                 unsafe { self.drop_all_elements() };
@@ -95,8 +94,6 @@ macro_rules! storage_array {
 
 macro_rules! storage_array_helper {
     (arc = $arc:ident, padded = $padded:ident, $($skip:ident)?, rb_doc = $rb_doc:expr) => {
-        use $crate::atomic::*;
-        use $crate::cache_padded::CachePadded;
         use core::cell::UnsafeCell;
 
         #[doc = $rb_doc]
@@ -173,6 +170,145 @@ macro_rules! storage_array_impl_default_for_ring_buffer {
     };
 }
 
+// TODO: check that `bip = yes` is not allowed?
+// TODO: check that `contiguous = yes` is required?
+// TODO: only allow `pow2 = yes`?
+macro_rules! storage_vrb {
+    (arc = $arc:ident, padded = $padded:ident, rb_doc = $rb_doc:expr) => {
+        #[doc = $rb_doc]
+        // TODO: reuse from storage_vec, disabling "skip"?
+        pub struct RingBuffer<T> {
+            head: choice_ty!($padded, CachePadded<AtomicUsize>, AtomicUsize),
+            tail: choice_ty!($padded, CachePadded<AtomicUsize>, AtomicUsize),
+            flags: AtomicU8,
+            /// Pointer to the first mapped region
+            data_ptr: *mut T,
+            capacity: usize,
+        }
+
+        impl<T> RingBuffer<T> {
+            // Private helper function.
+            fn construct(capacity: usize) -> Self {
+                use core::mem;
+                const {
+                    // NB: This also disallows zero-sized types,
+                    //     and therefore avoids division by zero further below:
+                    assert!(
+                        mem::size_of::<T>().is_power_of_two(),
+                        "size of T must be a power of 2"
+                    );
+                }
+                // TODO: what if capacity is 0?
+                // SAFETY: If `libc` is not buggy, this should be safe.
+                let pagesize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+                assert_ne!(pagesize, -1);
+                let pagesize = usize::try_from(pagesize).unwrap();
+                assert!(pagesize.is_power_of_two());
+                assert!(pagesize >= mem::size_of::<T>());
+                assert_eq!(pagesize % mem::size_of::<T>(), 0);
+                let elements_per_page = pagesize / mem::size_of::<T>();
+                let pages = capacity.div_ceil(elements_per_page);
+                let capacity = pages * elements_per_page;
+                assert_eq!(capacity, Self::update_capacity(capacity));
+                let len = capacity * mem::size_of::<T>();
+
+                // SAFETY:
+                // - string is null-terminated
+                // - pointers, lengths and other arguments are valid
+                let data_ptr: *mut T = unsafe {
+                    use libc::*;
+                    let mut filename = *b"/tmp/rtrb-buffer-XXXXXX\0";
+                    let filename = filename.as_mut_ptr().cast();
+                    let fd = mkstemp(filename);
+                    assert!(fd >= 0);
+                    let r = unlink(filename);
+                    assert_eq!(r, 0);
+                    let r = ftruncate(fd, off_t::try_from(len).unwrap());
+                    assert_eq!(r, 0);
+                    // Get an address with twice the capacity available
+                    let ptr_one = mmap(
+                        core::ptr::null_mut(),
+                        2 * len,
+                        PROT_NONE,
+                        MAP_PRIVATE | MAP_ANONYMOUS,
+                        -1,
+                        0,
+                    );
+                    assert_ne!(ptr_one, MAP_FAILED); // TODO: check for errno?
+                    let r = mmap(
+                        ptr_one,
+                        len,
+                        PROT_READ | PROT_WRITE,
+                        MAP_SHARED | MAP_FIXED,
+                        fd,
+                        0,
+                    );
+                    assert_eq!(r, ptr_one); // TODO: check for errno?
+                    let ptr_two = ptr_one.add(len);
+                    let r = mmap(
+                        ptr_two,
+                        len,
+                        PROT_READ | PROT_WRITE,
+                        MAP_SHARED | MAP_FIXED,
+                        fd,
+                        0,
+                    );
+                    assert_eq!(r, ptr_two); // TODO: check for errno?
+                    let r = close(fd);
+                    assert_eq!(r, 0); // TODO: check for errno?
+                    ptr_one.cast()
+                };
+                // Alignments larger than the page size are not supported.
+                assert!(data_ptr.is_aligned());
+                // TODO: reuse from storage_vec, disabling "skip"?
+                Self {
+                    head: choice!(
+                        $padded,
+                        CachePadded::new(AtomicUsize::new(0)),
+                        AtomicUsize::new(0)
+                    ),
+                    tail: choice!(
+                        $padded,
+                        CachePadded::new(AtomicUsize::new(0)),
+                        AtomicUsize::new(0)
+                    ),
+                    flags: AtomicU8::new(0),
+                    data_ptr,
+                    capacity,
+                }
+            }
+
+            // TODO: reuse capacity() and data_ptr() from storage_vec?
+
+            fn capacity(&self) -> usize {
+                self.capacity
+            }
+
+            fn data_ptr(&self) -> *mut T {
+                self.data_ptr
+            }
+        }
+
+        impl<T> Drop for RingBuffer<T> {
+            /// Drops all non-empty slots and deallocates the storage.
+            fn drop(&mut self) {
+                // SAFETY: this is called exactly once, no references to any elements exist anymore.
+                unsafe { self.drop_all_elements() };
+                // SAFETY: The memory is not used anymore.
+                unsafe {
+                    let len = self.capacity() * core::mem::size_of::<T>();
+                    let ptr_one: *mut libc::c_void = self.data_ptr.cast();
+                    let r = libc::munmap(ptr_one, len);
+                    assert_eq!(r, 0); // TODO: check for errno?
+                    let ptr_two = ptr_one.add(len);
+                    let r = libc::munmap(ptr_two, len);
+                    assert_eq!(r, 0); // TODO: check for errno?
+                }
+            }
+        }
+    };
+}
+
 macro_rules! choice {
     (yes, $yes:expr, $no:expr) => {
         $yes
@@ -194,6 +330,7 @@ macro_rules! choice_ty {
 // TODO: rename
 macro_rules! impl_everything_eventually {
     (
+        storage = $storage:ident,
         N = $N:ident,
         arc = $arc:ident,
         bip = $bip:ident,
@@ -205,6 +342,11 @@ macro_rules! impl_everything_eventually {
 
         use core::cell::Cell;
         use core::mem::MaybeUninit;
+
+        use $crate::atomic::*;
+
+        // TODO: import only if `padded = yes`?
+        use $crate::CachePadded;
 
         // TODO: move definition here?
         #[allow(unused_imports)]
@@ -243,7 +385,11 @@ macro_rules! impl_everything_eventually {
 
         // SAFETY: RingBuffer is only mutated (using *interior mutablility*)
         // via Producer/Consumer (which are !Sync), all other access can be shared.
-        impl_!(RingBuffer, trait unsafe = Sync, N = $N, where T: Send {});
+        impl_!(
+            /// A `RingBuffer` can be shared between threads.
+            ///
+            /// `T` does not need to be `Sync`, because we never share it across threads.
+            RingBuffer, trait unsafe = Sync, N = $N, where T: Send {});
 
         impl_!(RingBuffer, N = $N, {
             fn_ring_buffer_new!(N = $N, arc = $arc, pow2 = $pow2, module = $module);
@@ -266,13 +412,13 @@ macro_rules! impl_everything_eventually {
         struct_producer!(N = $N, arc = $arc);
 
         impl_!(Producer, N = $N, arc = $arc, {
-            fn_producer_push!(N = $N, arc = $arc, module = $module);
+            fn_producer_push!(storage = $storage, N = $N, arc = $arc, module = $module);
             fn_producer_write_chunk_uninit!(N = $N, bip = $bip);
             fn_producer_write_chunk!(N = $N, contiguous = $contiguous);
             // TODO: documentation specific to bip:
             fn_producer_slots!(N = $N, arc = $arc, module = $module);
             fn_producer_slots_contiguousX!(bip = $bip);
-            fn_producer_is_full!(N = $N, arc = $arc, module = $module);
+            fn_producer_is_full!(storage = $storage, N = $N, arc = $arc, module = $module);
             fn_pc_capacity!(N = $N, arc = $arc, module = $module);
             fn_producer_is_abandoned!(N = $N, arc = $arc, module = $module);
             fn_producer_has_consumer!(N = $N, arc = $arc, module = $module);
@@ -348,6 +494,11 @@ macro_rules! docstring {
     ($(#[doc = $line:expr])*) => {
         concat!($($line, "\n"),*)
     };
+}
+
+macro_rules! docstring_exclude_vrb {
+    (vrb, $(#[doc = $line:expr])+) => { "" };
+    ($storage:ident, $(#[doc = $line:expr])+) => { docstring!($(#[doc = $line])+) };
 }
 
 macro_rules! doctest_import {
@@ -1047,8 +1198,9 @@ macro_rules! struct_consumer {
     };
 }
 
+#[rustfmt::skip] // https://github.com/rust-lang/rustfmt/issues/5974
 macro_rules! fn_producer_push {
-    (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
+    (storage = $storage:ident, N = $N:ident, arc = $arc:ident, module = $module:literal) => {
         /// Attempts to push an element into the queue.
         ///
         /// The element is *moved* into the ring buffer and its slot
@@ -1057,17 +1209,19 @@ macro_rules! fn_producer_push {
         /// # Errors
         ///
         /// If the queue is full, the element is returned back as an error.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        #[doc = doctest_import!($module, "{PushError, RingBuffer}")]
-        ///
-        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1)]
-        ///
-        /// assert_eq!(p.push(10), Ok(()));
-        /// assert_eq!(p.push(20), Err(PushError::Full(20)));
-        /// ```
+        #[doc = docstring_exclude_vrb!($storage,
+            ///
+            /// # Examples
+            ///
+            /// ```
+            #[doc = doctest_import!($module, "{PushError, RingBuffer}")]
+            ///
+            #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1)]
+            ///
+            /// assert_eq!(p.push(10), Ok(()));
+            /// assert_eq!(p.push(20), Err(PushError::Full(20)));
+            /// ```
+        )]
         pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
             if let Some(tail) = self.next_tail() {
                 let b = &self.buffer;
@@ -1166,52 +1320,55 @@ macro_rules! fn_producer_slots_contiguousX {
     (bip = no) => {};
 }
 
+#[rustfmt::skip] // https://github.com/rust-lang/rustfmt/issues/5974
 macro_rules! fn_producer_is_full {
-    (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
+    (storage = $storage:ident, N = $N:ident, arc = $arc:ident, module = $module:literal) => {
         /// Returns `true` if there are currently no slots available for writing.
         ///
         /// TODO: additional info about bip?
         ///
         /// A full ring buffer might cease to be full at any time
         /// if the corresponding [`Consumer`] is consuming items in another thread.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        #[doc = doctest_import!($module, "RingBuffer")]
-        ///
-        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1)]
-        ///
-        /// assert!(!p.is_full());
-        /// assert_eq!(p.push(10), Ok(()));
-        /// assert!(p.is_full());
-        /// ```
-        ///
-        /// Since items can be concurrently consumed on another thread, the ring buffer
-        /// might not be full for long:
-        ///
-        /// ```
-        #[doc = doctest_import!($module, "RingBuffer", "# ")]
-        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1, "# ")]
-        /// # assert_eq!(p.push(10), Ok(()));
-        /// if p.is_full() {
-        ///     // The buffer might be full, but it might as well not be
-        ///     // if an item was just consumed on another thread.
-        /// }
-        /// ```
-        ///
-        /// However, if it's not full, another thread cannot change that:
-        ///
-        /// ```
-        #[doc = doctest_import!($module, "RingBuffer", "# ")]
-        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1, "# ")]
-        /// # assert_eq!(p.push(10), Ok(()));
-        /// if !p.is_full() {
-        ///     // At least one slot is guaranteed to be available for writing.
-        /// }
-        /// ```
-        ///
-        /// TODO: example for "bip" when "skip" is set?
+        #[doc = docstring_exclude_vrb!($storage,
+            ///
+            /// # Examples
+            ///
+            /// ```
+            #[doc = doctest_import!($module, "RingBuffer")]
+            ///
+            #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1)]
+            ///
+            /// assert!(!p.is_full());
+            /// assert_eq!(p.push(10), Ok(()));
+            /// assert!(p.is_full());
+            /// ```
+            ///
+            /// Since items can be concurrently consumed on another thread, the ring buffer
+            /// might not be full for long:
+            ///
+            /// ```
+            #[doc = doctest_import!($module, "RingBuffer", "# ")]
+            #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1, "# ")]
+            /// # assert_eq!(p.push(10), Ok(()));
+            /// if p.is_full() {
+            ///     // The buffer might be full, but it might as well not be
+            ///     // if an item was just consumed on another thread.
+            /// }
+            /// ```
+            ///
+            /// However, if it's not full, another thread cannot change that:
+            ///
+            /// ```
+            #[doc = doctest_import!($module, "RingBuffer", "# ")]
+            #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1, "# ")]
+            /// # assert_eq!(p.push(10), Ok(()));
+            /// if !p.is_full() {
+            ///     // At least one slot is guaranteed to be available for writing.
+            /// }
+            /// ```
+            ///
+            /// TODO: example for "bip" when "skip" is set?
+        )]
         pub fn is_full(&self) -> bool {
             self.next_tail().is_none()
         }
@@ -1233,13 +1390,13 @@ macro_rules! fn_pc_capacity {
         /// ```
         #[doc = doctest_import!($module, "RingBuffer")]
         ///
-        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 128)]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 4096)]
         ///
         /// assert_eq!(p.push(-0.7), Ok(()));
-        /// assert_eq!(p.slots(), 127);
+        /// assert_eq!(p.slots(), 4095);
         /// assert_eq!(c.slots(), 1);
-        /// assert_eq!(p.capacity(), 128);
-        /// assert_eq!(c.capacity(), 128);
+        /// assert_eq!(p.capacity(), 4096);
+        /// assert_eq!(c.capacity(), 4096);
         /// ```
         pub fn capacity(&self) -> usize {
             self.buffer.capacity()
@@ -2520,7 +2677,7 @@ macro_rules! fn_write_chunk_uninit_fill_from_iter_docstring {
         /// } else {
         ///     unreachable!();
         /// }
-        /// assert_eq!(p.slots(), 2);
+        /// assert_eq!(c.slots(), 2);
         /// assert_eq!(c.pop(), Ok(10));
         /// assert_eq!(c.pop(), Ok(20));
         /// assert_eq!(c.pop(), Err(PopError::Empty));
@@ -2666,7 +2823,7 @@ macro_rules! fn_read_chunk_commit {
         /// // Static variable to count all drop() invocations
         /// static mut DROP_COUNT: i32 = 0;
         /// #[derive(Debug)]
-        /// struct Thing;
+        /// struct Thing(u8);
         /// impl Drop for Thing {
         ///     fn drop(&mut self) { unsafe { DROP_COUNT += 1; } }
         /// }
@@ -2675,8 +2832,8 @@ macro_rules! fn_read_chunk_commit {
         /// {
         #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 4, "    ")]
         ///
-        ///     assert!(p.push(Thing).is_ok()); // 1
-        ///     assert!(p.push(Thing).is_ok()); // 2
+        ///     assert!(p.push(Thing(1)).is_ok());
+        ///     assert!(p.push(Thing(2)).is_ok());
         ///     if let Ok(thing) = c.pop() {
         ///         // "thing" has been *moved* out of the queue but not yet dropped
         ///         assert_eq!(unsafe { DROP_COUNT }, 0);
@@ -2685,7 +2842,7 @@ macro_rules! fn_read_chunk_commit {
         ///     }
         ///     // First Thing has been dropped when "thing" went out of scope:
         ///     assert_eq!(unsafe { DROP_COUNT }, 1);
-        ///     assert!(p.push(Thing).is_ok()); // 3
+        ///     assert!(p.push(Thing(3)).is_ok());
         ///
         ///     if let Ok(chunk) = c.read_chunk(2) {
         ///         assert_eq!(chunk.len(), 2);

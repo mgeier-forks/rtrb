@@ -24,7 +24,7 @@ exclude = ["crossbeam", "performance-comparison"]
 [features]
 default = ["std"]
 std = []
-mmap = ["dep:libc"]
+vrb = ["dep:libc"]
 
 [dependencies]
 libc = { version = "0.2", optional = true }

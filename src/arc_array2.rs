@@ -14,6 +14,7 @@ A ring buffer with elements stored in an [array] (with a power-of-2 size) on the
 }
 
 impl_everything_eventually! {
+    storage = array,
     N = yes,
     arc = yes,
     bip = no,
