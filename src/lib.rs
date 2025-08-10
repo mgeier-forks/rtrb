@@ -669,12 +669,3 @@ impl<T: Copy> CopyToUninit<T> for [T] {
         }
     }
 }
-
-/// Ring buffer with power-of-two storage.
-// TODO: change to newtype, add docs
-pub type RingBuffer2<T> = DynamicStorage<T, { Calc::PowerOfTwo as u8 }, CachePaddedIndices>;
-
-// TODO: Remove because power-of-two optimizations? Might be done automatically by the compiler?
-// TODO: verify
-pub type StaticRingBuffer2<T, const N: usize> =
-    diy::ArrayStorage<T, N, { Calc::PowerOfTwo as u8 }, CachePaddedIndices>;

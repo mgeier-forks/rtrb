@@ -86,9 +86,10 @@ create_two_threads_array_benchmark! {
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::
-    "static-rtrb2",
+    "rtrb::array2",
     || {
-        static RB: rtrb::StaticRingBuffer2<u8, SIZE> = rtrb::StaticRingBuffer2::new();
+        use rtrb::array2::RingBuffer;
+        static RB: RingBuffer<u8, SIZE> = RingBuffer::new();
         (RB.producer().unwrap(), RB.consumer().unwrap())
     },
     |p, i| p.push(i).is_ok(),
@@ -100,6 +101,16 @@ create_two_threads_array_benchmark! {
         static RB: RingBuffer<u8, SIZE> = RingBuffer::new();
         (RB.producer().unwrap(), RB.consumer().unwrap())
     },
+    |p, i| p.push(i).is_ok(),
+    |c| c.pop().ok(),
+    ::
+    "rtrb::arc_array",
+    rtrb::arc_array::RingBuffer::<u8, SIZE>::new,
+    |p, i| p.push(i).is_ok(),
+    |c| c.pop().ok(),
+    ::
+    "rtrb::arc_array2",
+    rtrb::arc_array2::RingBuffer::<u8, SIZE>::new,
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::

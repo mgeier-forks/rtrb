@@ -9,7 +9,8 @@ use ringbuf::traits::*;
 create_two_threads_array_benchmark!(
     "rtrb",
     || {
-        static RB: rtrb::array::RingBuffer<u8, SIZE> = rtrb::array::RingBuffer::<u8, SIZE>::new();
+        use rtrb::array::RingBuffer;
+        static RB: RingBuffer<u8, SIZE> = RingBuffer::<u8, SIZE>::new();
         (RB.producer().unwrap(), RB.consumer().unwrap())
     },
     |p, i| p.push(i).is_ok(),
@@ -17,7 +18,8 @@ create_two_threads_array_benchmark!(
     ::
     "rtrb2",
     || {
-        static RB: rtrb::StaticRingBuffer2<u8, SIZE> = rtrb::StaticRingBuffer2::new();
+        use rtrb::array2::RingBuffer;
+        static RB: RingBuffer<u8, SIZE> = RingBuffer::<u8, SIZE>::new();
         (RB.producer().unwrap(), RB.consumer().unwrap())
     },
     |p, i| p.push(i).is_ok(),
@@ -25,7 +27,8 @@ create_two_threads_array_benchmark!(
     ::
     "rtrb-embedded",
     || {
-        static RB: rtrb::embedded::RingBuffer<u8, SIZE> = rtrb::embedded::RingBuffer::new();
+        use rtrb::embedded::RingBuffer;
+        static RB: RingBuffer<u8, SIZE> = RingBuffer::new();
         (RB.producer().unwrap(), RB.consumer().unwrap())
     },
     |p, i| p.push(i).is_ok(),
@@ -50,4 +53,5 @@ create_two_threads_array_benchmark!(
     || Box::leak(Box::new(heapless::spsc::Queue::<u8, SIZE>::new())).split(),
     |p, i| p.enqueue(i).is_ok(),
     |c| c.dequeue(),
+    ::
 );
