@@ -73,7 +73,6 @@ pub mod arc_array;
 pub mod arc_array2;
 pub mod array;
 pub mod array2;
-pub mod array_temp;
 pub mod bip;
 pub mod bip2;
 pub mod bip_array;

@@ -249,6 +249,8 @@ macro_rules! impl_everything_eventually {
             fn_ring_buffer_new!(N = $N, arc = $arc, pow2 = $pow2, module = $module);
             fn_ring_buffer_producer!(N = $N, arc = $arc);
             fn_ring_buffer_consumer!(N = $N, arc = $arc);
+            fn_ring_buffer_has_producer!(N = $N, arc = $arc);
+            fn_ring_buffer_has_consumer!(N = $N, arc = $arc);
 
             fn_ring_buffer_drop_all_elements!(bip = $bip);
             fn_ring_buffer_update_capacity!(pow2 = $pow2);
@@ -273,6 +275,7 @@ macro_rules! impl_everything_eventually {
             fn_producer_is_full!(N = $N, arc = $arc, module = $module);
             fn_pc_capacity!(N = $N, arc = $arc, module = $module);
             fn_producer_is_abandoned!(N = $N, arc = $arc, module = $module);
+            fn_producer_has_consumer!(N = $N, arc = $arc, module = $module);
 
             fn_producer_next_tail!();
         });
@@ -289,6 +292,7 @@ macro_rules! impl_everything_eventually {
             fn_consumer_is_empty!(N = $N, arc = $arc, module = $module);
             fn_pc_capacity!(N = $N, arc = $arc, module = $module);
             fn_consumer_is_abandoned!(N = $N, arc = $arc, module = $module);
+            fn_consumer_has_producer!(N = $N, arc = $arc, module = $module);
 
             fn_consumer_next_head!(bip = $bip);
         });
@@ -424,10 +428,10 @@ macro_rules! impl_ {
         $(#[$attr])* $($($unsafe)?)? impl<T> $($trait for)? $name<T> $($body)+
     };
     ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? N = yes, arc = no, $($body:tt)+) => {
-        $(#[$attr])* $($($unsafe)?)? impl<'a, T, const N: usize> $($trait for)? $name<'a, T, N> $($body)+
+        $(#[$attr])* $($($unsafe)?)? impl<T, const N: usize> $($trait for)? $name<'_, T, N> $($body)+
     };
     ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? N = no, arc = no, $($body:tt)+) => {
-        $(#[$attr])* $($($unsafe)?)? impl<'a, T> $($trait for)? $name<'a, T> $($body)+
+        $(#[$attr])* $($($unsafe)?)? impl<T> $($trait for)? $name<'_, T> $($body)+
     };
     ($(#[$attr:meta])* $name:ident, $(trait $($unsafe:ident)? = $trait:ty,)? N = yes, $($body:tt)+) => {
         $(#[$attr])* $($($unsafe)?)? impl<T, const N: usize> $($trait for)? $name<T, N> $($body)+
@@ -898,6 +902,24 @@ macro_rules! fn_ring_buffer_consumer {
             } else {
                 None
             }
+        }
+    };
+}
+
+macro_rules! fn_ring_buffer_has_producer {
+    (N = $N:ident, arc = yes) => {};
+    (N = $N:ident, arc = no) => {
+        pub fn has_producer(&self) -> bool {
+            self.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
+        }
+    };
+}
+
+macro_rules! fn_ring_buffer_has_consumer {
+    (N = $N:ident, arc = yes) => {};
+    (N = $N:ident, arc = no) => {
+        pub fn has_consumer(&self) -> bool {
+            self.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
         }
     };
 }
@@ -1636,6 +1658,24 @@ macro_rules! fn_consumer_is_abandoned {
     (N = $N:ident, arc = no, module = $module:literal) => {};
 }
 
+macro_rules! fn_producer_has_consumer {
+    (N = $N:ident, arc = yes, module = $module:literal) => {};
+    (N = $N:ident, arc = no, module = $module:literal) => {
+        pub fn has_consumer(&self) -> bool {
+            self.buffer.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
+        }
+    };
+}
+
+macro_rules! fn_consumer_has_producer {
+    (N = $N:ident, arc = yes, module = $module:literal) => {};
+    (N = $N:ident, arc = no, module = $module:literal) => {
+        pub fn has_producer(&self) -> bool {
+            self.buffer.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
+        }
+    };
+}
+
 /// Get the `head` position for reading the next slot, if available.
 ///
 /// This is a strict subset of the functionality implemented in `read_chunk()`.
@@ -1787,7 +1827,7 @@ macro_rules! fn_producer_write_chunk_uninit {
         pub fn write_chunk_uninit(
             &mut self,
             n: usize,
-) -> Result<generic!(WriteChunkUninit<'_>, N = $N), ChunkError> {
+        ) -> Result<generic!(WriteChunkUninit<'_>, N = $N), ChunkError> {
             let b = &self.buffer;
             let mut head = self.cached_head.get();
             let tail = self.cached_tail.get();
@@ -1862,7 +1902,7 @@ macro_rules! fn_producer_write_chunk_uninit {
         pub fn write_chunk_uninit(
             &mut self,
             n: usize,
-) -> Result<generic!(WriteChunkUninit<'_>, N = $N), ChunkError> {
+        ) -> Result<generic!(WriteChunkUninit<'_>, N = $N), ChunkError> {
             let head = self.cached_head.get();
             let tail = self.cached_tail.get();
             let b = &self.buffer;
@@ -1917,7 +1957,7 @@ macro_rules! fn_producer_write_chunk {
         pub fn write_chunk(
             &mut self,
             n: usize,
-) -> Result<generic!(WriteChunk<'_>, N = $N), ChunkError>
+        ) -> Result<generic!(WriteChunk<'_>, N = $N), ChunkError>
         where
             T: Default,
         {
@@ -1931,7 +1971,7 @@ macro_rules! fn_consumer_read_chunk {
         pub fn read_chunk(
             &mut self,
             n: usize,
-) -> Result<generic!(ReadChunk<'_>, N = $N), ChunkError> {
+        ) -> Result<generic!(ReadChunk<'_>, N = $N), ChunkError> {
             let b = &self.buffer;
             let mut head = self.cached_head.get();
             let mut tail = self.cached_tail.get();
@@ -2004,7 +2044,7 @@ macro_rules! fn_consumer_read_chunk {
         pub fn read_chunk(
             &mut self,
             n: usize,
-) -> Result<generic!(ReadChunk<'_>, N = $N), ChunkError> {
+        ) -> Result<generic!(ReadChunk<'_>, N = $N), ChunkError> {
             let head = self.cached_head.get();
             let tail = self.cached_tail.get();
             let b = &self.buffer;
