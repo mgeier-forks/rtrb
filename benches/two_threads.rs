@@ -175,7 +175,7 @@ create_two_threads_benchmark!(
     |q| q.pop().ok(),
     ::
     "rtrb-bip",
-    rtrb::bip::RingBuffer::new,
+    rtrb::bip_arc::RingBuffer::new,
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::

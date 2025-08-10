@@ -69,16 +69,22 @@ mod diy;
 #[macro_use]
 mod macros;
 
+pub mod arc;
 pub mod arc_array;
 pub mod arc_array2;
 pub mod array;
 pub mod array2;
-pub mod bip;
-pub mod bip2;
+pub mod bip_arc;
+pub mod bip_arc2;
+pub mod bip_arc_array;
 pub mod bip_array;
 pub mod embedded;
 #[cfg(feature = "vrb")]
+pub mod vrb_arc;
+#[cfg(feature = "vrb")]
 pub mod vrb;
+
+// TODO: boxed, from_ptr, new_at_ptr (+ same for bip)
 
 // This is used in the documentation.
 #[allow(unused_imports)]

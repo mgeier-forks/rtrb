@@ -1,6 +1,6 @@
 //! A bi-partite ring buffer whose elements are stored in an [array].
 //!
-//! See [`rtrb::bip`](crate::bip) for a bi-partite ring buffer with dynamic storage.
+//! See [`rtrb::bip_arc`](crate::bip_arc) for a bi-partite ring buffer with dynamic storage.
 
 storage_array! {
     arc = no,

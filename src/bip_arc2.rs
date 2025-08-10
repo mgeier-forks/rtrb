@@ -8,7 +8,7 @@ Bi-partite ring buffer.
 
 TODO: some more docs, maybe links? [`RingBuffer::new()`].
 
-*See also the [module-level documentation](crate::bip).*
+*See also the [module-level documentation](crate::bip_arc2).*
 "
 }
 
@@ -19,5 +19,5 @@ impl_everything_eventually! {
     bip = yes,
     contiguous = yes,
     pow2 = yes,
-    module = "rtrb::bip2",
+    module = "rtrb::bip_arc2",
 }

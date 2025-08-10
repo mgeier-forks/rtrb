@@ -1,11 +1,3 @@
-// storage: vec, array, vrb, dst
-// indices & calculation: mop, bip (bip+vrb doesn't make sense)
-// indices & padding: tight, padded
-// chunks: vrb is a special case: only contiguous; bip could have both?
-// owning p&c: vec, vrb, dst; non-owning: array, maybe dst? "owned" module?
-// addressing: double size, pow2, single size, pow2-single; one_less (waste_one), unwrap; pow2; not_pow2
-// size_type: usize, u32, u16, u8; (u64 and u128 probably don't make sense?)
-
 macro_rules! storage_vec {
     (padded = $padded:ident, bip = yes, rb_doc = $rb_doc:expr) => {
         storage_vec_helper!(padded = $padded, skip, rb_doc = $rb_doc);
@@ -640,38 +632,6 @@ macro_rules! fn_ring_buffer_new {
             ArcRingBuffer::new(Self::construct())
         }
     };
-    (N = no, arc = yes, pow2 = $pow2:ident, module = $module:literal) => {
-        /// Creates a ring buffer
-        #[doc = choice!($pow2, "with at least", "with")]
-        /// the given `capacity` and returns [`Producer`] and [`Consumer`].
-        ///
-        #[doc = choice!($pow2,
-            "If the `capacity` isn't already a power of two, it is rounded up to the next one.",
-            "")]
-        ///
-        /// # Examples
-        ///
-        /// ```
-        #[doc = doctest_import!($module, "RingBuffer")]
-        ///
-        /// let (p, c) = RingBuffer::<f32>::new(100);
-        /// ```
-        ///
-        /// Specifying an explicit type with the [turbofish](https://turbo.fish/)
-        /// is is only necessary if it cannot be deduced by the compiler.
-        ///
-        /// ```
-        #[doc = doctest_import!($module, "RingBuffer")]
-        ///
-        /// let (mut p, c) = RingBuffer::new(100);
-        /// assert_eq!(p.push(0.0f32), Ok(()));
-        /// ```
-        #[allow(clippy::new_ret_no_self)]
-        pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
-            let capacity = Self::update_capacity(capacity);
-            ArcRingBuffer::new(Self::construct(capacity))
-        }
-    };
     (N = yes, arc = no, pow2 = $pow2:ident, module = $module:literal) => {
         /// Creates a ring buffer with a capacity of `N`.
         ///
@@ -712,8 +672,43 @@ macro_rules! fn_ring_buffer_new {
             Self::construct()
         }
     };
+    (N = no, arc = yes, pow2 = $pow2:ident, module = $module:literal) => {
+        /// Creates a ring buffer
+        #[doc = choice!($pow2, "with at least", "with")]
+        /// the given `capacity` and returns [`Producer`] and [`Consumer`].
+        ///
+        #[doc = choice!($pow2,
+            "If the `capacity` isn't already a power of two, it is rounded up to the next one.",
+            "")]
+        ///
+        /// # Examples
+        ///
+        /// ```
+        #[doc = doctest_import!($module, "RingBuffer")]
+        ///
+        /// let (p, c) = RingBuffer::<f32>::new(100);
+        /// ```
+        ///
+        /// Specifying an explicit type with the [turbofish](https://turbo.fish/)
+        /// is is only necessary if it cannot be deduced by the compiler.
+        ///
+        /// ```
+        #[doc = doctest_import!($module, "RingBuffer")]
+        ///
+        /// let (mut p, c) = RingBuffer::new(100);
+        /// assert_eq!(p.push(0.0f32), Ok(()));
+        /// ```
+        #[allow(clippy::new_ret_no_self)]
+        pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
+            let capacity = Self::update_capacity(capacity);
+            ArcRingBuffer::new(Self::construct(capacity))
+        }
+    };
     (N = no, arc = no, pow2 = $pow2:ident, module = $module:literal) => {
-        compile_error!("TODO")
+        pub fn new(capacity: usize) -> Self {
+            let capacity = Self::update_capacity(capacity);
+            Self::construct(capacity)
+        }
     };
 }
 

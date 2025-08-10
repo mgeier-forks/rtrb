@@ -1,6 +1,11 @@
 //! An array on the heap.
 //!
 //! This may not be very useful, but who knows?
+//!
+//! ... `static` can be used with `array` ...
+//!
+//! ... even though ultimately allocated on the stack,
+//! the maximum buffer size is still limited by the stack size ...
 
 storage_array! {
     arc = yes,

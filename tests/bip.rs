@@ -1,4 +1,4 @@
-use rtrb::bip::RingBuffer;
+use rtrb::bip_arc::RingBuffer;
 
 #[test]
 fn basic() {

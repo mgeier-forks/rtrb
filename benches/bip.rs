@@ -200,7 +200,7 @@ criterion_main!(benches);
 
 create_bip_benchmark! {
     "bip",
-    rtrb::bip::RingBuffer::new,
+    rtrb::bip_arc::RingBuffer::new,
     |p, s| p.write_chunk(s.len()).map(|mut chunk| {
         chunk.as_mut_slice().copy_from_slice(s);
         chunk.commit_all();
@@ -211,7 +211,7 @@ create_bip_benchmark! {
     }).is_ok(),
     ::
     "bip2",
-    rtrb::bip2::RingBuffer::new,
+    rtrb::bip_arc2::RingBuffer::new,
     |p, s| p.write_chunk(s.len()).map(|mut chunk| {
         chunk.as_mut_slice().copy_from_slice(s);
         chunk.commit_all();
@@ -222,7 +222,7 @@ create_bip_benchmark! {
     }).is_ok(),
     ::
     "bip-uninit",
-    rtrb::bip::RingBuffer::new,
+    rtrb::bip_arc::RingBuffer::new,
     |p, s| p.write_chunk_uninit(s.len()).map(|mut chunk| {
         use rtrb::CopyToUninit as _;
         s.copy_to_uninit(chunk.as_mut_slice());
@@ -235,7 +235,7 @@ create_bip_benchmark! {
     }).is_ok(),
     ::
     "bip-push-pop",
-    rtrb::bip::RingBuffer::new,
+    rtrb::bip_arc::RingBuffer::new,
     |p, s| {
         if p.slots() < s.len() {
             return false;

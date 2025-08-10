@@ -1,6 +1,6 @@
 #![cfg(feature = "vrb")]
 
-use rtrb::vrb::RingBuffer;
+use rtrb::vrb_arc::RingBuffer;
 
 #[test]
 fn basic() {
