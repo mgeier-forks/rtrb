@@ -436,51 +436,6 @@ impl<'a, S: Storage, R: Deref<Target = S>> ReadChunk<'a, R> for ReadChunkOneSlic
     }
 }
 
-impl<S: Storage, R: Deref<Target = S>> ReadChunkOneSlice<'_, R> {
-    pub fn as_slice(&self) -> &[S::Item] {
-        // SAFETY: The correct pointer and length have been provided by ReadChunkOneSlice::new().
-        unsafe { core::slice::from_raw_parts(self.ptr, self.len) }
-    }
-
-    pub fn as_mut_slice(&mut self) -> &mut [S::Item] {
-        // SAFETY: The correct pointer and length have been provided by ReadChunkOneSlice::new().
-        unsafe { core::slice::from_raw_parts_mut(self.ptr, self.len) }
-    }
-
-    pub fn commit(self, n: usize) {
-        assert!(n <= self.len(), "cannot commit more than chunk size");
-        // SAFETY: self.len() initialized elements have been obtained in read_chunk().
-        unsafe { self.commit_unchecked(n) };
-    }
-
-    pub fn commit_all(self) {
-        let slots = self.len();
-        // SAFETY: self.len() initialized elements have been obtained in read_chunk().
-        unsafe { self.commit_unchecked(slots) };
-    }
-
-    unsafe fn commit_unchecked(self, n: usize) -> usize {
-        let len = self.len.min(n);
-        for i in 0..len {
-            // SAFETY: The caller must make sure that there are n initialized elements.
-            unsafe { self.ptr.add(i).drop_in_place() };
-        }
-        let c = self.consumer;
-        let head = c.buffer.increment(c.cached_head.get(), n);
-        c.buffer.indices().head().store(head, Ordering::Release);
-        c.cached_head.set(head);
-        n
-    }
-
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-}
-
 impl<'a, S: Storage, R: Deref<Target = S>> IntoIterator for ReadChunkOneSlice<'a, R> {
     type Item = S::Item;
     type IntoIter = ReadChunkOneSliceIntoIter<'a, R>;
