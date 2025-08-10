@@ -1,6 +1,6 @@
 use core::{marker::PhantomData, mem::MaybeUninit, ops::Deref, sync::atomic::Ordering};
 
-use super::{Consumer, IndexCalculation as _, Indices, Producer, Storage};
+use super::{Consumer, Indices, Producer, Storage};
 use crate::chunks::ChunkError;
 
 #[derive(PartialEq, Eq)]

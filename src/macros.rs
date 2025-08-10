@@ -869,7 +869,7 @@ macro_rules! generic {
 macro_rules! fn_ring_buffer_producer {
     (N = $N:ident, arc = yes) => {};
     (N = $N:ident, arc = no) => {
-        pub fn producer(&self) -> Option<generic!(Producer, N = $N)> {
+        pub fn producer(&self) -> Option<generic!(Producer<'_>, N = $N)> {
             let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
             if old_flags & HAS_PRODUCER == 0 {
                 let head = self.head.load(Ordering::Relaxed);
@@ -889,7 +889,7 @@ macro_rules! fn_ring_buffer_producer {
 macro_rules! fn_ring_buffer_consumer {
     (N = $N:ident, arc = yes) => {};
     (N = $N:ident, arc = no) => {
-        pub fn consumer(&self) -> Option<generic!(Consumer, N = $N)> {
+        pub fn consumer(&self) -> Option<generic!(Consumer<'_>, N = $N)> {
             let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
             if old_flags & HAS_CONSUMER == 0 {
                 let head = self.head.load(Ordering::Relaxed);
@@ -2097,7 +2097,7 @@ macro_rules! fn_write_chunk_uninit_as_mut_sliceX {
         /// The first slice can only be empty if `0` slots have been requested.
         /// If the first slice contains all requested slots, the second one is empty.
         ///
-        /// The extension trait [`CopyToUninit`](crate::CopyToUninit) can be used
+        /// The extension trait [`CopyToUninit`] can be used
         /// to safely copy data into those slices.
         #[doc = fn_write_chunk_uninit_as_mut_sliceX_docstring!()]
         pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
