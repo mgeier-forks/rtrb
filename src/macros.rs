@@ -404,8 +404,8 @@ macro_rules! impl_everything_eventually {
 
         impl_!(Producer, N = $N, arc = $arc, {
             fn_producer_push!(storage = $storage, N = $N, arc = $arc, module = $module);
-            fn_producer_write_chunk_uninit!(N = $N, bip = $bip);
             fn_producer_write_chunk!(N = $N, contiguous = $contiguous);
+            fn_producer_write_chunk_uninit!(N = $N, bip = $bip, contiguous = $contiguous);
             // TODO: documentation specific to bip:
             fn_producer_slots!(N = $N, arc = $arc, module = $module);
             fn_producer_slots_contiguousX!(bip = $bip);
@@ -432,6 +432,12 @@ macro_rules! impl_everything_eventually {
             fn_consumer_has_producer!(N = $N, arc = $arc, module = $module);
 
             fn_consumer_next_head!(bip = $bip);
+        });
+
+        #[cfg(feature = "std")]
+        impl_!(Producer<u8>, trait = std::io::Write, N = $N, arc = $arc, {
+            fn_producer_write!(contiguous = $contiguous);
+            fn_producer_flush!();
         });
 
         #[cfg(feature = "std")]
@@ -1211,6 +1217,56 @@ macro_rules! struct_consumer {
     };
 }
 
+macro_rules! fn_producer_write {
+    (contiguous = yes) => {
+        #[inline]
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            use ChunkError::TooFewSlots;
+            let mut chunk = match self.write_chunk_uninit(buf.len()) {
+                Ok(chunk) => chunk,
+                Err(TooFewSlots(0)) => return Err(std::io::ErrorKind::WouldBlock.into()),
+                Err(TooFewSlots(n)) => self.write_chunk_uninit(n).unwrap(),
+            };
+            let end = chunk.len();
+            // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
+            buf[..end].copy_to_uninit(chunk.as_mut_slice());
+            // SAFETY: All slots have been initialized
+            unsafe { chunk.commit_all() };
+            Ok(end)
+        }
+    };
+    (contiguous = no) => {
+        #[inline]
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            use ChunkError::TooFewSlots;
+            let mut chunk = match self.write_chunk_uninit(buf.len()) {
+                Ok(chunk) => chunk,
+                Err(TooFewSlots(0)) => return Err(std::io::ErrorKind::WouldBlock.into()),
+                Err(TooFewSlots(n)) => self.write_chunk_uninit(n).unwrap(),
+            };
+            let end = chunk.len();
+            let (first, second) = chunk.as_mut_slices();
+            let mid = first.len();
+            // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
+            buf[..mid].copy_to_uninit(first);
+            buf[mid..end].copy_to_uninit(second);
+            // SAFETY: All slots have been initialized
+            unsafe { chunk.commit_all() };
+            Ok(end)
+        }
+    };
+}
+
+macro_rules! fn_producer_flush {
+    () => {
+        #[inline]
+        fn flush(&mut self) -> std::io::Result<()> {
+            // Nothing to do here.
+            Ok(())
+        }
+    };
+}
+
 macro_rules! fn_consumer_read {
     (contiguous = yes) => {
         #[inline]
@@ -1221,10 +1277,9 @@ macro_rules! fn_consumer_read {
                 Err(TooFewSlots(0)) => return Err(std::io::ErrorKind::WouldBlock.into()),
                 Err(TooFewSlots(n)) => self.read_chunk(n).unwrap(),
             };
-            let s = chunk.as_slice();
             let end = chunk.len();
             // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
-            buf[..end].copy_from_slice(s);
+            buf[..end].copy_from_slice(chunk.as_slice());
             chunk.commit_all();
             Ok(end)
         }
@@ -1238,9 +1293,9 @@ macro_rules! fn_consumer_read {
                 Err(TooFewSlots(0)) => return Err(std::io::ErrorKind::WouldBlock.into()),
                 Err(TooFewSlots(n)) => self.read_chunk(n).unwrap(),
             };
+            let end = chunk.len();
             let (first, second) = chunk.as_slices();
             let mid = first.len();
-            let end = chunk.len();
             // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
             buf[..mid].copy_from_slice(first);
             buf[mid..end].copy_from_slice(second);
@@ -2032,8 +2087,52 @@ macro_rules! fn_read_chunk_uninit_commit_unchecked {
     };
 }
 
+macro_rules! fn_producer_write_chunk_uninit_docstring {
+    (contiguous = $contiguous:ident) => { docstring!(
+        /// Returns `n` (uninitialized) slots for writing.
+        ///
+        #[doc = choice!($contiguous,
+            "[`WriteChunkUninit::as_mut_slice()`]",
+            "[`WriteChunkUninit::as_mut_slices()`]")]
+        /// provides mutable access
+        /// to the uninitialized slots.
+        /// After writing to those slots, they explicitly have to be made available
+        /// to be read by the [`Consumer`] by calling [`WriteChunkUninit::commit()`]
+        /// or [`WriteChunkUninit::commit_all()`].
+        ///
+        /// Alternatively, [`WriteChunkUninit::fill_from_iter()`] can be used
+        /// to move items from an iterator into the available slots.
+        /// All moved items are automatically made available to be read by the [`Consumer`].
+        ///
+        /// # Errors
+        ///
+        /// If not enough slots are available, an error
+        /// (containing the number of available slots) is returned.
+        /// Use [`Producer::slots()`] to obtain the number of available slots beforehand.
+        ///
+        /// TODO: bip-specific "slots" functions
+        ///
+        /// # Safety
+        ///
+        /// This function itself is safe, as is [`WriteChunkUninit::fill_from_iter()`].
+        /// However, when using
+        #[doc = choice!($contiguous,
+            "[`WriteChunkUninit::as_mut_slice()`],",
+            "[`WriteChunkUninit::as_mut_slices()`],")]
+        /// the user has to make sure that the relevant slots have been initialized
+        /// before calling [`WriteChunkUninit::commit()`] or [`WriteChunkUninit::commit_all()`].
+        ///
+        /// For a safe alternative that provides
+        #[doc = choice!($contiguous,
+            "a mutable slice",
+            "mutable slices")]
+        /// of [`Default`]-initialized slots, see [`Producer::write_chunk()`].
+    ) };
+}
+
 macro_rules! fn_producer_write_chunk_uninit {
-    (N = $N:ident, bip = yes) => {
+    (N = $N:ident, bip = yes, contiguous = $contiguous:ident) => {
+        #[doc = fn_producer_write_chunk_uninit_docstring!(contiguous = $contiguous)]
         pub fn write_chunk_uninit(
             &mut self,
             n: usize,
@@ -2108,7 +2207,8 @@ macro_rules! fn_producer_write_chunk_uninit {
             Ok(unsafe { WriteChunkUninit::new(self, n, offset) })
         }
     };
-    (N = $N:ident, bip = no) => {
+    (N = $N:ident, bip = no, contiguous = $contiguous:ident) => {
+        #[doc = fn_producer_write_chunk_uninit_docstring!(contiguous = $contiguous)]
         pub fn write_chunk_uninit(
             &mut self,
             n: usize,
@@ -2312,7 +2412,6 @@ macro_rules! fn_consumer_read_chunk {
 
 macro_rules! fn_write_chunk_uninit_as_mut_sliceX_docstring {
     () => { docstring!(
-        ///
         /// After writing to the slots, they are *not* automatically made available
         /// to be read by the [`Consumer`].
         /// This has to be explicitly done by calling [`commit()`](WriteChunkUninit::commit)
@@ -2329,6 +2428,7 @@ macro_rules! fn_write_chunk_uninit_as_mut_sliceX {
         ///
         /// The extension trait [`CopyToUninit`] can be used
         /// to safely copy data into this slice.
+        ///
         #[doc = fn_write_chunk_uninit_as_mut_sliceX_docstring!()]
         pub fn as_mut_slice(&mut self) -> &mut [MaybeUninit<T>] {
             // SAFETY: The pointer and length have been computed correctly in write_chunk_uninit().
@@ -2343,6 +2443,7 @@ macro_rules! fn_write_chunk_uninit_as_mut_sliceX {
         ///
         /// The extension trait [`CopyToUninit`] can be used
         /// to safely copy data into those slices.
+        ///
         #[doc = fn_write_chunk_uninit_as_mut_sliceX_docstring!()]
         pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
             // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit().
@@ -2600,13 +2701,18 @@ macro_rules! struct_write_chunk_uninit {
     (N = $N:ident, arc = $arc:ident, contiguous = no) => {
         // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(pub WriteChunkUninit<'a>, N = $N, {
-            first_ptr: *mut T,
-            first_len: usize,
-            second_ptr: *mut T,
-            second_len: usize,
-            producer: &'a generic!(Producer, N = $N, arc = $arc),
-        });
+        struct_!(
+            /// Structure for writing into multiple (uninitialized) slots in one go.
+            ///
+            /// This is returned from [`Producer::write_chunk_uninit()`].
+            pub WriteChunkUninit<'a>, N = $N, {
+                first_ptr: *mut T,
+                first_len: usize,
+                second_ptr: *mut T,
+                second_len: usize,
+                producer: &'a generic!(Producer, N = $N, arc = $arc),
+            }
+        );
 
         impl_!(WriteChunkUninit<'a>, N = $N, {
             unsafe fn new(producer: &'a generic!(Producer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
@@ -2645,7 +2751,15 @@ macro_rules! struct_write_chunk_uninit {
 macro_rules! struct_write_chunk {
     (N = $N:ident) => {
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(pub WriteChunk<'a>, N = $N, (Option<generic!(WriteChunkUninit<'a>, N = $N)>););
+        struct_!(
+            /// Structure for writing into multiple ([`Default`]-initialized) slots in one go.
+            ///
+            /// This is returned from [`Producer::write_chunk()`].
+            ///
+            /// To obtain uninitialized slots, use [`Producer::write_chunk_uninit()`] instead,
+            /// which also allows moving items from an iterator into the ring buffer
+            /// by means of [`WriteChunkUninit::fill_from_iter()`].
+            pub WriteChunk<'a>, N = $N, (Option<generic!(WriteChunkUninit<'a>, N = $N)>););
 
         impl_!(WriteChunk<'_>, trait = Drop, N = $N, {
             fn drop(&mut self) {
