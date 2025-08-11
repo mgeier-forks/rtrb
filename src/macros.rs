@@ -332,8 +332,7 @@ macro_rules! impl_everything_eventually {
     ) => {
         check_bip_contiguous!($bip, $contiguous);
 
-        use core::cell::Cell;
-        use core::mem::MaybeUninit;
+        use core::{cell::Cell, fmt, mem::MaybeUninit};
 
         use $crate::atomic::*;
 
@@ -423,7 +422,7 @@ macro_rules! impl_everything_eventually {
         impl_!(Consumer, N = $N, arc = $arc, {
             fn_consumer_pop!(N = $N, arc = $arc, module = $module);
             fn_consumer_peek!(N = $N, arc = $arc, module = $module);
-            fn_consumer_read_chunk!(N = $N, bip = $bip);
+            fn_consumer_read_chunk!(N = $N, bip = $bip, contiguous = $contiguous);
             // TODO: documentation specific to bip:
             fn_consumer_slots!(N = $N, arc = $arc, bip = $bip, module = $module);
             fn_consumer_slots_contiguousX!(bip = $bip);
@@ -433,6 +432,11 @@ macro_rules! impl_everything_eventually {
             fn_consumer_has_producer!(N = $N, arc = $arc, module = $module);
 
             fn_consumer_next_head!(bip = $bip);
+        });
+
+        #[cfg(feature = "std")]
+        impl_!(Consumer<u8>, trait = std::io::Read, N = $N, arc = $arc, {
+            fn_consumer_read!(contiguous = $contiguous);
         });
 
         struct_write_chunk_uninit!(N = $N, arc = $arc, contiguous = $contiguous);
@@ -468,6 +472,8 @@ macro_rules! impl_everything_eventually {
 
             fn_read_chunk_uninit_commit_unchecked!(contiguous = $contiguous);
         });
+
+        impl_into_iterator_for_read_chunk!(N = $N, contiguous = $contiguous);
     };
 }
 
@@ -593,6 +599,18 @@ macro_rules! impl_ {
     };
     ($(#[$attr:meta])* $name:ident<'a>, $(trait $($unsafe:ident)? = $trait:ty,)? N = no, $($body:tt)+) => {
         $(#[$attr])* $($($unsafe)?)? impl<'a, T> $($trait for)? $name<'a, T> $($body)+
+    };
+    ($(#[$attr:meta])* $name:ident<$ty:ty>, $(trait $($unsafe:ident)? = $trait:ty,)? N = yes, arc = yes, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl<const N: usize> $($trait for)? $name<$ty, N> $($body)+
+    };
+    ($(#[$attr:meta])* $name:ident<$ty:ty>, $(trait $($unsafe:ident)? = $trait:ty,)? N = no, arc = yes, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl $($trait for)? $name<$ty> $($body)+
+    };
+    ($(#[$attr:meta])* $name:ident<$ty:ty>, $(trait $($unsafe:ident)? = $trait:ty,)? N = yes, arc = no, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl<const N: usize> $($trait for)? $name<'_, $ty, N> $($body)+
+    };
+    ($(#[$attr:meta])* $name:ident<$ty:ty>, $(trait $($unsafe:ident)? = $trait:ty,)? N = no, arc = no, $($body:tt)+) => {
+        $(#[$attr])* $($($unsafe)?)? impl $($trait for)? $name<'_, $ty> $($body)+
     };
 }
 
@@ -1193,6 +1211,45 @@ macro_rules! struct_consumer {
     };
 }
 
+macro_rules! fn_consumer_read {
+    (contiguous = yes) => {
+        #[inline]
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            use ChunkError::TooFewSlots;
+            let chunk = match self.read_chunk(buf.len()) {
+                Ok(chunk) => chunk,
+                Err(TooFewSlots(0)) => return Err(std::io::ErrorKind::WouldBlock.into()),
+                Err(TooFewSlots(n)) => self.read_chunk(n).unwrap(),
+            };
+            let s = chunk.as_slice();
+            let end = chunk.len();
+            // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
+            buf[..end].copy_from_slice(s);
+            chunk.commit_all();
+            Ok(end)
+        }
+    };
+    (contiguous = no) => {
+        #[inline]
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            use ChunkError::TooFewSlots;
+            let chunk = match self.read_chunk(buf.len()) {
+                Ok(chunk) => chunk,
+                Err(TooFewSlots(0)) => return Err(std::io::ErrorKind::WouldBlock.into()),
+                Err(TooFewSlots(n)) => self.read_chunk(n).unwrap(),
+            };
+            let (first, second) = chunk.as_slices();
+            let mid = first.len();
+            let end = chunk.len();
+            // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
+            buf[..mid].copy_from_slice(first);
+            buf[mid..end].copy_from_slice(second);
+            chunk.commit_all();
+            Ok(end)
+        }
+    };
+}
+
 #[rustfmt::skip] // https://github.com/rust-lang/rustfmt/issues/5974
 macro_rules! fn_producer_push {
     (storage = $storage:ident, N = $N:ident, arc = $arc:ident, module = $module:literal) => {
@@ -1523,6 +1580,7 @@ macro_rules! fn_consumer_slots_docstring {
         ///
         /// ```
         #[doc = doctest_import!($module, "RingBuffer")]
+        ///
         #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1024)]
         ///
         /// assert_eq!(c.slots(), 0);
@@ -2118,8 +2176,41 @@ macro_rules! fn_producer_write_chunk {
     };
 }
 
+macro_rules! fn_consumer_read_chunk_docstring {
+    (contiguous = $contiguous:ident) => { docstring!(
+        /// Returns `n` slots for reading.
+        ///
+        #[doc = choice!($contiguous, "[`ReadChunk::as_slice()`]", "[`ReadChunk::as_slices()`]")]
+        /// provides immutable access to the slots.
+        /// After reading from those slots, they explicitly have to be made available
+        /// to be written again by the [`Producer`] by calling [`ReadChunk::commit()`]
+        /// or [`ReadChunk::commit_all()`].
+        ///
+        /// Alternatively, items can be moved out of the [`ReadChunk`] using iteration
+        /// because it implements [`IntoIterator`]
+        /// ([`ReadChunk::into_iter()`] can be used to explicitly turn it into an [`Iterator`]).
+        /// All moved items are automatically made available to be written again by
+        /// the [`Producer`].
+        ///
+        /// # Errors
+        ///
+        /// If not enough slots are available, an error
+        /// (containing the number of available slots) is returned.
+        /// Use [`Consumer::slots()`] to obtain the number of available slots beforehand.
+        ///
+        /// TODO: bip specifics?
+        ///
+        /// # Examples
+        ///
+        /// TODO: fix link
+        ///
+        /// See the documentation of the [`chunks`](crate::chunks#examples) module.
+    )}
+}
+
 macro_rules! fn_consumer_read_chunk {
-    (N = $N:ident, bip = yes) => {
+    (N = $N:ident, bip = yes, contiguous = $contiguous:ident) => {
+        #[doc = fn_consumer_read_chunk_docstring!(contiguous = $contiguous)]
         pub fn read_chunk(
             &mut self,
             n: usize,
@@ -2192,7 +2283,8 @@ macro_rules! fn_consumer_read_chunk {
             Ok(unsafe { ReadChunk::new(self, n, offset) })
         }
     };
-    (N = $N:ident, bip = no) => {
+    (N = $N:ident, bip = no, contiguous = $contiguous:ident) => {
+        #[doc = fn_consumer_read_chunk_docstring!(contiguous = $contiguous)]
         pub fn read_chunk(
             &mut self,
             n: usize,
@@ -2296,7 +2388,6 @@ macro_rules! fn_write_chunk_uninit_drop_suffix {
 
 macro_rules! fn_write_chunk_as_mut_sliceX_docstring {
     () => { docstring!(
-        ///
         /// After writing to the slots, they are *not* automatically made available
         /// to be read by the [`Consumer`].
         /// This has to be explicitly done by calling [`commit()`](WriteChunk::commit)
@@ -2312,6 +2403,7 @@ macro_rules! fn_write_chunk_as_mut_sliceX {
         /// Returns a slice for writing to the requested slots.
         ///
         /// All slots are initially filled with their [`Default`] value.
+        ///
         #[doc = fn_write_chunk_as_mut_sliceX_docstring!()]
         pub fn as_mut_slice(&mut self) -> &mut [T] {
             // self.0 is always Some(chunk).
@@ -2328,6 +2420,7 @@ macro_rules! fn_write_chunk_as_mut_sliceX {
         ///
         /// The first slice can only be empty if `0` slots have been requested.
         /// If the first slice contains all requested slots, the second one is empty.
+        ///
         #[doc = fn_write_chunk_as_mut_sliceX_docstring!()]
         pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
             // self.0 is always Some(chunk).
@@ -2346,7 +2439,6 @@ macro_rules! fn_write_chunk_as_mut_sliceX {
 
 macro_rules! fn_read_chunk_as_sliceX_docstring {
     () => { docstring!(
-        ///
         /// The provided slots are *not* automatically made available
         /// to be written again by the [`Producer`].
         /// This has to be explicitly done by calling [`commit()`](ReadChunk::commit)
@@ -2359,6 +2451,7 @@ macro_rules! fn_read_chunk_as_sliceX_docstring {
 macro_rules! fn_read_chunk_as_sliceX {
     (contiguous = yes) => {
         /// Returns a slice for reading from the requested slots.
+        ///
         #[doc = fn_read_chunk_as_sliceX_docstring!()]
         pub fn as_slice(&self) -> &[T] {
             // SAFETY: The correct pointer and length have been provided by ReadChunk::new().
@@ -2370,6 +2463,7 @@ macro_rules! fn_read_chunk_as_sliceX {
         ///
         /// The first slice can only be empty if `0` slots have been requested.
         /// If the first slice contains all requested slots, the second one is empty.
+        ///
         #[doc = fn_read_chunk_as_sliceX_docstring!()]
         pub fn as_slices(&self) -> (&[T], &[T]) {
             // SAFETY: The pointers and lengths have been computed correctly in read_chunk().
@@ -2385,7 +2479,6 @@ macro_rules! fn_read_chunk_as_sliceX {
 
 macro_rules! fn_read_chunk_as_mut_sliceX_docstring {
     () => { docstring!(
-        ///
         /// In the vast majority of cases, mutable access is not required when
         /// reading data and the immutable version should be preferred. However,
         /// there are some scenarios where it might be desirable to perform
@@ -2401,6 +2494,7 @@ macro_rules! fn_read_chunk_as_mut_sliceX {
         /// This has the same semantics as [`as_slice()`](ReadChunk::as_slice),
         /// except that it returns a mutable slice and requires a mutable reference
         /// to the chunk.
+        ///
         #[doc = fn_read_chunk_as_mut_sliceX_docstring!()]
         pub fn as_mut_slice(&mut self) -> &mut [T] {
             // SAFETY: The correct pointer and length have been provided by ReadChunk::new().
@@ -2413,6 +2507,7 @@ macro_rules! fn_read_chunk_as_mut_sliceX {
         /// This has the same semantics as [`as_slices()`](ReadChunk::as_slices),
         /// except that it returns mutable slices and requires a mutable reference
         /// to the chunk.
+        ///
         #[doc = fn_read_chunk_as_mut_sliceX_docstring!()]
         pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
             // SAFETY: The pointers and lengths have been computed correctly in read_chunk().
@@ -2569,11 +2664,16 @@ macro_rules! struct_read_chunk {
     (N = $N:ident, arc = $arc:ident, contiguous = yes) => {
         // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(pub ReadChunk<'a>, N = $N, {
-            ptr: *mut T,
-            len: usize,
-            consumer: &'a generic!(Consumer, N = $N, arc = $arc),
-        });
+        struct_!(
+            /// Structure for reading from multiple slots in one go.
+            ///
+            /// This is returned from [`Consumer::read_chunk()`].
+            pub ReadChunk<'a>, N = $N, {
+                ptr: *mut T,
+                len: usize,
+                consumer: &'a generic!(Consumer, N = $N, arc = $arc),
+            }
+        );
 
         impl_!(ReadChunk<'a>, N = $N, {
             unsafe fn new(consumer: &'a generic!(Consumer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
@@ -2589,15 +2689,20 @@ macro_rules! struct_read_chunk {
     (N = $N:ident, arc = $arc:ident, contiguous = no) => {
         // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(pub ReadChunk<'a>, N = $N, {
-            // Must be "mut" for drop_in_place()
-            first_ptr: *mut T,
-            first_len: usize,
-            // Must be "mut" for drop_in_place()
-            second_ptr: *mut T,
-            second_len: usize,
-            consumer: &'a generic!(Consumer, N = $N, arc = $arc),
-        });
+        struct_!(
+            /// Structure for reading from multiple slots in one go.
+            ///
+            /// This is returned from [`Consumer::read_chunk()`].
+            pub ReadChunk<'a>, N = $N, {
+                // Must be "mut" for drop_in_place()
+                first_ptr: *mut T,
+                first_len: usize,
+                // Must be "mut" for drop_in_place()
+                second_ptr: *mut T,
+                second_len: usize,
+                consumer: &'a generic!(Consumer, N = $N, arc = $arc),
+            }
+        );
 
         impl_!(ReadChunk<'a>, N = $N, {
             unsafe fn new(consumer: &'a generic!(Consumer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
@@ -2902,5 +3007,107 @@ macro_rules! impl_send_for_chunks {
             #[doc = concat!("assert_sync::<", doctest_ty!(ReadChunk, u8, 8, N = $N), ">();")]
             /// ```
             ReadChunk<'_>, trait unsafe = Send, N = $N, where T: Send {});
+    };
+}
+
+macro_rules! impl_into_iterator_for_read_chunk {
+    (N = $N:ident, contiguous = $contiguous:ident) => {
+        impl_!(ReadChunk<'a>, trait = IntoIterator, N = $N, {
+            type Item = T;
+            type IntoIter = generic!(ReadChunkIntoIter<'a>, N = $N);
+
+            /// Turns a [`ReadChunk`] into an iterator.
+            ///
+            /// When the iterator is dropped, all iterated slots are made available for writing again.
+            /// Non-iterated items remain in the ring buffer.
+            fn into_iter(self) -> Self::IntoIter {
+                Self::IntoIter {
+                    chunk: self,
+                    iterated: 0,
+                }
+            }
+        });
+
+        struct_!(
+            /// An iterator that moves out of a [`ReadChunk`].
+            ///
+            /// This `struct` is created by the [`into_iter()`](ReadChunk::into_iter) method
+            /// on [`ReadChunk`] (provided by the [`IntoIterator`] trait).
+            ///
+            /// When this `struct` is dropped, the iterated slots are made available for writing again.
+            /// Non-iterated items remain in the ring buffer.
+            pub ReadChunkIntoIter<'a>, N = $N, {
+                chunk: generic!(ReadChunk<'a>, N = $N),
+                iterated: usize,
+            }
+        );
+
+        impl_!(ReadChunkIntoIter<'_>, trait = fmt::Debug, N = $N, {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "ReadChunkIntoIter")
+            }
+        });
+
+        impl_!(ReadChunkIntoIter<'_>, trait = Iterator, N = $N, {
+            type Item = T;
+
+            fn_read_chunk_into_iter_next!(contiguous = $contiguous);
+            fn_read_chunk_into_iter_size_hint!(contiguous = $contiguous);
+        });
+
+        impl_!(ReadChunkIntoIter<'_>, trait = ExactSizeIterator, N = $N, {});
+
+        impl_!(ReadChunkIntoIter<'_>, trait = core::iter::FusedIterator, N = $N, {});
+    };
+}
+
+macro_rules! fn_read_chunk_into_iter_next {
+    (contiguous = yes) => {
+        fn next(&mut self) -> Option<Self::Item> {
+            let ptr = if self.iterated < self.chunk.len {
+                // SAFETY: len is valid.
+                unsafe { self.chunk.ptr.add(self.iterated) }
+            } else {
+                return None;
+            };
+            self.iterated += 1;
+            // SAFETY: ptr points to an initialized slot.
+            Some(unsafe { ptr.read() })
+        }
+    };
+    (contiguous = no) => {
+        fn next(&mut self) -> Option<Self::Item> {
+            let ptr = if self.iterated < self.chunk.first_len {
+                // SAFETY: first_len is valid.
+                unsafe { self.chunk.first_ptr.add(self.iterated) }
+            } else if self.iterated < self.chunk.first_len + self.chunk.second_len {
+                // SAFETY: first_len and second_len are valid.
+                unsafe {
+                    self.chunk
+                        .second_ptr
+                        .add(self.iterated - self.chunk.first_len)
+                }
+            } else {
+                return None;
+            };
+            self.iterated += 1;
+            // SAFETY: ptr points to an initialized slot.
+            Some(unsafe { ptr.read() })
+        }
+    };
+}
+
+macro_rules! fn_read_chunk_into_iter_size_hint {
+    (contiguous = yes) => {
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            let remaining = self.chunk.len - self.iterated;
+            (remaining, Some(remaining))
+        }
+    };
+    (contiguous = no) => {
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            let remaining = self.chunk.first_len + self.chunk.second_len - self.iterated;
+            (remaining, Some(remaining))
+        }
     };
 }

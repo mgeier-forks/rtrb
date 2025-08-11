@@ -1,7 +1,6 @@
 //! ...
 
-storage_array! {
-    arc = yes,
+storage_vec! {
     padded = yes,
     bip = no,
     rb_doc = "
@@ -15,7 +14,7 @@ TODO: ...
 
 impl_everything_eventually! {
     storage = vec,
-    N = yes,
+    N = no,
     arc = yes,
     bip = no,
     contiguous = no,
