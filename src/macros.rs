@@ -664,9 +664,9 @@ macro_rules! fn_ring_buffer_new {
             "")]
         ///
         /// A (single) [`Producer`] for writing into the ring buffer can be created with
-        /// [`RingBuffer::producer()`].
+        /// [`producer()`](RingBuffer::producer).
         /// A (single) [`Consumer`] for reading from the ring buffer can be created with
-        /// [`RingBuffer::consumer()`].
+        /// [`consumer()`](RingBuffer::consumer).
         ///
         /// # Examples
         ///
@@ -729,6 +729,37 @@ macro_rules! fn_ring_buffer_new {
         }
     };
     (N = no, arc = no, pow2 = $pow2:ident, module = $module:literal) => {
+        /// Creates a ring buffer
+        #[doc = choice!($pow2, "with at least", "with")]
+        /// the given `capacity`.
+        ///
+        #[doc = choice!($pow2,
+            "If the `capacity` isn't already a power of two, it is rounded up to the next one.",
+            "")]
+        ///
+        /// A (single) [`Producer`] for writing into the ring buffer can be created with
+        /// [`producer()`](RingBuffer::producer).
+        /// A (single) [`Consumer`] for reading from the ring buffer can be created with
+        /// [`consumer()`](RingBuffer::consumer).
+        ///
+        /// # Examples
+        ///
+        /// ```
+        #[doc = doctest_import!($module, "RingBuffer")]
+        ///
+        /// let rb = RingBuffer::<f32>::new(100);
+        /// ```
+        ///
+        /// Specifying an explicit type with the [turbofish](https://turbo.fish/)
+        /// is is only necessary if it cannot be deduced by the compiler.
+        ///
+        /// ```
+        #[doc = doctest_import!($module, "RingBuffer")]
+        ///
+        /// let rb = RingBuffer::new(100);
+        /// let mut p = rb.producer().unwrap();
+        /// assert_eq!(p.push(0.0f32), Ok(()));
+        /// ```
         pub fn new(capacity: usize) -> Self {
             let capacity = Self::update_capacity(capacity);
             Self::construct(capacity)
@@ -1039,6 +1070,7 @@ macro_rules! generic {
 macro_rules! fn_ring_buffer_producer {
     (N = $N:ident, arc = yes) => {};
     (N = $N:ident, arc = no) => {
+        /// Creates a [`Producer`] (if it doesn't exist yet) for writing into the `RingBuffer`.
         pub fn producer(&self) -> Option<generic!(Producer<'_>, N = $N)> {
             let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
             if old_flags & HAS_PRODUCER == 0 {
@@ -1059,6 +1091,7 @@ macro_rules! fn_ring_buffer_producer {
 macro_rules! fn_ring_buffer_consumer {
     (N = $N:ident, arc = yes) => {};
     (N = $N:ident, arc = no) => {
+        /// Creates a [`Consumer`] (if it doesn't exist yet) for reading from the `RingBuffer`.
         pub fn consumer(&self) -> Option<generic!(Consumer<'_>, N = $N)> {
             let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
             if old_flags & HAS_CONSUMER == 0 {
@@ -1079,6 +1112,9 @@ macro_rules! fn_ring_buffer_consumer {
 macro_rules! fn_ring_buffer_has_producer {
     (N = $N:ident, arc = yes) => {};
     (N = $N:ident, arc = no) => {
+        /// Returns `true` if a [`Producer`] exists for this `RingBuffer`.
+        ///
+        /// If not, it can be created with [`producer()`](RingBuffer::producer).
         pub fn has_producer(&self) -> bool {
             self.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
         }
@@ -1088,6 +1124,9 @@ macro_rules! fn_ring_buffer_has_producer {
 macro_rules! fn_ring_buffer_has_consumer {
     (N = $N:ident, arc = yes) => {};
     (N = $N:ident, arc = no) => {
+        /// Returns `true` if a [`Consumer`] exists for this `RingBuffer`.
+        ///
+        /// If not, it can be created with [`consumer()`](RingBuffer::consumer).
         pub fn has_consumer(&self) -> bool {
             self.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
         }
@@ -1926,6 +1965,10 @@ macro_rules! fn_consumer_is_abandoned {
 macro_rules! fn_producer_has_consumer {
     (N = $N:ident, arc = yes, module = $module:literal) => {};
     (N = $N:ident, arc = no, module = $module:literal) => {
+        /// Returns `true` if the [`RingBuffer`] connected to this `Producer`
+        /// is also connected to a [`Consumer`].
+        ///
+        /// This can change at any time when another thread creates or drops a `Consumer`.
         pub fn has_consumer(&self) -> bool {
             self.buffer.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
         }
@@ -1935,6 +1978,10 @@ macro_rules! fn_producer_has_consumer {
 macro_rules! fn_consumer_has_producer {
     (N = $N:ident, arc = yes, module = $module:literal) => {};
     (N = $N:ident, arc = no, module = $module:literal) => {
+        /// Returns `true` if the [`RingBuffer`] connected to this `Consumer`
+        /// is also connected to a [`Producer`].
+        ///
+        /// This can change at any time when another thread creates or drops a `Producer`.
         pub fn has_producer(&self) -> bool {
             self.buffer.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
         }
@@ -2667,11 +2714,16 @@ macro_rules! struct_write_chunk_uninit {
     (N = $N:ident, arc = $arc:ident, contiguous = yes) => {
         // TODO: implement manually:
         //#[derive(Debug, PartialEq, Eq)]
-        struct_!(pub WriteChunkUninit<'a>, N = $N, {
-            ptr: *mut T,
-            len: usize,
-            producer: &'a generic!(Producer, N = $N, arc = $arc),
-        });
+        struct_!(
+            /// Structure for writing into multiple (uninitialized) slots in one go.
+            ///
+            /// This is returned from [`Producer::write_chunk_uninit()`].
+            pub WriteChunkUninit<'a>, N = $N, {
+                ptr: *mut T,
+                len: usize,
+                producer: &'a generic!(Producer, N = $N, arc = $arc),
+            }
+        );
 
         impl_!(WriteChunkUninit<'a>, N = $N, {
             unsafe fn new(producer: &'a generic!(Producer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
