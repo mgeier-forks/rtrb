@@ -527,7 +527,7 @@ macro_rules! ring_buffer {
         });
 
         impl_debug!(N = $N, RingBuffer);
-        impl_debug_arc!(N = $N, arc = $arc, Producer, Consumer);
+        impl_debug!(N = $N, arc = $arc, Producer, Consumer);
         impl_debug!(N = $N,
             WriteChunkUninit<'_>, WriteChunk<'_>, ReadChunk<'_>, ReadChunkIntoIter<'_>);
 
@@ -3357,21 +3357,18 @@ macro_rules! impl_send_for_chunks {
 }
 
 macro_rules! impl_debug {
-    (N = $N:ident, $($chunk:ident$(<$lifetime:lifetime>)?),*) => {
+    (N = $N:ident, arc = $arc:ident, $($chunk:ident),*) => {
         $(
-            impl_!($chunk$(<$lifetime>)?, trait = fmt::Debug, N = $N, {
+            impl_!($chunk, trait = fmt::Debug, N = $N, arc = $arc, {
                 fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                     write!(f, stringify!($chunk))
                 }
             });
         )*
     };
-}
-
-macro_rules! impl_debug_arc {
-    (N = $N:ident, arc = $arc:ident, $($chunk:ident),*) => {
+    (N = $N:ident, $($chunk:ident$(<$lifetime:lifetime>)?),*) => {
         $(
-            impl_!($chunk, trait = fmt::Debug, N = $N, arc = $arc, {
+            impl_!($chunk$(<$lifetime>)?, trait = fmt::Debug, N = $N, {
                 fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                     write!(f, stringify!($chunk))
                 }
