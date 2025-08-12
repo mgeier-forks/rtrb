@@ -38,6 +38,7 @@ macro_rules! storage_vec {
                 $skip: choice_ty!($padded, CachePadded<AtomicUsize>, AtomicUsize),
             )?
             flags: AtomicU8,
+            /// The buffer holding slots.
             data_ptr: *mut T,
             capacity: usize,
         }
@@ -350,16 +351,12 @@ macro_rules! ring_buffer {
         use $crate::atomic::*;
 
         // TODO: import only if `padded = yes`?
+        // Padded indices to avoid false sharing.
+        #[allow(unused_imports)]
         use $crate::CachePadded;
 
-        // TODO: move definition here?
         #[allow(unused_imports)]
-        use $crate::diy::IS_ABANDONED;
-        #[allow(unused_imports)]
-        use $crate::diy::{HAS_CONSUMER, HAS_PRODUCER};
-
-        // TODO: move error type to top level?
-        pub use $crate::chunks::ChunkError;
+        use $crate::{HAS_CONSUMER, HAS_PRODUCER, IS_ABANDONED};
 
         /// Error type for [`Consumer::peek()`].
         #[doc(inline)]
@@ -370,6 +367,10 @@ macro_rules! ring_buffer {
         /// Error type for [`Producer::push()`].
         #[doc(inline)]
         pub use $crate::PushError;
+        /// Error type for [`Consumer::read_chunk()`], [`Producer::write_chunk()`]
+        /// and [`Producer::write_chunk_uninit()`].
+        #[doc(inline)]
+        pub use $crate::ChunkError;
 
         /// Extension trait providing a [`copy_to_uninit()`](CopyToUninit::copy_to_uninit)
         /// method on built-in slices.
@@ -386,6 +387,10 @@ macro_rules! ring_buffer {
         /// ```
         #[doc = concat!("use ", $module, "::CopyToUninit as _;")]
         /// ```
+        ///
+        /// TODO: update link:
+        ///
+        /// For a usage example, see [`crate::chunks`](crate::chunks#common-access-patterns).
         #[doc(inline)]
         pub use $crate::CopyToUninit;
 
@@ -399,10 +404,13 @@ macro_rules! ring_buffer {
             /// `T` does not need to be `Sync`, because we never share it across threads.
             RingBuffer, trait unsafe = Sync, N = $N, where T: Send {});
 
+        // NB: `Send` might be implemented by different storage backends,
+        // but it is not necessary for correct behavior of the RingBuffer.
+
         impl_!(RingBuffer, N = $N, {
             fn_ring_buffer_new!(N = $N, arc = $arc, pow2 = $pow2, module = $module);
-            fn_ring_buffer_producer!(N = $N, arc = $arc);
-            fn_ring_buffer_consumer!(N = $N, arc = $arc);
+            fn_ring_buffer_producer!(N = $N, arc = $arc, module = $module);
+            fn_ring_buffer_consumer!(N = $N, arc = $arc, module = $module);
             fn_ring_buffer_has_producer!(N = $N, arc = $arc);
             fn_ring_buffer_has_consumer!(N = $N, arc = $arc);
 
@@ -415,9 +423,23 @@ macro_rules! ring_buffer {
             fn_ring_buffer_distance!(pow2 = $pow2);
         });
 
+        impl_!(RingBuffer, trait = PartialEq, N = $N, {
+            fn eq(&self, other: &Self) -> bool {
+                core::ptr::eq(self, other)
+            }
+        });
+        impl_!(RingBuffer, trait = Eq, N = $N, {});
+
         struct_arc_ring_buffer!(N = $N, arc = $arc);
 
         struct_producer!(N = $N, arc = $arc);
+        impl_send_for_producer!(N = $N, arc = $arc, module = $module);
+
+        impl_!(Producer, trait = PartialEq, N = $N, arc = $arc, {
+            fn eq(&self, other: &Self) -> bool {
+                self.buffer == other.buffer
+            }
+        });
 
         impl_!(Producer, N = $N, arc = $arc, {
             fn_producer_push!(storage = $storage, N = $N, arc = $arc, module = $module);
@@ -435,6 +457,14 @@ macro_rules! ring_buffer {
         });
 
         struct_consumer!(N = $N, arc = $arc);
+        impl_send_for_consumer!(N = $N, arc = $arc, module = $module);
+
+        // TODO: code reuse with Producer
+        impl_!(Consumer, trait = PartialEq, N = $N, arc = $arc, {
+            fn eq(&self, other: &Self) -> bool {
+                self.buffer == other.buffer
+            }
+        });
 
         impl_!(Consumer, N = $N, arc = $arc, {
             fn_consumer_pop!(N = $N, arc = $arc, module = $module);
@@ -495,6 +525,11 @@ macro_rules! ring_buffer {
 
             fn_read_chunk_uninit_commit_unchecked!(contiguous = $contiguous);
         });
+
+        impl_debug!(N = $N, RingBuffer);
+        impl_debug_arc!(N = $N, arc = $arc, Producer, Consumer);
+        impl_debug!(N = $N,
+            WriteChunkUninit<'_>, WriteChunk<'_>, ReadChunk<'_>, ReadChunkIntoIter<'_>);
 
         impl_into_iterator_for_read_chunk!(N = $N, contiguous = $contiguous);
     };
@@ -858,6 +893,13 @@ macro_rules! fn_ring_buffer_collapse_position {
 
 macro_rules! fn_ring_buffer_slot_ptr {
     () => {
+        /// Returns a pointer to the (possibly uninitialized) slot at position `pos`.
+        ///
+        /// # Safety
+        ///
+        /// `pos` must be valid.
+        ///
+        /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
         unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
             // SAFETY: See docstring.
             unsafe { self.data_ptr().add(self.collapse_position(pos)) }
@@ -937,7 +979,6 @@ macro_rules! struct_arc_ring_buffer {
         use core::ptr::NonNull;
 
         // Non-public helper type.
-        //#[derive(Debug, PartialEq, Eq)]
         // TODO: make non-public!
         struct_!(ArcRingBuffer, N = $N, {
             ptr: NonNull<generic!(RingBuffer, N = $N)>,
@@ -951,6 +992,8 @@ macro_rules! struct_arc_ring_buffer {
             where generic!(RingBuffer, N = $N): Send {});
 
         impl_!(ArcRingBuffer, N = $N, {
+            // NB: this takes ownership of the RingBuffer, making sure that only one
+            //     Producer and Consumer are ever created.
             #[allow(clippy::new_ret_no_self)]
             fn new(
                 rb: generic!(RingBuffer, N = $N)
@@ -1017,6 +1060,12 @@ macro_rules! struct_arc_ring_buffer {
                 unsafe { self.ptr.as_ref() }
             }
         });
+
+        impl_!(ArcRingBuffer, trait = PartialEq, N = $N, {
+            fn eq(&self, other: &Self) -> bool {
+                self.ptr == other.ptr
+            }
+        });
     };
     (N = $N:ident, arc = no) => {};
 }
@@ -1079,9 +1128,30 @@ macro_rules! generic {
 }
 
 macro_rules! fn_ring_buffer_producer {
-    (N = $N:ident, arc = yes) => {};
-    (N = $N:ident, arc = no) => {
+    (N = $N:ident, arc = yes, module = $module:literal) => {};
+    (N = $N:ident, arc = no, module = $module:literal) => {
         /// Creates a [`Producer`] (if it doesn't exist yet) for writing into the `RingBuffer`.
+        ///
+        /// # Examples
+        ///
+        /// Only one producer and one consumer can exist at once,
+        /// but once a producer has been dropped, a new one can be created:
+        /// ```
+        #[doc = doctest_import!($module, "RingBuffer")]
+        ///
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = no, capacity = 64)]
+        /// assert!(rb.producer().is_none());
+        /// assert_eq!(p.push(10), Ok(()));
+        /// drop(p);
+        /// assert!(!c.has_producer());
+        /// assert!(!rb.has_producer());
+        /// let mut p = rb.producer().unwrap();
+        /// assert!(c.has_producer());
+        /// assert!(rb.has_producer());
+        /// assert_eq!(p.push(20), Ok(()));
+        /// assert_eq!(c.pop(), Ok(10));
+        /// assert_eq!(c.pop(), Ok(20));
+        /// ```
         pub fn producer(&self) -> Option<generic!(Producer<'_>, N = $N)> {
             let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
             if old_flags & HAS_PRODUCER == 0 {
@@ -1100,9 +1170,30 @@ macro_rules! fn_ring_buffer_producer {
 }
 
 macro_rules! fn_ring_buffer_consumer {
-    (N = $N:ident, arc = yes) => {};
-    (N = $N:ident, arc = no) => {
+    (N = $N:ident, arc = yes, module = $module:literal) => {};
+    (N = $N:ident, arc = no, module = $module:literal) => {
         /// Creates a [`Consumer`] (if it doesn't exist yet) for reading from the `RingBuffer`.
+        ///
+        /// # Examples
+        ///
+        /// Only one producer and one consumer can exist at once,
+        /// but once a consumer has been dropped, a new one can be created:
+        /// ```
+        #[doc = doctest_import!($module, "RingBuffer")]
+        ///
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = no, capacity = 64)]
+        /// assert!(rb.consumer().is_none());
+        /// assert_eq!(p.push(10), Ok(()));
+        /// assert_eq!(p.push(20), Ok(()));
+        /// assert_eq!(c.pop(), Ok(10));
+        /// drop(c);
+        /// assert!(!p.has_consumer());
+        /// assert!(!rb.has_consumer());
+        /// let mut c = rb.consumer().unwrap();
+        /// assert!(p.has_consumer());
+        /// assert!(rb.has_consumer());
+        /// assert_eq!(c.pop(), Ok(20));
+        /// ```
         pub fn consumer(&self) -> Option<generic!(Consumer<'_>, N = $N)> {
             let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
             if old_flags & HAS_CONSUMER == 0 {
@@ -1126,6 +1217,8 @@ macro_rules! fn_ring_buffer_has_producer {
         /// Returns `true` if a [`Producer`] exists for this `RingBuffer`.
         ///
         /// If not, it can be created with [`producer()`](RingBuffer::producer).
+        ///
+        /// See also [`Consumer::has_producer()`].
         pub fn has_producer(&self) -> bool {
             self.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
         }
@@ -1138,6 +1231,8 @@ macro_rules! fn_ring_buffer_has_consumer {
         /// Returns `true` if a [`Consumer`] exists for this `RingBuffer`.
         ///
         /// If not, it can be created with [`consumer()`](RingBuffer::consumer).
+        ///
+        /// See also [`Producer::has_consumer()`].
         pub fn has_consumer(&self) -> bool {
             self.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
         }
@@ -1152,19 +1247,17 @@ macro_rules! struct_producer_docstring {
         /// but references from different threads are not allowed
         /// (i.e. it is [`Send`] but not [`Sync`]).
         ///
-        /// Individual elements can be moved into the ring buffer with [`Producer::push()`],
-        /// multiple elements at once can be written with [`Producer::write_chunk()`]
-        /// and [`Producer::write_chunk_uninit()`].
+        /// Individual elements can be moved into the ring buffer with [`push()`](Producer::push),
+        /// multiple elements at once can be written with [`write_chunk()`](Producer::write_chunk)
+        /// and [`write_chunk_uninit()`](Producer::write_chunk_uninit).
         ///
         /// The number of free slots currently available for writing can be obtained with
-        /// [`Producer::slots()`].
+        /// [`slots()`](Producer::slots).
     )};
 }
 
 macro_rules! struct_producer {
     (N = $N:ident, arc = yes) => {
-        // TODO: manual impls:
-        //#[derive(Debug, PartialEq, Eq)]
         struct_!(
             #[doc = struct_producer_docstring!()]
             ///
@@ -1179,7 +1272,14 @@ macro_rules! struct_producer {
             /// will be deallocated.
             pub Producer, N = $N, {
                 buffer: generic!(ArcRingBuffer, N = $N),
+                /// A copy of `buffer.head` for quick access.
+                ///
+                /// This value can be stale and sometimes needs to be resynchronized
+                /// with `buffer.head`.
                 cached_head: Cell<usize>,
+                /// A copy of `buffer.tail` for quick access.
+                ///
+                /// This value is always in sync with `buffer.tail`.
                 cached_tail: Cell<usize>,
             }
         );
@@ -1214,11 +1314,11 @@ macro_rules! struct_consumer_docstring {
         /// but references from different threads are not allowed
         /// (i.e. it is [`Send`] but not [`Sync`]).
         ///
-        /// Individual elements can be moved out of the ring buffer with [`Consumer::pop()`],
-        /// multiple elements at once can be read with [`Consumer::read_chunk()`].
+        /// Individual elements can be moved out of the ring buffer with [`pop()`](Consumer::pop),
+        /// multiple elements at once can be read with [`read_chunk()`](Consumer::read_chunk).
         ///
         /// The number of slots currently available for reading can be obtained with
-        /// [`Consumer::slots()`].
+        /// [`slots()`](Consumer::slots).
     )};
 }
 
@@ -1240,7 +1340,14 @@ macro_rules! struct_consumer {
             /// will be deallocated.
             pub Consumer, N = $N, {
                 buffer: generic!(ArcRingBuffer, N = $N),
+                /// A copy of `buffer.head` for quick access.
+                ///
+                /// This value is always in sync with `buffer.head`.
                 cached_head: Cell<usize>,
+                /// A copy of `buffer.tail` for quick access.
+                ///
+                /// This value can be stale and sometimes needs to be resynchronized
+                /// with `buffer.tail`.
                 cached_tail: Cell<usize>,
             }
         );
@@ -1591,7 +1698,7 @@ macro_rules! fn_producer_next_tail {
 
 macro_rules! fn_consumer_pop {
     (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
-        /// Attempts to pop an element from the queue.
+        /// Attempts to pop the next element from the queue.
         ///
         /// The element is *moved* out of the ring buffer and its slot
         /// is made available to be filled by the [`Producer`] again.
@@ -1638,7 +1745,7 @@ macro_rules! fn_consumer_pop {
 
 macro_rules! fn_consumer_peek {
     (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
-        /// Attempts to read an element from the queue without removing it.
+        /// Attempts to get read access to the next element in the queue without removing it.
         ///
         /// # Errors
         ///
@@ -1980,6 +2087,8 @@ macro_rules! fn_producer_has_consumer {
         /// is also connected to a [`Consumer`].
         ///
         /// This can change at any time when another thread creates or drops a `Consumer`.
+        ///
+        /// See also [`RingBuffer::has_consumer()`].
         pub fn has_consumer(&self) -> bool {
             self.buffer.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
         }
@@ -1993,6 +2102,8 @@ macro_rules! fn_consumer_has_producer {
         /// is also connected to a [`Producer`].
         ///
         /// This can change at any time when another thread creates or drops a `Producer`.
+        ///
+        /// See also [`RingBuffer::has_producer()`].
         pub fn has_producer(&self) -> bool {
             self.buffer.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
         }
@@ -2147,7 +2258,7 @@ macro_rules! fn_read_chunk_uninit_commit_unchecked {
 
 macro_rules! fn_producer_write_chunk_uninit_docstring {
     (contiguous = $contiguous:ident) => { docstring!(
-        /// Returns `n` (uninitialized) slots for writing.
+        /// Prepares a chunk of `n` (uninitialized) slots for writing.
         ///
         #[doc = choice!($contiguous,
             /// [`WriteChunkUninit::as_mut_slice()`]
@@ -2168,7 +2279,7 @@ macro_rules! fn_producer_write_chunk_uninit_docstring {
         ///
         /// If not enough slots are available, an error
         /// (containing the number of available slots) is returned.
-        /// Use [`Producer::slots()`] to obtain the number of available slots beforehand.
+        /// Use [`slots()`](Producer::slots) to obtain the number of available slots beforehand.
         ///
         /// TODO: bip-specific "slots" functions
         ///
@@ -2297,7 +2408,8 @@ macro_rules! fn_producer_write_chunk_uninit {
 #[rustfmt::skip] // https://github.com/rust-lang/rustfmt/issues/5974
 macro_rules! fn_producer_write_chunk {
     (N = $N:ident, contiguous = $contiguous:ident) => {
-        /// Returns `n` slots (initially containing their [`Default`] value) for writing.
+        /// Prepares a chunk of `n` slots (initially containing their [`Default`] value)
+        /// for writing.
         ///
         #[doc = choice!($contiguous,
             /// [`WriteChunk::as_mut_slice()`]
@@ -2320,7 +2432,7 @@ macro_rules! fn_producer_write_chunk {
         ///
         /// If not enough slots are available, an error
         /// (containing the number of available slots) is returned.
-        /// Use [`Producer::slots()`] to obtain the number of available slots beforehand.
+        /// Use [`slots()`](Producer::slots) to obtain the number of available slots beforehand.
         ///
         /// TODO: mention different types of slots...() for bip?
         ///
@@ -2341,7 +2453,7 @@ macro_rules! fn_producer_write_chunk {
 
 macro_rules! fn_consumer_read_chunk_docstring {
     (contiguous = $contiguous:ident) => { docstring!(
-        /// Returns `n` slots for reading.
+        /// Prepares a chunk of `n` slots for reading.
         ///
         #[doc = choice!($contiguous,
             /// [`ReadChunk::as_slice()`]
@@ -2363,7 +2475,7 @@ macro_rules! fn_consumer_read_chunk_docstring {
         ///
         /// If not enough slots are available, an error
         /// (containing the number of available slots) is returned.
-        /// Use [`Consumer::slots()`] to obtain the number of available slots beforehand.
+        /// Use [`slots()`](Consumer::slots) to obtain the number of available slots beforehand.
         ///
         /// TODO: bip specifics?
         ///
@@ -2880,10 +2992,8 @@ macro_rules! struct_read_chunk {
             ///
             /// This is returned from [`Consumer::read_chunk()`].
             pub ReadChunk<'a>, N = $N, {
-                // Must be "mut" for drop_in_place()
                 first_ptr: *mut T,
                 first_len: usize,
-                // Must be "mut" for drop_in_place()
                 second_ptr: *mut T,
                 second_len: usize,
                 consumer: &'a generic!(Consumer, N = $N, arc = $arc),
@@ -3152,6 +3262,56 @@ macro_rules! fn_read_chunk_commit {
     };
 }
 
+macro_rules! impl_send_for_producer {
+    (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
+        // SAFETY: After moving a producer to another thread, there is still only a single thread
+        // that can access the producer side of the queue.
+        impl_!(
+            /// It can be moved ...
+            /// ```
+            #[doc = doctest_import!($module, "Producer")]
+            /// fn assert_send<X: Send>() {}
+            #[doc = concat!("assert_send::<", doctest_ty!(Producer, u8, 8, N = $N), ">();")]
+            /// ```
+            /// ... but not shared between threads:
+            /// ```compile_fail
+            #[doc = doctest_import!($module, "Producer", "# ")]
+            /// fn assert_sync<X: Sync>() {}
+            #[doc = concat!("assert_sync::<", doctest_ty!(Producer, u8, 8, N = $N), ">();")]
+            /// ```
+            Producer, trait unsafe = Send, N = $N, arc = $arc,
+            where
+                T: Send,
+                generic!(RingBuffer, N = $N): Sync
+            {});
+    };
+}
+
+macro_rules! impl_send_for_consumer {
+    (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
+        // SAFETY: After moving a consumer to another thread, there is still only a single thread
+        // that can access the consumer side of the queue.
+        impl_!(
+            /// It can be moved ...
+            /// ```
+            #[doc = doctest_import!($module, "Consumer")]
+            /// fn assert_send<X: Send>() {}
+            #[doc = concat!("assert_send::<", doctest_ty!(Consumer, u8, 8, N = $N), ">();")]
+            /// ```
+            /// ... but not shared between threads:
+            /// ```compile_fail
+            #[doc = doctest_import!($module, "Consumer", "# ")]
+            /// fn assert_sync<X: Sync>() {}
+            #[doc = concat!("assert_sync::<", doctest_ty!(Consumer, u8, 8, N = $N), ">();")]
+            /// ```
+            Consumer, trait unsafe = Send, N = $N, arc = $arc,
+            where
+                T: Send,
+                generic!(RingBuffer, N = $N): Sync
+            {});
+    };
+}
+
 macro_rules! impl_send_for_chunks {
     (N = $N:ident, module = $module:literal) => {
         // SAFETY: WriteChunkUninit only exists while a unique reference to the producer is held.
@@ -3196,6 +3356,30 @@ macro_rules! impl_send_for_chunks {
     };
 }
 
+macro_rules! impl_debug {
+    (N = $N:ident, $($chunk:ident$(<$lifetime:lifetime>)?),*) => {
+        $(
+            impl_!($chunk$(<$lifetime>)?, trait = fmt::Debug, N = $N, {
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    write!(f, stringify!($chunk))
+                }
+            });
+        )*
+    };
+}
+
+macro_rules! impl_debug_arc {
+    (N = $N:ident, arc = $arc:ident, $($chunk:ident),*) => {
+        $(
+            impl_!($chunk, trait = fmt::Debug, N = $N, arc = $arc, {
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    write!(f, stringify!($chunk))
+                }
+            });
+        )*
+    };
+}
+
 macro_rules! impl_into_iterator_for_read_chunk {
     (N = $N:ident, contiguous = $contiguous:ident) => {
         impl_!(ReadChunk<'a>, trait = IntoIterator, N = $N, {
@@ -3228,9 +3412,19 @@ macro_rules! impl_into_iterator_for_read_chunk {
             }
         );
 
-        impl_!(ReadChunkIntoIter<'_>, trait = fmt::Debug, N = $N, {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "ReadChunkIntoIter")
+        // TODO: take "skip" into account?
+        impl_!(ReadChunkIntoIter<'_>, trait = Drop, N = $N, {
+            /// Makes all iterated slots available for writing again.
+            ///
+            /// All iterated items have been moved out of the buffer and
+            /// don't need to be dropped here.
+            ///
+            /// Non-iterated items remain in the ring buffer and are *not* dropped.
+            fn drop(&mut self) {
+                let c = self.chunk.consumer;
+                let head = c.buffer.increment(c.cached_head.get(), self.iterated);
+                c.buffer.head.store(head, Ordering::Release);
+                c.cached_head.set(head);
             }
         });
 
