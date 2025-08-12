@@ -167,4 +167,6 @@
 // TODO: move to submodules, use correct RingBuffer variant.
 // This is used in the documentation.
 #[allow(unused_imports)]
-use crate::{CopyToUninit, RingBuffer, Producer, Consumer, WriteChunkUninit, WriteChunk, ReadChunk};
+use crate::{
+    Consumer, CopyToUninit, Producer, ReadChunk, RingBuffer, WriteChunk, WriteChunkUninit,
+};

@@ -105,10 +105,10 @@ const IS_ABANDONED: u8 = 0b10000000;
 
 // For backwards compatibility. May be deprecated and removed in the future.
 #[doc(hidden)]
-pub use arc::{RingBuffer, Producer, Consumer};
+pub use arc::{Consumer, Producer, RingBuffer};
 
 // TODO: remove those:
-pub use arc::{WriteChunkUninit, WriteChunk, ReadChunk};
+pub use arc::{ReadChunk, WriteChunk, WriteChunkUninit};
 
 #[doc(hidden)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
