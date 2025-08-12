@@ -27,24 +27,20 @@
 //! Implementations in other languages:
 //! <https://github.com/willemt/bipbuffer> (C)
 
-storage_vec! {
-    padded = yes,
-    bip = yes,
-    rb_doc = "
-Bi-partite ring buffer.
-
-TODO: some more docs, maybe links? [`RingBuffer::new()`].
-
-*See also the [module-level documentation](crate::bip_arc).*
-"
-}
-
-impl_everything_eventually! {
+ring_buffer! {
     storage = vec,
     N = no,
     arc = yes,
     bip = yes,
     contiguous = yes,
+    padded = yes,
     pow2 = no,
     module = "rtrb::bip_arc",
+    rb_doc = docstring!(
+        /// Bi-partite ring buffer.
+        ///
+        /// TODO: some more docs, maybe links? [`RingBuffer::new()`].
+        ///
+        /// *See also the [module-level documentation](crate::bip_arc).*
+    )
 }

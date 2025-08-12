@@ -1,13 +1,28 @@
-macro_rules! storage_vec {
-    (padded = $padded:ident, bip = yes, rb_doc = $rb_doc:expr) => {
-        storage_vec_helper!(padded = $padded, skip, rb_doc = $rb_doc);
+macro_rules! storage {
+    (storage = array, arc = $arc:ident, bip = yes, padded = $padded:ident, rb_doc = $rb_doc:expr) => {
+        storage_array!(arc = $arc, padded = $padded, skip, rb_doc = $rb_doc);
     };
-    (padded = $padded:ident, bip = no, rb_doc = $rb_doc:expr) => {
-        storage_vec_helper!(padded = $padded, , rb_doc = $rb_doc);
+    (storage = array, arc = $arc:ident, bip = no, padded = $padded:ident, rb_doc = $rb_doc:expr) => {
+        storage_array!(arc = $arc, padded = $padded, , rb_doc = $rb_doc);
+    };
+    (storage = dst, arc = $arc:ident, bip = yes, padded = $padded:ident, rb_doc = $rb_doc:expr) => {
+        compile_error!("TODO: implement");
+    };
+    (storage = dst, arc = $arc:ident, bip = no, padded = $padded:ident, rb_doc = $rb_doc:expr) => {
+        compile_error!("TODO: implement");
+    };
+    (storage = vec, arc = $arc:ident, bip = yes, padded = $padded:ident, rb_doc = $rb_doc:expr) => {
+        storage_vec!(padded = $padded, skip, rb_doc = $rb_doc);
+    };
+    (storage = vec, arc = $arc:ident, bip = no, padded = $padded:ident, rb_doc = $rb_doc:expr) => {
+        storage_vec!(padded = $padded, , rb_doc = $rb_doc);
+    };
+    (storage = vrb, arc = $arc:ident, bip = $bip:ident, padded = $padded:ident, rb_doc = $rb_doc:expr) => {
+        storage_vrb!(padded = $padded, rb_doc = $rb_doc);
     };
 }
 
-macro_rules! storage_vec_helper {
+macro_rules! storage_vec {
     (padded = $padded:ident, $($skip:ident)?, rb_doc = $rb_doc:expr) => {
         use alloc::vec::Vec;
         use core::mem::ManuallyDrop;
@@ -76,15 +91,6 @@ macro_rules! storage_vec_helper {
 }
 
 macro_rules! storage_array {
-    (arc = $arc:ident, padded = $padded:ident, bip = yes, rb_doc = $rb_doc:expr) => {
-        storage_array_helper!(arc = $arc, padded = $padded, skip, rb_doc = $rb_doc);
-    };
-    (arc = $arc:ident, padded = $padded:ident, bip = no, rb_doc = $rb_doc:expr) => {
-        storage_array_helper!(arc = $arc, padded = $padded, , rb_doc = $rb_doc);
-    };
-}
-
-macro_rules! storage_array_helper {
     (arc = $arc:ident, padded = $padded:ident, $($skip:ident)?, rb_doc = $rb_doc:expr) => {
         use core::cell::UnsafeCell;
 
@@ -166,7 +172,7 @@ macro_rules! storage_array_impl_default_for_ring_buffer {
 // TODO: check that `contiguous = yes` is required?
 // TODO: only allow `pow2 = yes`?
 macro_rules! storage_vrb {
-    (arc = $arc:ident, padded = $padded:ident, rb_doc = $rb_doc:expr) => {
+    (padded = $padded:ident, rb_doc = $rb_doc:expr) => {
         #[doc = $rb_doc]
         // TODO: reuse from storage_vec, disabling "skip"?
         pub struct RingBuffer<T> {
@@ -325,16 +331,17 @@ macro_rules! choice_ty {
     };
 }
 
-// TODO: rename
-macro_rules! impl_everything_eventually {
+macro_rules! ring_buffer {
     (
         storage = $storage:ident,
         N = $N:ident,
         arc = $arc:ident,
         bip = $bip:ident,
         contiguous = $contiguous:ident,
+        padded = $padded:ident,
         pow2 = $pow2:ident,
         module = $module:literal,
+        rb_doc = $rb_doc:expr
     ) => {
         check_bip_contiguous!($bip, $contiguous);
 
@@ -381,6 +388,8 @@ macro_rules! impl_everything_eventually {
         /// ```
         #[doc(inline)]
         pub use $crate::CopyToUninit;
+
+        storage!(storage = $storage, arc = $arc, bip = $bip, padded = $padded, rb_doc = $rb_doc);
 
         // SAFETY: RingBuffer is only mutated (using *interior mutablility*)
         // via Producer/Consumer (which are !Sync), all other access can be shared.

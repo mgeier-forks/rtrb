@@ -4,23 +4,18 @@
 //!
 //! ... maximum size limited by stack size ...
 
-storage_array! {
-    arc = yes,
-    padded = yes,
-    bip = yes,
-    rb_doc = "
-...
-
-*See also the [module-level documentation](crate::bip_arc_array).*
-"
-}
-
-impl_everything_eventually! {
+ring_buffer! {
     storage = array,
     N = yes,
     arc = yes,
     bip = yes,
     contiguous = yes,
+    padded = yes,
     pow2 = no,
     module = "rtrb::bip_arc_array",
+    rb_doc = docstring!(
+        /// ...
+        ///
+        /// *See also the [module-level documentation](crate::bip_arc_array).*
+    )
 }

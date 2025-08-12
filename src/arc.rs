@@ -1,23 +1,19 @@
 //! ...
 
-storage_vec! {
-    padded = yes,
-    bip = no,
-    rb_doc = "
-Ring buffer ...
-
-TODO: ...
-
-*See also the [module-level documentation](crate::arc).*
-"
-}
-
-impl_everything_eventually! {
+ring_buffer! {
     storage = vec,
     N = no,
     arc = yes,
     bip = no,
     contiguous = no,
+    padded = yes,
     pow2 = no,
     module = "rtrb::arc",
+    rb_doc = docstring!(
+        /// Ring buffer ...
+        /// 
+        /// TODO: ...
+        /// 
+        /// *See also the [module-level documentation](crate::arc).*
+    )
 }
