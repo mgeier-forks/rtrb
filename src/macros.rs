@@ -1519,10 +1519,10 @@ macro_rules! fn_producer_slots {
         /// ```
         #[doc = doctest_import!($module, "RingBuffer")]
         ///
-        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 1024)]
+        #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 4096)]
         /// assert_eq!(p.push(0.5f32), Ok(()));
         ///
-        /// assert_eq!(p.slots(), 1023);
+        /// assert_eq!(p.slots(), 4095);
         /// ```
         pub fn slots(&self) -> usize {
             let b = &self.buffer;
