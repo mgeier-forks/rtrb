@@ -302,6 +302,12 @@ macro_rules! storage_vrb {
 }
 
 macro_rules! choice {
+    (yes, $(#[doc = $yes:expr])* :: $(#[doc = $no:expr])*) => {
+        docstring!($(#[doc = $yes])*)
+    };
+    (no, $(#[doc = $yes:expr])* :: $(#[doc = $no:expr])*) => {
+        docstring!($(#[doc = $no])*)
+    };
     (yes, $yes:expr, $no:expr) => {
         $yes
     };
@@ -363,8 +369,10 @@ macro_rules! impl_everything_eventually {
         ///
         /// This can be used to safely copy data to the
         #[doc = choice!($contiguous,
-            "slice returned from [`WriteChunkUninit::as_mut_slice()`].",
-            "slices returned from [`WriteChunkUninit::as_mut_slices()`].")]
+            /// slice returned from [`WriteChunkUninit::as_mut_slice()`].
+            ::
+            /// slices returned from [`WriteChunkUninit::as_mut_slices()`].
+        )]
         ///
         /// To use this, the trait has to be brought into scope, e.g. with:
         ///
@@ -495,8 +503,9 @@ macro_rules! check_bip_contiguous {
 }
 
 macro_rules! docstring {
-    ($(#[doc = $line:expr])*) => {
-        concat!($($line, "\n"),*)
+    () => { "" };
+    (#[doc = $first:expr] $(#[doc = $rest:expr])*) => {
+        concat!($first, $("\n", $rest,)*)
     };
 }
 
@@ -620,13 +629,12 @@ macro_rules! impl_ {
     };
 }
 
+#[rustfmt::skip] // https://github.com/rust-lang/rustfmt/issues/5974
 macro_rules! fn_ring_buffer_new {
     (N = yes, arc = yes, pow2 = $pow2:ident, module = $module:literal) => {
         /// Creates a ring buffer with a capacity of `N` and returns [`Producer`] and [`Consumer`].
         ///
-        #[doc = choice!($pow2,
-            "`N` must be a power of two.",
-            "")]
+        #[doc = choice!($pow2, "`N` must be a power of two.", "")]
         ///
         /// # Examples
         ///
@@ -648,10 +656,7 @@ macro_rules! fn_ring_buffer_new {
         #[allow(clippy::new_ret_no_self)]
         pub fn new() -> (Producer<T, N>, Consumer<T, N>) {
             const {
-                assert!(
-                    Self::update_capacity(N) == N,
-                    "`N` must be a power of two"
-                );
+                assert!(Self::update_capacity(N) == N, "`N` must be a power of two");
             }
             ArcRingBuffer::new(Self::construct())
         }
@@ -659,9 +664,7 @@ macro_rules! fn_ring_buffer_new {
     (N = yes, arc = no, pow2 = $pow2:ident, module = $module:literal) => {
         /// Creates a ring buffer with a capacity of `N`.
         ///
-        #[doc = choice!($pow2,
-            "`N` must be a power of two.",
-            "")]
+        #[doc = choice!($pow2, "`N` must be a power of two.", "")]
         ///
         /// A (single) [`Producer`] for writing into the ring buffer can be created with
         /// [`producer()`](RingBuffer::producer).
@@ -688,10 +691,7 @@ macro_rules! fn_ring_buffer_new {
         /// ```
         pub const fn new() -> Self {
             const {
-                assert!(
-                    Self::update_capacity(N) == N,
-                    "`N` must be a power of two"
-                );
+                assert!(Self::update_capacity(N) == N, "`N` must be a power of two");
             }
             Self::construct()
         }
@@ -702,8 +702,9 @@ macro_rules! fn_ring_buffer_new {
         /// the given `capacity` and returns [`Producer`] and [`Consumer`].
         ///
         #[doc = choice!($pow2,
-            "If the `capacity` isn't already a power of two, it is rounded up to the next one.",
-            "")]
+            /// If the `capacity` isn't already a power of two, it is rounded up to the next one.
+            ::
+        )]
         ///
         /// # Examples
         ///
@@ -734,8 +735,9 @@ macro_rules! fn_ring_buffer_new {
         /// the given `capacity`.
         ///
         #[doc = choice!($pow2,
-            "If the `capacity` isn't already a power of two, it is rounded up to the next one.",
-            "")]
+            /// If the `capacity` isn't already a power of two, it is rounded up to the next one.
+            ::
+        )]
         ///
         /// A (single) [`Producer`] for writing into the ring buffer can be created with
         /// [`producer()`](RingBuffer::producer).
@@ -2139,8 +2141,10 @@ macro_rules! fn_producer_write_chunk_uninit_docstring {
         /// Returns `n` (uninitialized) slots for writing.
         ///
         #[doc = choice!($contiguous,
-            "[`WriteChunkUninit::as_mut_slice()`]",
-            "[`WriteChunkUninit::as_mut_slices()`]")]
+            /// [`WriteChunkUninit::as_mut_slice()`]
+            ::
+            /// [`WriteChunkUninit::as_mut_slices()`]
+        )]
         /// provides mutable access
         /// to the uninitialized slots.
         /// After writing to those slots, they explicitly have to be made available
@@ -2164,15 +2168,15 @@ macro_rules! fn_producer_write_chunk_uninit_docstring {
         /// This function itself is safe, as is [`WriteChunkUninit::fill_from_iter()`].
         /// However, when using
         #[doc = choice!($contiguous,
-            "[`WriteChunkUninit::as_mut_slice()`],",
-            "[`WriteChunkUninit::as_mut_slices()`],")]
+            /// [`WriteChunkUninit::as_mut_slice()`],
+            ::
+            /// [`WriteChunkUninit::as_mut_slices()`],
+        )]
         /// the user has to make sure that the relevant slots have been initialized
         /// before calling [`WriteChunkUninit::commit()`] or [`WriteChunkUninit::commit_all()`].
         ///
         /// For a safe alternative that provides
-        #[doc = choice!($contiguous,
-            "a mutable slice",
-            "mutable slices")]
+        #[doc = choice!($contiguous, "a mutable slice", "mutable slices")]
         /// of [`Default`]-initialized slots, see [`Producer::write_chunk()`].
     ) };
 }
@@ -2281,13 +2285,16 @@ macro_rules! fn_producer_write_chunk_uninit {
     };
 }
 
+#[rustfmt::skip] // https://github.com/rust-lang/rustfmt/issues/5974
 macro_rules! fn_producer_write_chunk {
     (N = $N:ident, contiguous = $contiguous:ident) => {
         /// Returns `n` slots (initially containing their [`Default`] value) for writing.
         ///
-        #[doc = choice!($contiguous, "\
-        [`WriteChunk::as_mut_slice()`]", "\
-        [`WriteChunk::as_mut_slices()`]")]
+        #[doc = choice!($contiguous,
+            /// [`WriteChunk::as_mut_slice()`]
+            ::
+            /// [`WriteChunk::as_mut_slices()`]
+        )]
         /// provides mutable access to the slots.
         /// After writing to those slots, they explicitly have to be made available
         /// to be read by the [`Consumer`] by calling [`WriteChunk::commit()`]
@@ -2327,7 +2334,11 @@ macro_rules! fn_consumer_read_chunk_docstring {
     (contiguous = $contiguous:ident) => { docstring!(
         /// Returns `n` slots for reading.
         ///
-        #[doc = choice!($contiguous, "[`ReadChunk::as_slice()`]", "[`ReadChunk::as_slices()`]")]
+        #[doc = choice!($contiguous,
+            /// [`ReadChunk::as_slice()`]
+            ::
+            /// [`ReadChunk::as_slices()`]
+        )]
         /// provides immutable access to the slots.
         /// After reading from those slots, they explicitly have to be made available
         /// to be written again by the [`Producer`] by calling [`ReadChunk::commit()`]
