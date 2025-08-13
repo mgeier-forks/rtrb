@@ -367,8 +367,17 @@ macro_rules! ring_buffer {
         /// Error type for [`Producer::push()`].
         #[doc(inline)]
         pub use $crate::PushError;
-        /// Error type for [`Consumer::read_chunk()`], [`Producer::write_chunk()`]
-        /// and [`Producer::write_chunk_uninit()`].
+        /// Error type for [`Producer::write_chunk()`], [`Producer::write_chunk_uninit()`]
+        /// and [`Consumer::read_chunk()`].
+        ///
+        /// To get the maximum number of available slots beforehand
+        /// (and therefore avoid this error), use
+        #[doc = choice!($bip,
+            /// [`Producer::slots_contiguous_max()`] and [`Consumer::slots_contiguous_first()`],
+            ::
+            /// [`Producer::slots()`] and [`Consumer::slots()`],
+        )]
+        /// respectively.
         #[doc(inline)]
         pub use $crate::ChunkError;
 
@@ -443,13 +452,12 @@ macro_rules! ring_buffer {
 
         impl_!(Producer, N = $N, arc = $arc, {
             fn_producer_push!(storage = $storage, N = $N, arc = $arc, module = $module);
-            fn_producer_write_chunk!(N = $N, contiguous = $contiguous);
+            fn_producer_write_chunk!(N = $N, bip = $bip, contiguous = $contiguous);
             fn_producer_write_chunk_uninit!(N = $N, bip = $bip, contiguous = $contiguous);
-            // TODO: documentation specific to bip:
-            fn_producer_slots!(N = $N, arc = $arc, module = $module);
+            fn_producer_slots!(N = $N, arc = $arc, bip = $bip, module = $module);
             fn_producer_slots_contiguousX!(bip = $bip);
-            fn_producer_is_full!(storage = $storage, N = $N, arc = $arc, module = $module);
-            fn_pc_capacity!(N = $N, arc = $arc, module = $module);
+            fn_producer_is_full!(storage = $storage, N = $N, arc = $arc, bip = $bip, module = $module);
+            fn_pc_capacity!(N = $N, arc = $arc, bip = $bip, module = $module);
             fn_producer_is_abandoned!(N = $N, arc = $arc, module = $module);
             fn_producer_has_consumer!(N = $N, arc = $arc, module = $module);
 
@@ -470,11 +478,10 @@ macro_rules! ring_buffer {
             fn_consumer_pop!(N = $N, arc = $arc, module = $module);
             fn_consumer_peek!(N = $N, arc = $arc, module = $module);
             fn_consumer_read_chunk!(N = $N, bip = $bip, contiguous = $contiguous);
-            // TODO: documentation specific to bip:
             fn_consumer_slots!(N = $N, arc = $arc, bip = $bip, module = $module);
             fn_consumer_slots_contiguousX!(bip = $bip);
             fn_consumer_is_empty!(N = $N, arc = $arc, module = $module);
-            fn_pc_capacity!(N = $N, arc = $arc, module = $module);
+            fn_pc_capacity!(N = $N, arc = $arc, bip = $bip, module = $module);
             fn_consumer_is_abandoned!(N = $N, arc = $arc, module = $module);
             fn_consumer_has_producer!(N = $N, arc = $arc, module = $module);
 
@@ -1502,8 +1509,9 @@ macro_rules! fn_producer_push {
     };
 }
 
+#[rustfmt::skip] // https://github.com/rust-lang/rustfmt/issues/5974
 macro_rules! fn_producer_slots {
-    (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
+    (N = $N:ident, arc = $arc:ident, bip = $bip:ident, module = $module:literal) => {
         /// Returns the number of slots available for writing.
         ///
         /// Since items can be concurrently consumed on another thread, the actual number
@@ -1513,6 +1521,17 @@ macro_rules! fn_producer_slots {
         /// To check for a single available slot,
         /// using [`is_full()`](Producer::is_full) is often quicker
         /// (because it might not have to check an atomic variable).
+        ///
+        #[doc = choice!($bip,
+            /// Due to wrap-around of the internal buffer, the reported slots might not be
+            /// on a contiguous segment and therefore not entirely available for writing with
+            /// [`write_chunk()`](Producer::write_chunk) or
+            /// [`write_chunk_uninit()`](Producer::write_chunk_uninit).
+            /// To get the number of contiguous slots,
+            /// [`slots_contiguous_first()`](Producer::slots_contiguous_first) or
+            /// [`slots_contiguous_max()`](Producer::slots_contiguous_max) can be used.
+            ::
+        )]
         ///
         /// # Examples
         ///
@@ -1536,7 +1555,7 @@ macro_rules! fn_producer_slots {
 macro_rules! fn_producer_slots_contiguousX {
     (bip = yes) => {
         // TODO: inline?
-        fn slots_contiguous_something(&self) -> (usize, bool) {
+        fn slots_contiguous_helper(&self) -> (usize, bool) {
             // TODO: code reuse with write_chunk_uninit() and next_tail()
             let b = &self.buffer;
             let mut head = self.cached_head.get();
@@ -1555,12 +1574,32 @@ macro_rules! fn_producer_slots_contiguousX {
             (collapsed_head - collapsed_tail, true)
         }
 
-        pub fn slots_without_skipping(&self) -> usize {
-            self.slots_contiguous_something().0
-        }
-
-        pub fn slots_contiguous_with_potential_followup(&self) -> (usize, usize) {
-            let (slots, refreshed) = self.slots_contiguous_something();
+        /// Returns the number of slots of the next two contiguous segments available
+        /// for writing with [`write_chunk()`](Producer::write_chunk) or
+        /// [`write_chunk_uninit()`](Producer::write_chunk_uninit).
+        ///
+        /// When a chunk larger than the first segment is written
+        /// (assuming the second number is large enough to allow that),
+        /// the first segment is skipped,
+        /// effectively reducing the maximum available [`Consumer::slots()`]
+        /// (until the segment is overwritten again at a later point).
+        ///
+        /// In many cases, the second number will be `0`, but whenever the internal buffer
+        /// wraps around, two contiguous segments might be available for writing.
+        /// If the first number is `0`, the second will be `0` as well.
+        ///
+        /// If you are only interested in the first number, using
+        /// [`slots_contiguous_first()`](Producer::slots_contiguous_first)
+        /// should be slightly more efficient.
+        ///
+        /// The sum of both numbers is returned by [`slots()`](Producer::slots), their maximum
+        /// is returned by [`slots_contiguous_max()`](Producer::slots_contiguous_max).
+        ///
+        /// Since items can be concurrently consumed on another thread, the actual number
+        /// of available slots may increase at any time
+        /// (up to the [`capacity()`](Producer::capacity)).
+        pub fn slots_contiguous(&self) -> (usize, usize) {
+            let (slots, refreshed) = self.slots_contiguous_helper();
             if refreshed {
                 return (slots, 0);
             }
@@ -1571,13 +1610,30 @@ macro_rules! fn_producer_slots_contiguousX {
             (slots, b.collapse_position(head) - b.collapse_position(tail))
         }
 
-        /// The maximum number of slots that write_chunk() ... can provide.
+        /// Returns the number of slots of the next contiguous segment available for writing with
+        /// [`write_chunk()`](Producer::write_chunk) or
+        /// [`write_chunk_uninit()`](Producer::write_chunk_uninit).
         ///
-        /// ... this can change at any time, up to ..., depending on ...
+        /// This is the same as the first number returned by
+        /// [`slots_contiguous()`](Producer::slots_contiguous), but slightly more efficient.
         ///
-        /// ... using this value might lead to skipping ... use ... to avoid ...
+        /// If you want to avoid skipping any slots, you should use this method instead of
+        /// [`slots_contiguous_max()`](Producer::slots_contiguous_max).
+        pub fn slots_contiguous_first(&self) -> usize {
+            self.slots_contiguous_helper().0
+        }
+
+        /// Convenience function to obtain the maximum of the two values returned by
+        /// [`slots_contiguous()`](Producer::slots_contiguous).
+        ///
+        /// This number will also be reported via a [`ChunkError`] when calling
+        /// [`write_chunk()`](Producer::write_chunk) or
+        /// [`write_chunk_uninit()`](Producer::write_chunk_uninit) with a larger number.
+        ///
+        /// If you want to avoid skipping any slots, you should use
+        /// [`slots_contiguous_first()`](Producer::slots_contiguous_first) instead.
         pub fn slots_contiguous_max(&self) -> usize {
-            let (one, two) = self.slots_contiguous_with_potential_followup();
+            let (one, two) = self.slots_contiguous();
             one.max(two)
         }
     };
@@ -1586,10 +1642,8 @@ macro_rules! fn_producer_slots_contiguousX {
 
 #[rustfmt::skip] // https://github.com/rust-lang/rustfmt/issues/5974
 macro_rules! fn_producer_is_full {
-    (storage = $storage:ident, N = $N:ident, arc = $arc:ident, module = $module:literal) => {
+    (storage = $storage:ident, N = $N:ident, arc = $arc:ident, bip = $bip:ident, module = $module:literal) => {
         /// Returns `true` if there are currently no slots available for writing.
-        ///
-        /// TODO: additional info about bip?
         ///
         /// A full ring buffer might cease to be full at any time
         /// if the corresponding [`Consumer`] is consuming items in another thread.
@@ -1631,7 +1685,30 @@ macro_rules! fn_producer_is_full {
             /// }
             /// ```
             ///
-            /// TODO: example for "bip" when "skip" is set?
+            #[doc = choice!($bip,
+                /// A ring buffer (of the Bip Buffer variety) can be full even if it contains
+                /// fewer items than its [`capacity()`](Producer::capacity()).
+                ///
+                /// ```
+                /// use std::io::{Read, Write};
+                #[doc = doctest_import!($module, "RingBuffer")]
+                ///
+                #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 8)]
+                /// assert_eq!(p.write(&[1, 2, 3, 4, 5]).unwrap(), 5);
+                /// let mut a = [0; 5];
+                /// assert_eq!(c.read(&mut a).unwrap(), 5);
+                /// assert_eq!(a, [1, 2, 3, 4, 5]);
+                /// // This will skip 3 slots:
+                /// assert_eq!(p.write(&[5, 4, 3, 2, 1]).unwrap(), 5);
+                /// assert!(p.is_full());
+                /// assert_eq!(p.capacity(), 8);
+                /// assert_eq!(p.slots(), 0);
+                /// assert_eq!(c.slots(), 5);
+                /// // TODO: slots() might actually reset "skip" in this case?!?
+                /// // TODO: better write 5 then read 4 then write 4?
+                /// ```
+                ::
+            )]
         )]
         pub fn is_full(&self) -> bool {
             self.next_tail().is_none()
@@ -1639,15 +1716,20 @@ macro_rules! fn_producer_is_full {
     };
 }
 
+#[rustfmt::skip] // https://github.com/rust-lang/rustfmt/issues/5974
 macro_rules! fn_pc_capacity {
-    (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
+    (N = $N:ident, arc = $arc:ident, bip = $bip:ident, module = $module:literal) => {
         /// Returns the total capacity of the queue.
         ///
         /// At any time, the capacity is subdivided into
         /// [`Producer::slots()`] available for writing and
-        /// [`Consumer::slots()`] available for reading.
-        ///
-        /// TODO: not quite true for bip
+        /// [`Consumer::slots()`] available for
+        #[doc = choice!($bip,
+            /// reading, as well as potentially some slots that have been skipped in
+            /// [`Producer::write_chunk`] or [`Producer::write_chunk_uninit`].
+            ::
+            /// reading.
+        )]
         ///
         /// # Examples
         ///
@@ -1775,8 +1857,14 @@ macro_rules! fn_consumer_peek {
 }
 
 macro_rules! fn_consumer_slots_docstring {
-    (N = $N:ident, arc = $arc:ident, module = $module:literal) => { docstring!(
+    (N = $N:ident, arc = $arc:ident, bip = $bip:ident, module = $module:literal) => { docstring!(
         /// Returns the number of slots available for reading.
+        ///
+        #[doc = choice!($bip,
+            ::
+            /// This number will also be reported via a [`ChunkError`] when calling
+            /// [`read_chunk()`](Consumer::read_chunk) with a larger number.
+        )]
         ///
         /// Since items can be concurrently produced on another thread, the actual number
         /// of available slots may increase at any time
@@ -1786,7 +1874,13 @@ macro_rules! fn_consumer_slots_docstring {
         /// using [`is_empty()`](Consumer::is_empty) is often quicker
         /// (because it might not have to check an atomic variable).
         ///
-        /// TODO: insert bip specifics
+        #[doc = choice!($bip,
+            /// Due to wrap-around of the internal buffer, the reported slots might not be
+            /// on a contiguous segment and therefore not entirely available for reading with
+            /// [`read_chunk()`](Consumer::read_chunk). To get the number of contiguous slots,
+            /// [`slots_contiguous_first()`](Consumer::slots_contiguous_first) can be used.
+            ::
+        )]
         ///
         /// # Examples
         ///
@@ -1804,11 +1898,8 @@ macro_rules! fn_consumer_slots_docstring {
 
 macro_rules! fn_consumer_slots {
     (N = $N:ident, arc = $arc:ident, bip = yes, module = $module:literal) => {
-        #[doc = fn_consumer_slots_docstring!(N = $N, arc = $arc, module = $module)]
-        ///
-        /// TODO: [`read_chunk()`](Consumer::read_chunk) might not provide the full number of free slots
-        ///
-        /// TODO: see alternative "slots" variations
+        #[doc = fn_consumer_slots_docstring!(N = $N, arc = $arc, bip = yes, module = $module)]
+        // TODO: code reuse with other "slots" variations?
         pub fn slots(&self) -> usize {
             let b = &self.buffer;
             let head = self.cached_head.get();
@@ -1824,11 +1915,12 @@ macro_rules! fn_consumer_slots {
             } else {
                 let skip = b.skip.load(Ordering::Acquire);
                 collapsed_tail + skip - collapsed_head
+                // TODO: update "skip" (and "head") if collapsed_head == skip? Can that even happen?
             }
         }
     };
     (N = $N:ident, arc = $arc:ident, bip = no, module = $module:literal) => {
-        #[doc = fn_consumer_slots_docstring!(N = $N, arc = $arc, module = $module)]
+        #[doc = fn_consumer_slots_docstring!(N = $N, arc = $arc, bip = no, module = $module)]
         pub fn slots(&self) -> usize {
             let b = &self.buffer;
             let tail = b.tail.load(Ordering::Acquire);
@@ -1880,25 +1972,29 @@ macro_rules! fn_consumer_slots_contiguousX {
             }
         }
 
-        /// Returns the maximum number of slots that are available for reading with
-        /// [`read_chunk()`](Consumer::read_chunk).
+        /// Returns the number of slots of the next two contiguous segments available
+        /// for reading with [`read_chunk()`](Consumer::read_chunk).
         ///
-        /// ... this can change when the producer is writing stuff ...
+        /// In many cases, the second number will be `0`, but whenever the internal buffer
+        /// wraps around, two contiguous segments might be available for reading.
+        /// If the first number is `0`, the second will be `0` as well.
         ///
-        /// ... might be smaller than [`slots()`](Consumer::slots) because ...
-        // TODO: better name?
-        pub fn slots_contiguous_first(&self) -> usize {
-            self.slots_contiguous_helper().0
-        }
-
-        /// Returns the maximum number of slots that are available for reading with
-        /// [`read_chunk()`](Consumer::read_chunk) *twice*.
+        /// The sum of both numbers is returned by [`slots()`](Consumer::slots).
         ///
-        /// The first number is the same as ... (which might be slightly more efficient)
+        /// If you are only interested in the first number, using
+        /// [`slots_contiguous_first()`](Consumer::slots_contiguous_first)
+        /// should be slightly more efficient.
         ///
-        /// If the first number is `0`, the second is `0` as well.
-        // TODO: better name?
-        pub fn slots_contiguous_with_potential_followup(&self) -> (usize, usize) {
+        /// The first number will also be reported via a [`ChunkError`] when calling
+        /// [`read_chunk()`](Consumer::read_chunk) with a larger number.
+        ///
+        /// Since items can be concurrently produced on another thread, the actual number
+        /// of available slots may increase at any time
+        /// (up to a certain maximum that depends on the current read index and
+        /// whether and how many slots have been skipped using
+        /// [`Producer::write_chunk()`] or [`Producer::write_chunk_uninit()`],
+        /// but at most up to the [`capacity()`](Consumer::capacity)).
+        pub fn slots_contiguous(&self) -> (usize, usize) {
             let (slots, refreshed) = self.slots_contiguous_helper();
             if refreshed {
                 return (slots, 0);
@@ -1917,6 +2013,15 @@ macro_rules! fn_consumer_slots_contiguousX {
                 (slots, collapsed_tail)
             }
         }
+
+        /// Returns the number of slots of the next contiguous segment available for reading with
+        /// [`read_chunk()`](Consumer::read_chunk).
+        ///
+        /// This is the same as the first number returned by
+        /// [`slots_contiguous()`](Consumer::slots_contiguous), but slightly more efficient.
+        pub fn slots_contiguous_first(&self) -> usize {
+            self.slots_contiguous_helper().0
+        }
     };
     (bip = no) => {};
 }
@@ -1924,8 +2029,6 @@ macro_rules! fn_consumer_slots_contiguousX {
 macro_rules! fn_consumer_is_empty {
     (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
         /// Returns `true` if there are currently no slots available for reading.
-        ///
-        /// TODO: additional info about bip?
         ///
         /// An empty ring buffer might cease to be empty at any time
         /// if the corresponding [`Producer`] is producing items in another thread.
@@ -2257,7 +2360,7 @@ macro_rules! fn_read_chunk_uninit_commit_unchecked {
 }
 
 macro_rules! fn_producer_write_chunk_uninit_docstring {
-    (contiguous = $contiguous:ident) => { docstring!(
+    (bip = $bip:ident, contiguous = $contiguous:ident) => { docstring!(
         /// Prepares a chunk of `n` (uninitialized) slots for writing.
         ///
         #[doc = choice!($contiguous,
@@ -2279,9 +2382,14 @@ macro_rules! fn_producer_write_chunk_uninit_docstring {
         ///
         /// If not enough slots are available, an error
         /// (containing the number of available slots) is returned.
-        /// Use [`slots()`](Producer::slots) to obtain the number of available slots beforehand.
-        ///
-        /// TODO: bip-specific "slots" functions
+        /// Use
+        #[doc = choice!($bip,
+            /// [`slots_contiguous_max()`](Producer::slots_contiguous_max) (or
+            /// [`slots_contiguous_first()`](Producer::slots_contiguous_first))
+            ::
+            /// [`slots()`](Producer::slots)
+        )]
+        /// to obtain the number of available slots beforehand.
         ///
         /// # Safety
         ///
@@ -2303,7 +2411,7 @@ macro_rules! fn_producer_write_chunk_uninit_docstring {
 
 macro_rules! fn_producer_write_chunk_uninit {
     (N = $N:ident, bip = yes, contiguous = $contiguous:ident) => {
-        #[doc = fn_producer_write_chunk_uninit_docstring!(contiguous = $contiguous)]
+        #[doc = fn_producer_write_chunk_uninit_docstring!(bip = yes, contiguous = $contiguous)]
         pub fn write_chunk_uninit(
             &mut self,
             n: usize,
@@ -2379,7 +2487,7 @@ macro_rules! fn_producer_write_chunk_uninit {
         }
     };
     (N = $N:ident, bip = no, contiguous = $contiguous:ident) => {
-        #[doc = fn_producer_write_chunk_uninit_docstring!(contiguous = $contiguous)]
+        #[doc = fn_producer_write_chunk_uninit_docstring!(bip = no, contiguous = $contiguous)]
         pub fn write_chunk_uninit(
             &mut self,
             n: usize,
@@ -2407,7 +2515,7 @@ macro_rules! fn_producer_write_chunk_uninit {
 
 #[rustfmt::skip] // https://github.com/rust-lang/rustfmt/issues/5974
 macro_rules! fn_producer_write_chunk {
-    (N = $N:ident, contiguous = $contiguous:ident) => {
+    (N = $N:ident, bip = $bip:ident, contiguous = $contiguous:ident) => {
         /// Prepares a chunk of `n` slots (initially containing their [`Default`] value)
         /// for writing.
         ///
@@ -2432,9 +2540,14 @@ macro_rules! fn_producer_write_chunk {
         ///
         /// If not enough slots are available, an error
         /// (containing the number of available slots) is returned.
-        /// Use [`slots()`](Producer::slots) to obtain the number of available slots beforehand.
-        ///
-        /// TODO: mention different types of slots...() for bip?
+        /// Use
+        #[doc = choice!($bip,
+            /// [`slots_contiguous_max()`](Producer::slots_contiguous_max) (or
+            /// [`slots_contiguous_first()`](Producer::slots_contiguous_first))
+            ::
+            /// [`slots()`](Producer::slots)
+        )]
+        /// to obtain the number of available slots beforehand.
         ///
         /// # Examples
         ///
@@ -2452,7 +2565,7 @@ macro_rules! fn_producer_write_chunk {
 }
 
 macro_rules! fn_consumer_read_chunk_docstring {
-    (contiguous = $contiguous:ident) => { docstring!(
+    (bip = $bip:ident, contiguous = $contiguous:ident) => { docstring!(
         /// Prepares a chunk of `n` slots for reading.
         ///
         #[doc = choice!($contiguous,
@@ -2475,9 +2588,13 @@ macro_rules! fn_consumer_read_chunk_docstring {
         ///
         /// If not enough slots are available, an error
         /// (containing the number of available slots) is returned.
-        /// Use [`slots()`](Consumer::slots) to obtain the number of available slots beforehand.
-        ///
-        /// TODO: bip specifics?
+        /// Use
+        #[doc = choice!($bip,
+            /// [`slots_contiguous_first()`](Consumer::slots_contiguous_first)
+            ::
+            /// [`slots()`](Consumer::slots)
+        )]
+        /// to obtain the number of available slots beforehand.
         ///
         /// # Examples
         ///
@@ -2489,7 +2606,7 @@ macro_rules! fn_consumer_read_chunk_docstring {
 
 macro_rules! fn_consumer_read_chunk {
     (N = $N:ident, bip = yes, contiguous = $contiguous:ident) => {
-        #[doc = fn_consumer_read_chunk_docstring!(contiguous = $contiguous)]
+        #[doc = fn_consumer_read_chunk_docstring!(bip = yes, contiguous = $contiguous)]
         pub fn read_chunk(
             &mut self,
             n: usize,
@@ -2563,7 +2680,7 @@ macro_rules! fn_consumer_read_chunk {
         }
     };
     (N = $N:ident, bip = no, contiguous = $contiguous:ident) => {
-        #[doc = fn_consumer_read_chunk_docstring!(contiguous = $contiguous)]
+        #[doc = fn_consumer_read_chunk_docstring!(bip = no, contiguous = $contiguous)]
         pub fn read_chunk(
             &mut self,
             n: usize,
