@@ -58,6 +58,7 @@ harness = false
 [[bench]]
 name = "single_thread_with_chunks"
 harness = false
+required-features = ["std"]
 
 [[bench]]
 name = "two_threads"

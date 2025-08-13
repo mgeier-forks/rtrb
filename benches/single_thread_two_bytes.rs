@@ -5,6 +5,7 @@
 //! Writing two elements to a three-element queue makes sure
 //! that there is a ring buffer wrap-around every second time.
 
+#[cfg(feature = "std")]
 use std::io::{Read, Write};
 
 use criterion::{black_box, criterion_group, criterion_main};
@@ -119,6 +120,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         result
     });
 
+    #[cfg(feature = "std")]
     add_function(&mut group, "4-read", |data| {
         let mut result = [0; 2];
         for &i in data.iter() {
@@ -128,6 +130,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         result
     });
 
+    #[cfg(feature = "std")]
     add_function(&mut group, "4-write", |data| {
         let mut result = [0; 2];
         let _ = p.write(data).unwrap();

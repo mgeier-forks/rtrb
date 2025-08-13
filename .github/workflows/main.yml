@@ -29,8 +29,9 @@ jobs:
         run: |
           cargo test --workspace
       - name: Run tests (no features)
+        # NB: --all-targets disables doctests!
         run: |
-          cargo test --workspace --no-default-features
+          cargo test --workspace --no-default-features --all-targets
       - name: Run tests (all features, only POSIX)
         if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
         run: |
