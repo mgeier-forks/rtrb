@@ -1,3 +1,6 @@
+// TODO: generalize test
+#![cfg(feature = "alloc")]
+
 use rtrb::{ChunkError, RingBuffer};
 
 #[test]

@@ -22,6 +22,7 @@ macro_rules! storage {
     };
 }
 
+#[cfg(feature = "alloc")]
 macro_rules! storage_vec {
     (padded = $padded:ident, $($skip:ident)?, rb_doc = $rb_doc:expr) => {
         use alloc::vec::Vec;

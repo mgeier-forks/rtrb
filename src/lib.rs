@@ -77,6 +77,7 @@
 // Add "Available on crate feature ... only." on docs.rs (where applicable).
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
 use core::{fmt, mem::MaybeUninit};
@@ -88,6 +89,7 @@ mod cache_padded;
 pub use cache_padded::CachePadded;
 
 // TODO: move to submodules (only docs)
+#[cfg(feature = "alloc")] // TODO: fine-grained feature selection
 pub mod chunks;
 
 // TODO: feature "portable-atomic"?
@@ -98,14 +100,21 @@ mod atomic {
 #[macro_use]
 mod macros;
 
+#[cfg(feature = "alloc")]
 pub mod arc;
+#[cfg(feature = "alloc")]
 pub mod arc2;
+#[cfg(feature = "alloc")]
 pub mod arc_array;
+#[cfg(feature = "alloc")]
 pub mod arc_array2;
 pub mod array;
 pub mod array2;
+#[cfg(feature = "alloc")]
 pub mod bip_arc;
+#[cfg(feature = "alloc")]
 pub mod bip_arc2;
+#[cfg(feature = "alloc")]
 pub mod bip_arc_array;
 pub mod bip_array;
 pub mod embedded;
@@ -122,10 +131,12 @@ const HAS_CONSUMER: u8 = 0b01000000;
 const IS_ABANDONED: u8 = 0b10000000;
 
 // For backwards compatibility. May be deprecated and removed in the future.
+#[cfg(feature = "alloc")]
 #[doc(hidden)]
 pub use arc::{Consumer, Producer, RingBuffer};
 
 // TODO: remove those:
+#[cfg(feature = "alloc")]
 pub use arc::{ReadChunk, WriteChunk, WriteChunkUninit};
 
 #[doc(hidden)]
@@ -207,7 +218,10 @@ impl fmt::Display for ChunkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ChunkError::TooFewSlots(n) => {
-                alloc::format!("only {n} slots available in ring buffer").fmt(f)
+                #[cfg(feature = "alloc")]
+                return alloc::format!("only {n} slots available in ring buffer").fmt(f);
+                #[cfg(not(feature = "alloc"))]
+                return "too few slots available in ring buffer".fmt(f);
             }
         }
     }

@@ -23,8 +23,9 @@ exclude = ["crossbeam", "performance-comparison"]
 
 [features]
 default = ["std"]
-std = []
-vrb = ["dep:libc"]
+std = ["alloc"]
+alloc = []
+vrb = ["dep:libc", "alloc"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -53,24 +54,35 @@ bench = false # Don't disturb criterion command line parsing
 [[bench]]
 name = "single_thread_single_byte"
 harness = false
+# TODO: allow selecting different ring buffer variants (with different features)
+required-features = ["alloc"]
 
 [[bench]]
 name = "single_thread_two_bytes"
 harness = false
+# TODO: allow selecting different ring buffer variants (with different features)
+required-features = ["alloc"]
 
 [[bench]]
 name = "single_thread_with_chunks"
 harness = false
+# for Read/Write traits
 required-features = ["std"]
 
 [[bench]]
 name = "two_threads"
 harness = false
+# Threads are only available in std
+required-features = ["std"]
 
 [[bench]]
 name = "two_threads_array"
 harness = false
+# Threads are only available in std
+required-features = ["std"]
 
 [[bench]]
 name = "bip"
 harness = false
+# TODO: allow selecting different ring buffer variants (with different features)
+required-features = ["alloc"]

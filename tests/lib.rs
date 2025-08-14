@@ -1,3 +1,6 @@
+// TODO: generalize to all modules, based on features?
+#![cfg(feature = "alloc")]
+
 use rtrb::RingBuffer;
 
 #[test]
