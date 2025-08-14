@@ -1,4 +1,19 @@
-//! A realtime-safe single-producer single-consumer (SPSC) ring buffer.
+//! A collection of realtime-safe single-producer single-consumer (SPSC) ring buffers.
+//!
+//! *If you are looking for the ring buffer formerly plainly known as `rtrb::RingBuffer`,
+//! this is now available as [`rtrb::arc::RingBuffer`](arc::RingBuffer).*
+//!
+//! | module | storage | reference counted | cache padded | contiguous chunks |
+//! |-|-|-|-|-|
+//! | [`arc`]/[`arc2`] | heap | ✔️ | ✔️ ||
+//! | [`mod@array`] | array || ✔️ ||
+//! | [`embedded`] | array ||||
+//! | [`bip_arc`]/[`bip_arc2`] | heap | ✔️ | ✔️ | ✔️ |
+//! | [`bip_array`] | array || ✔️ | ✔️ |
+//! | [`vrb_arc`] | heap | ✔️ | ✔️ | ✔️ |
+//! | [`vrb`] | heap || ✔️ | ✔️ |
+//!
+//! ---
 //!
 //! A [`RingBuffer`] consists of two parts:
 //! a [`Producer`] for writing into the ring buffer and
@@ -59,6 +74,8 @@
 //#![deny(missing_docs, missing_debug_implementations)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::undocumented_unsafe_blocks, clippy::unnecessary_safety_comment)]
+// Add "Available on crate feature ... only." on docs.rs (where applicable).
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
 extern crate alloc;
 
@@ -82,6 +99,7 @@ mod atomic {
 mod macros;
 
 pub mod arc;
+pub mod arc2;
 pub mod arc_array;
 pub mod arc_array2;
 pub mod array;

@@ -26,6 +26,9 @@ default = ["std"]
 std = []
 vrb = ["dep:libc"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [dependencies]
 libc = { version = "0.2", optional = true }
 

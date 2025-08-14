@@ -172,6 +172,7 @@ macro_rules! storage_array_impl_default_for_ring_buffer {
 // TODO: check that `bip = yes` is not allowed?
 // TODO: check that `contiguous = yes` is required?
 // TODO: only allow `pow2 = yes`?
+#[cfg(feature = "vrb")]
 macro_rules! storage_vrb {
     (padded = $padded:ident, rb_doc = $rb_doc:expr) => {
         #[doc = $rb_doc]
