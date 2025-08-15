@@ -3,6 +3,9 @@
 //! *If you are looking for the ring buffer formerly plainly known as `rtrb::RingBuffer`,
 //! this is now available as [`rtrb::arc::RingBuffer`](arc::RingBuffer).*
 //!
+//! The following table gives an overview about the available types of ring buffer.
+//! Further details are explained in the sections below.
+//!
 //! | module | storage | reference counted | cache padded | contiguous chunks |
 //! |-|-|-|-|-|
 //! | [`arc`]/[`arc2`] | heap | ✔️ | ✔️ ||
@@ -13,25 +16,91 @@
 //! | [`vrb_arc`] | heap | ✔️ | ✔️ | ✔️ |
 //! | [`vrb`] | heap || ✔️ | ✔️ |
 //!
-//! ---
 //!
-//! A [`RingBuffer`] consists of two parts:
-//! a [`Producer`] for writing into the ring buffer and
-//! a [`Consumer`] for reading from the ring buffer.
+//! # General Properties
 //!
-//! A fixed-capacity buffer is allocated on construction.
-//! After that, no more memory is allocated (unless the type `T` does that internally).
+//! ... SPSC ... bounded ... wrap-around ... single element vs chunks? ...
+//!
 //! Reading from and writing into the ring buffer is *lock-free* and *wait-free*.
 //! All reading and writing functions return immediately.
 //! Attempts to write to a full buffer return an error;
 //! values inside the buffer are *not* overwritten.
 //! Attempts to read from an empty buffer return an error as well.
+//!
 //! Only a single thread can write into the ring buffer and a single thread
 //! (typically a different one) can read from the ring buffer.
 //! If the queue is empty, there is no way for the reading thread to wait
 //! for new data, other than trying repeatedly until reading succeeds.
 //! Similarly, if the queue is full, there is no way for the writing thread
 //! to wait for newly available space to write to, other than trying repeatedly.
+//!
+//!
+//! # Storage
+//!
+//! The modules containing the word `array` (TODO: as well as `embedded`?)
+//! are using the built-in
+//! [`prim@array`] type for storing ring buffer elements.
+//! This means that the number of elements must be know at compile time.
+//! No dynamic memory is ever allocated. (TODO: except `arc_array`?)
+//! (TODO: except for `Display` impls of some error messages? with `alloc` feature)
+//!
+//! They have the advantage that they can be used as `static` variables.
+//! (TODO: except `arc_array`?)
+//!
+//! TODO: example
+//!
+//! All other modules use dynamic memory (allocated on the
+//! [heap](https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html#the-stack-and-the-heap)).
+//!
+//! ... less size restrictions (stack size?) ... since the compiler doesn't know the size,
+//! potentially fewer optimizations ...
+//!
+//! A fixed-capacity buffer is allocated on construction.
+//!
+//! Memory is only allocated once, when creating the `RingBuffer`.
+//!
+//! After that, no more memory is allocated (unless the type `T` does that internally).
+//!
+//! ... no other memory allocations ... (TODO: except for `Display` impls of some error messages?)
+//!
+//!
+//! # Calculation of Indices
+//!
+//! ... head/tail ... in range `0 .. 2 * capacity`, `pow2`: no limit except wrap-around ...
+//!
+//! Indices are wrapped at twice the buffer size.
+//!
+//! Indices are wrapped at [`usize::MAX`].
+//!
+//! Other approaches are used in the wild ... wasting one slot ...
+//!
+//!
+//! # Usage with Shared Memory
+//!
+//! ... [`shared-memory` example application](https://github.com/mgeier/rtrb/blob/main/examples/shared-memory.rs) ...
+//!
+//! ```text
+//! cargo run --example shared-memory
+//! ```
+//!
+//! TODO: shared memory with DST?
+//!
+//! # Usage in Embedded Systems
+//!
+//! ... no cache padding ...
+//!
+//! ... even though the documentation uses the term "thread" ...
+//! a single CPU core in a microcontrollers ... no OS threads ...
+//! communicate between "main code" and "interrupt handler" ...
+//!
+//! TODO: DMA? use "bip" variants.
+//!
+//! ---
+//!
+//! A [`RingBuffer`] consists of two parts:
+//! a [`Producer`] for writing into the ring buffer and
+//! a [`Consumer`] for reading from the ring buffer.
+//!
 //!
 //! # Examples
 //!
@@ -58,17 +127,6 @@
 //! for examples that write multiple items at once with
 //! [`Producer::write_chunk_uninit()`] and [`Producer::write_chunk()`]
 //! and read multiple items with [`Consumer::read_chunk()`].
-//!
-//!
-//! ## Calculation of indices
-//!
-//! ... head/tail ... in range `0 .. 2 * capacity`, `pow2`: no limit except wrap-around ...
-//!
-//! Indices are wrapped at twice the buffer size.
-//!
-//! Indices are wrapped at [`usize::MAX`].
-//!
-//! Other approaches are used in the wild ... wasting one slot ...
 
 #![cfg_attr(not(feature = "std"), no_std)]
 //#![deny(missing_docs, missing_debug_implementations)]
