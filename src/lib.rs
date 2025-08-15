@@ -127,6 +127,7 @@ pub mod vrb_arc;
 
 const HAS_PRODUCER: u8 = 0b10000000;
 const HAS_CONSUMER: u8 = 0b01000000;
+#[cfg(feature = "alloc")]
 // NB: This overlaps with HAS_PRODUCER, they are never used at the same time.
 const IS_ABANDONED: u8 = 0b10000000;
 
@@ -217,12 +218,12 @@ impl std::error::Error for ChunkError {}
 impl fmt::Display for ChunkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            #[cfg(feature = "alloc")]
             ChunkError::TooFewSlots(n) => {
-                #[cfg(feature = "alloc")]
-                return alloc::format!("only {n} slots available in ring buffer").fmt(f);
-                #[cfg(not(feature = "alloc"))]
-                return "too few slots available in ring buffer".fmt(f);
+                alloc::format!("only {n} slots available in ring buffer").fmt(f)
             }
+            #[cfg(not(feature = "alloc"))]
+            ChunkError::TooFewSlots(_) => "too few slots available in ring buffer".fmt(f),
         }
     }
 }

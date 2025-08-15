@@ -357,8 +357,12 @@ macro_rules! ring_buffer {
         #[allow(unused_imports)]
         use $crate::CachePadded;
 
+        // TODO: import only when appropriate?
         #[allow(unused_imports)]
-        use $crate::{HAS_CONSUMER, HAS_PRODUCER, IS_ABANDONED};
+        use $crate::{HAS_CONSUMER, HAS_PRODUCER};
+        #[allow(unused_imports)]
+        #[cfg(feature = "alloc")]
+        use $crate::IS_ABANDONED;
 
         /// Error type for [`Consumer::peek()`].
         #[doc(inline)]
@@ -1079,6 +1083,7 @@ macro_rules! struct_arc_ring_buffer {
     (N = $N:ident, arc = no) => {};
 }
 
+#[cfg(feature = "alloc")]
 macro_rules! fn_arc_ring_buffer_drop_slow_helper {
     (params = ($($params:tt)*), args = ($($args:tt)*)) => {
         /// Non-inlined part of `Ref::drop()`.
@@ -1094,6 +1099,7 @@ macro_rules! fn_arc_ring_buffer_drop_slow_helper {
     };
 }
 
+#[cfg(feature = "alloc")]
 macro_rules! fn_arc_ring_buffer_drop_slow {
     (N = yes) => {
         fn_arc_ring_buffer_drop_slow_helper!(params = (T, const N: usize), args = (T, N));
@@ -1383,6 +1389,7 @@ macro_rules! struct_consumer {
     };
 }
 
+#[cfg(feature = "std")]
 macro_rules! fn_producer_write {
     (contiguous = yes) => {
         #[inline]
@@ -1423,6 +1430,7 @@ macro_rules! fn_producer_write {
     };
 }
 
+#[cfg(feature = "std")]
 macro_rules! fn_producer_flush {
     () => {
         #[inline]
@@ -1433,6 +1441,7 @@ macro_rules! fn_producer_flush {
     };
 }
 
+#[cfg(feature = "std")]
 macro_rules! fn_consumer_read {
     (contiguous = yes) => {
         #[inline]

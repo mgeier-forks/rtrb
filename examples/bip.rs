@@ -1,3 +1,5 @@
+#![cfg(feature = "alloc")]
+
 use rtrb::bip_arc::RingBuffer;
 
 fn main() {
