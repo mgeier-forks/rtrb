@@ -7,7 +7,7 @@ use two_threads_array::SIZE;
 use ringbuf::traits::*;
 
 create_two_threads_array_benchmark!(
-    "rtrb",
+    "rtrb::array",
     || {
         use rtrb::array::RingBuffer;
         static RB: RingBuffer<u8, SIZE> = RingBuffer::<u8, SIZE>::new();
@@ -16,7 +16,7 @@ create_two_threads_array_benchmark!(
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::
-    "rtrb2",
+    "rtrb::array2",
     || {
         use rtrb::array2::RingBuffer;
         static RB: RingBuffer<u8, SIZE> = RingBuffer::<u8, SIZE>::new();
@@ -25,7 +25,7 @@ create_two_threads_array_benchmark!(
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::
-    "rtrb-embedded",
+    "rtrb::embedded",
     || {
         use rtrb::embedded::RingBuffer;
         static RB: RingBuffer<u8, SIZE> = RingBuffer::new();
@@ -34,8 +34,17 @@ create_two_threads_array_benchmark!(
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::
-    "rtrb-dynamic",
-    || rtrb::RingBuffer::<u8>::new(SIZE),
+    "rtrb::embedded2",
+    || {
+        use rtrb::embedded2::RingBuffer;
+        static RB: RingBuffer<u8, SIZE> = RingBuffer::new();
+        (RB.producer().unwrap(), RB.consumer().unwrap())
+    },
+    |p, i| p.push(i).is_ok(),
+    |c| c.pop().ok(),
+    ::
+    "rtrb::arc",
+    || rtrb::arc::RingBuffer::<u8>::new(SIZE),
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::

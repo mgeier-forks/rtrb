@@ -191,6 +191,7 @@ pub mod bip_arc2;
 pub mod bip_arc_array;
 pub mod bip_array;
 pub mod embedded;
+pub mod embedded2;
 #[cfg(feature = "vrb")]
 pub mod vrb;
 #[cfg(feature = "vrb")]
