@@ -40,20 +40,35 @@
 //! The modules containing the word `array` (TODO: as well as `embedded`?)
 //! are using the built-in
 //! [`prim@array`] type for storing ring buffer elements.
-//! This means that the number of elements must be know at compile time.
+//! This means that the number of elements must be known at compile time.
 //! No dynamic memory is ever allocated. (TODO: except `arc_array`?)
 //! (TODO: except for `Display` impls of some error messages? with `alloc` feature)
 //!
 //! They have the advantage that they can be used as `static` variables.
 //! (TODO: except `arc_array`?)
 //!
-//! TODO: example
+//! Here's an example using the [`rtrb::array`](mod@array) module:
+//!
+//! ```
+//! use rtrb::array::{Consumer, Producer, RingBuffer};
+//!
+//! static RB: RingBuffer<i32, 64> = RingBuffer::new();
+//!
+//! let mut p: Producer<'static, i32, 64> = RB.producer().unwrap();
+//!
+//! // This can be done in a different thread,
+//! // but producer and/or consumer can be moved to a different thread as well.
+//! let mut c: Consumer<'static, i32, 64> = RB.consumer().unwrap();
+//! ```
+//!
+//! A disadvantage ... size restrictions (stack size) ...
 //!
 //! All other modules use dynamic memory (allocated on the
 //! [heap](https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html#the-stack-and-the-heap)).
 //!
-//! ... less size restrictions (stack size?) ... since the compiler doesn't know the size,
-//! potentially fewer optimizations ...
+//! ... no stack size restrictions ...
+//!
+//! ... since the compiler doesn't know the size, potentially fewer optimizations ...
 //!
 //! A fixed-capacity buffer is allocated on construction.
 //!
