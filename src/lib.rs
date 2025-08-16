@@ -44,7 +44,7 @@
 //! No dynamic memory is ever allocated. (TODO: except `arc_array`?)
 //! (TODO: except for `Display` impls of some error messages? with `alloc` feature)
 //!
-//! They have the advantage that they can be used as `static` variables.
+//! They have the advantage that their ring buffers can be used as `static` variables.
 //! (TODO: except `arc_array`?)
 //!
 //! Here's an example using the [`rtrb::array`](mod@array) module:
@@ -56,8 +56,8 @@
 //!
 //! let mut p: Producer<'static, i32, 64> = RB.producer().unwrap();
 //!
-//! // This can be done in a different thread,
-//! // but producer and/or consumer can be moved to a different thread as well.
+//! // You can create producer and consumer in different threads, or you can
+//! // create them in the same thread and move them to separate threads afterwards.
 //! let mut c: Consumer<'static, i32, 64> = RB.consumer().unwrap();
 //! ```
 //!
