@@ -29,6 +29,7 @@ vrb = ["dep:libc", "alloc"]
 
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--generate-macro-expansion", "--generate-link-to-definition"]
 
 [dependencies]
 libc = { version = "0.2", optional = true }
