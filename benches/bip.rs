@@ -2,9 +2,10 @@ macro_rules! create_bip_benchmark {
     ($($id:literal, $create:expr, $write_chunk:expr, $read_chunk:expr,::)+) => {
 
 use std::convert::TryFrom as _;
+use std::hint::black_box;
 use std::sync::{Arc, Barrier};
 
-use criterion::{black_box, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main};
 
 fn help_with_type_inference<P, C, Create, WriteChunk, ReadChunk>(create: Create, write_chunk: WriteChunk, read_chunk: ReadChunk) -> (Create, WriteChunk, ReadChunk)
 where

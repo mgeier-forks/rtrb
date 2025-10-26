@@ -4,7 +4,7 @@ mod bip;
 
 create_bip_benchmark! {
     "rtrb",
-    rtrb::bip::RingBuffer::new,
+    rtrb::bip_arc::RingBuffer::new,
     |p, s| p.write_chunk(s.len()).map(|mut chunk| {
         chunk.as_mut_slice().copy_from_slice(s);
         chunk.commit_all();

@@ -2,9 +2,10 @@ macro_rules! create_two_threads_benchmark {
     ($($id:literal, $create:expr, $push:expr, $pop:expr,::)+) => {
 
 use std::convert::TryInto as _;
+use std::hint::black_box;
 use std::sync::{Arc, Barrier};
 
-use criterion::{black_box, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main};
 
 fn help_with_type_inference<P, C, Create, Push, Pop>(create: Create, push: Push, pop: Pop) -> (Create, Push, Pop)
 where
