@@ -40,4 +40,9 @@ create_two_threads_benchmark!(
     |q, i| q.push(i).is_ok(),
     |q| q.pop(),
     ::
+    "7-kanal",
+    kanal::bounded,
+    |p, i| p.try_send_realtime(i).unwrap(),
+    |c| c.try_recv_realtime().unwrap(),
+    ::
 );
