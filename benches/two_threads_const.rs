@@ -177,15 +177,6 @@ create_two_threads_const_benchmark! {
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::
-    "rtrb::array2",
-    { ($N:expr) => {{
-        use rtrb::array2::RingBuffer;
-        static RB: RingBuffer<u8, $N> = RingBuffer::new();
-        (RB.producer().unwrap(), RB.consumer().unwrap())
-    }}},
-    |p, i| p.push(i).is_ok(),
-    |c| c.pop().ok(),
-    ::
     "rtrb::bip_array",
     { ($N:expr) => {{
         use rtrb::bip_array::RingBuffer;
@@ -195,16 +186,9 @@ create_two_threads_const_benchmark! {
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::
-    "rtrb::arc_array",
+    "rtrb::arc",
     { ($N:expr) => {
-        rtrb::arc_array::RingBuffer::<u8, $N>::new()
-    }},
-    |p, i| p.push(i).is_ok(),
-    |c| c.pop().ok(),
-    ::
-    "rtrb::arc_array2",
-    { ($N:expr) => {
-        rtrb::arc_array2::RingBuffer::<u8, $N>::new()
+        rtrb::arc::RingBuffer::new($N)
     }},
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),

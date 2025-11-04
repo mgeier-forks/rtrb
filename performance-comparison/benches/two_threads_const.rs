@@ -23,13 +23,6 @@ create_two_threads_const_benchmark!(
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::
-    "rtrb::arc_array",
-    { ($N:expr) => {
-        rtrb::arc_array::RingBuffer::<u8, $N>::new()
-    }},
-    |p, i| p.push(i).is_ok(),
-    |c| c.pop().ok(),
-    ::
     "rtrb::arc",
     { ($N:expr) => {
         rtrb::arc::RingBuffer::<u8>::new($N)

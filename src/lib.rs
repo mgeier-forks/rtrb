@@ -40,12 +40,11 @@
 //! The modules containing the word `array` (TODO: as well as `embedded`?)
 //! are using the built-in
 //! [`prim@array`] type for storing ring buffer elements.
-//! This means that the number of elements must be known at compile time.
-//! No dynamic memory is ever allocated. (TODO: except `arc_array`?)
+//! This means that the capacity must be known at compile time.
+//! No dynamic memory is ever allocated.
 //! (TODO: except for `Display` impls of some error messages? with `alloc` feature)
 //!
 //! They have the advantage that their ring buffers can be used as `static` variables.
-//! (TODO: except `arc_array`?)
 //!
 //! Here's an example using the [`rtrb::array`](mod@array) module:
 //!
@@ -177,21 +176,13 @@ mod macros;
 pub mod arc;
 #[cfg(feature = "alloc")]
 pub mod arc2;
-#[cfg(feature = "alloc")]
-pub mod arc_array;
-#[cfg(feature = "alloc")]
-pub mod arc_array2;
 pub mod array;
-pub mod array2;
 #[cfg(feature = "alloc")]
 pub mod bip_arc;
 #[cfg(feature = "alloc")]
 pub mod bip_arc2;
-#[cfg(feature = "alloc")]
-pub mod bip_arc_array;
 pub mod bip_array;
 pub mod embedded;
-pub mod embedded2;
 #[cfg(feature = "vrb")]
 pub mod vrb;
 #[cfg(feature = "vrb")]
