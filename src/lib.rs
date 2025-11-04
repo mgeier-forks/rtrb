@@ -13,8 +13,8 @@
 //! | [`embedded`] | array ||||
 //! | [`bip_arc`]/[`bip_arc2`] | heap | ✔️ | ✔️ | ✔️ |
 //! | [`bip_array`] | array || ✔️ | ✔️ |
-//! | [`vrb_arc`] | heap | ✔️ | ✔️ | ✔️ |
-//! | [`vrb`] | heap || ✔️ | ✔️ |
+//! | [`vrb_arc`] | mmap | ✔️ | ✔️ | ✔️ |
+//! | [`vrb`] | mmap || ✔️ | ✔️ |
 //!
 //!
 //! # General Properties
@@ -160,10 +160,6 @@ mod cache_padded;
 #[doc(inline)]
 pub use cache_padded::CachePadded;
 
-// TODO: move to submodules (only docs)
-#[cfg(feature = "alloc")] // TODO: fine-grained feature selection
-pub mod chunks;
-
 // TODO: feature "portable-atomic"?
 mod atomic {
     pub use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
@@ -201,9 +197,9 @@ const IS_ABANDONED: u8 = 0b10000000;
 #[doc(hidden)]
 pub use arc::{Consumer, Producer, RingBuffer};
 
-// TODO: remove those:
-#[cfg(feature = "alloc")]
-pub use arc::{ReadChunk, WriteChunk, WriteChunkUninit};
+#[doc(hidden)]
+// TODO: remove this once docs are updated:
+pub use arc::chunks;
 
 #[doc(hidden)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

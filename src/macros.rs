@@ -95,6 +95,7 @@ macro_rules! storage_vec {
 macro_rules! storage_array {
     (arc = $arc:ident, padded = $padded:ident, $($skip:ident)?, rb_doc = $rb_doc:expr) => {
         use core::cell::UnsafeCell;
+        use core::mem::MaybeUninit;
 
         #[doc = $rb_doc]
         // TODO: manually derive Debug
@@ -348,7 +349,7 @@ macro_rules! ring_buffer {
     ) => {
         check_bip_contiguous!($bip, $contiguous);
 
-        use core::{cell::Cell, fmt, mem::MaybeUninit};
+        use core::{cell::Cell, fmt};
 
         use $crate::atomic::*;
 
@@ -505,46 +506,59 @@ macro_rules! ring_buffer {
             fn_consumer_read!(contiguous = $contiguous);
         });
 
-        struct_write_chunk_uninit!(N = $N, arc = $arc, contiguous = $contiguous);
-        struct_write_chunk!(N = $N);
-        struct_read_chunk!(N = $N, arc = $arc, contiguous = $contiguous);
-
-        impl_send_for_chunks!(N = $N, module = $module);
-
-        impl_!(WriteChunkUninit<'_>, N = $N, {
-            fn_write_chunk_uninit_as_mut_sliceX!(contiguous = $contiguous);
-            fn_write_chunk_uninit_commit_all!();
-            fn_write_chunk_uninit_commit!();
-            fn_write_chunk_uninit_fill_from_iter!(N = $N, arc = $arc, contiguous = $contiguous, module = $module);
-            fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
-
-            fn_write_chunk_uninit_drop_suffix!(contiguous = $contiguous);
-            fn_write_chunk_uninit_commit_unchecked!(bip = $bip);
-        });
-
-        impl_!(WriteChunk<'_>, N = $N, {
-            fn_write_chunk_as_mut_sliceX!(contiguous = $contiguous);
-            fn_write_chunk_commit_all!();
-            fn_write_chunk_commit!();
-            fn_write_chunk_len_and_is_empty!();
-        });
-
-        impl_!(ReadChunk<'_>, N = $N, {
-            fn_read_chunk_as_sliceX!(contiguous = $contiguous);
-            fn_read_chunk_as_mut_sliceX!(contiguous = $contiguous);
-            fn_read_chunk_commit_all!();
-            fn_read_chunk_commit!(N = $N, arc = $arc, module = $module);
-            fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
-
-            fn_read_chunk_uninit_commit_unchecked!(contiguous = $contiguous);
-        });
-
         impl_debug!(N = $N, RingBuffer);
         impl_debug!(N = $N, arc = $arc, Producer, Consumer);
-        impl_debug!(N = $N,
-            WriteChunkUninit<'_>, WriteChunk<'_>, ReadChunk<'_>, ReadChunkIntoIter<'_>);
 
-        impl_into_iterator_for_read_chunk!(N = $N, contiguous = $contiguous);
+        #[doc = mod_chunks_docstring!(storage = $storage, N = $N, arc = $arc, contiguous = $contiguous, module = $module)]
+        pub mod chunks {
+            use core::{fmt, mem::MaybeUninit};
+            use $crate::atomic::*;
+            use super::{Consumer, Producer};
+            // Only used in documentation:
+            #[allow(unused_imports)]
+            use super::CopyToUninit;
+
+            struct_write_chunk_uninit!(N = $N, arc = $arc, contiguous = $contiguous);
+            struct_write_chunk!(N = $N);
+            struct_read_chunk!(N = $N, arc = $arc, contiguous = $contiguous);
+
+            impl_send_for_chunks!(N = $N, module = $module);
+
+            impl_!(WriteChunkUninit<'_>, N = $N, {
+                fn_write_chunk_uninit_as_mut_sliceX!(contiguous = $contiguous);
+                fn_write_chunk_uninit_commit_all!();
+                fn_write_chunk_uninit_commit!();
+                fn_write_chunk_uninit_fill_from_iter!(N = $N, arc = $arc, contiguous = $contiguous, module = $module);
+                fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
+
+                fn_write_chunk_uninit_drop_suffix!(contiguous = $contiguous);
+                fn_write_chunk_uninit_commit_unchecked!(bip = $bip);
+            });
+
+            impl_!(WriteChunk<'_>, N = $N, {
+                fn_write_chunk_as_mut_sliceX!(contiguous = $contiguous);
+                fn_write_chunk_commit_all!();
+                fn_write_chunk_commit!();
+                fn_write_chunk_len_and_is_empty!();
+            });
+
+            impl_!(ReadChunk<'_>, N = $N, {
+                fn_read_chunk_as_sliceX!(contiguous = $contiguous);
+                fn_read_chunk_as_mut_sliceX!(contiguous = $contiguous);
+                fn_read_chunk_commit_all!();
+                fn_read_chunk_commit!(N = $N, arc = $arc, module = $module);
+                fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
+
+                fn_read_chunk_uninit_commit_unchecked!(contiguous = $contiguous);
+            });
+
+            impl_debug!(N = $N,
+                WriteChunkUninit<'_>, WriteChunk<'_>, ReadChunk<'_>, ReadChunkIntoIter<'_>);
+
+            impl_into_iterator_for_read_chunk!(N = $N, contiguous = $contiguous);
+        }
+
+        use chunks::{ReadChunk, WriteChunk, WriteChunkUninit};
     };
 }
 
@@ -992,7 +1006,6 @@ macro_rules! struct_arc_ring_buffer {
         use core::ptr::NonNull;
 
         // Non-public helper type.
-        // TODO: make non-public!
         struct_!(ArcRingBuffer, N = $N, {
             ptr: NonNull<generic!(RingBuffer, N = $N)>,
         });
@@ -2609,9 +2622,7 @@ macro_rules! fn_consumer_read_chunk_docstring {
         ///
         /// # Examples
         ///
-        /// TODO: fix link
-        ///
-        /// See the documentation of the [`chunks`](crate::chunks#examples) module.
+        /// See the documentation of the [`chunks`](chunks#examples) module.
     )}
 }
 
@@ -2986,7 +2997,7 @@ macro_rules! struct_write_chunk_uninit {
         );
 
         impl_!(WriteChunkUninit<'a>, N = $N, {
-            unsafe fn new(producer: &'a generic!(Producer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
+            pub(super) unsafe fn new(producer: &'a generic!(Producer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
                 Self {
                     // SAFETY: Caller must guarantee that `offset` is valid.
                     ptr: unsafe { producer.buffer.data_ptr().add(offset) },
@@ -3027,7 +3038,7 @@ macro_rules! struct_write_chunk_uninit {
         );
 
         impl_!(WriteChunkUninit<'a>, N = $N, {
-            unsafe fn new(producer: &'a generic!(Producer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
+            pub(super) unsafe fn new(producer: &'a generic!(Producer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
                 let first_len = n.min(producer.buffer.capacity() - offset);
                 Self {
                     // SAFETY: Caller must guarantee that `offset` is valid.
@@ -3102,7 +3113,7 @@ macro_rules! struct_read_chunk {
         );
 
         impl_!(ReadChunk<'a>, N = $N, {
-            unsafe fn new(consumer: &'a generic!(Consumer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
+            pub(super) unsafe fn new(consumer: &'a generic!(Consumer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
                 Self {
                     // SAFETY: Caller must guarantee that `offset` is valid.
                     ptr: unsafe { consumer.buffer.data_ptr().add(offset) },
@@ -3129,7 +3140,7 @@ macro_rules! struct_read_chunk {
         );
 
         impl_!(ReadChunk<'a>, N = $N, {
-            unsafe fn new(consumer: &'a generic!(Consumer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
+            pub(super) unsafe fn new(consumer: &'a generic!(Consumer, N = $N, arc = $arc), n: usize, offset: usize) -> Self {
                 let b = &consumer.buffer;
                 let first_len = n.min(b.capacity() - offset);
                 Self {
@@ -3447,19 +3458,19 @@ macro_rules! impl_send_for_chunks {
         impl_!(
             /// It (as well as [`WriteChunk`]) can be moved ...
             /// ```
-            #[doc = doctest_import!($module, "{WriteChunk, WriteChunkUninit}")]
+            #[doc = doctest_import!($module, "chunks::{WriteChunk, WriteChunkUninit}")]
             /// fn assert_send<X: Send>() {}
             #[doc = concat!("assert_send::<", doctest_ty!(WriteChunkUninit, u8, 8, N = $N), ">();")]
             #[doc = concat!("assert_send::<", doctest_ty!(WriteChunk, u8, 8, N = $N), ">();")]
             /// ```
             /// ... but not shared between threads:
             /// ```compile_fail
-            #[doc = doctest_import!($module, "WriteChunkUninit", "# ")]
+            #[doc = doctest_import!($module, "chunks::WriteChunkUninit", "# ")]
             /// fn assert_sync<X: Sync>() {}
             #[doc = concat!("assert_sync::<", doctest_ty!(WriteChunkUninit, u8, 8, N = $N), ">();")]
             /// ```
             /// ```compile_fail
-            #[doc = doctest_import!($module, "WriteChunk", "# ")]
+            #[doc = doctest_import!($module, "chunks::WriteChunk", "# ")]
             /// # fn assert_sync<X: Sync>() {}
             #[doc = concat!("assert_sync::<", doctest_ty!(WriteChunk, u8, 8, N = $N), ">();")]
             /// ```
@@ -3470,13 +3481,13 @@ macro_rules! impl_send_for_chunks {
         impl_!(
             /// It (and any wrapper structs) can be moved ...
             /// ```
-            #[doc = doctest_import!($module, "ReadChunk")]
+            #[doc = doctest_import!($module, "chunks::ReadChunk")]
             /// fn assert_send<X: Send>() {}
             #[doc = concat!("assert_send::<", doctest_ty!(ReadChunk, u8, 8, N = $N), ">();")]
             /// ```
             /// ... but not shared between threads:
             /// ```compile_fail
-            #[doc = doctest_import!($module, "ReadChunk", "# ")]
+            #[doc = doctest_import!($module, "chunks::ReadChunk", "# ")]
             /// fn assert_sync<X: Sync>() {}
             #[doc = concat!("assert_sync::<", doctest_ty!(ReadChunk, u8, 8, N = $N), ">();")]
             /// ```
@@ -3615,4 +3626,232 @@ macro_rules! fn_read_chunk_into_iter_size_hint {
             (remaining, Some(remaining))
         }
     };
+}
+
+macro_rules! mod_chunks_docstring {
+    (storage = $storage:ident, N = $N:ident, arc = $arc:ident, contiguous = $contiguous:ident, module = $module:literal) => { docstring!(
+/// Writing and reading multiple items at once into and from a [`RingBuffer`].
+///
+/// Multiple items at once can be moved from an iterator into the ring buffer by using
+/// [`Producer::write_chunk_uninit()`] followed by [`WriteChunkUninit::fill_from_iter()`].
+/// Alternatively, mutable access to the (uninitialized) slots of the chunk can be obtained with
+#[doc = choice!($contiguous,
+    /// [`WriteChunkUninit::as_mut_slice()`],
+    ::
+    /// [`WriteChunkUninit::as_mut_slices()`],
+)]
+/// which requires writing some `unsafe` code.
+/// To avoid that, [`Producer::write_chunk()`] can be used,
+/// which initializes all slots with their [`Default`] value
+/// and provides mutable access by means of
+#[doc = choice!($contiguous,
+    /// [`WriteChunk::as_mut_slice()`].
+    ::
+    /// [`WriteChunk::as_mut_slices()`].
+)]
+///
+/// Multiple items at once can be moved out of the ring buffer by using
+/// [`Consumer::read_chunk()`] and iterating over the returned [`ReadChunk`]
+/// (or by explicitly calling [`ReadChunk::into_iter()`]).
+/// Immutable access to the slots of the chunk can be obtained with
+#[doc = choice!($contiguous,
+    /// [`ReadChunk::as_slice()`].
+    ::
+    /// [`ReadChunk::as_slices()`].
+)]
+#[doc = docstring_exclude_vrb!($storage,
+    ///
+    /// # Examples
+    ///
+    /// This example uses a single thread for simplicity, but in a real application,
+    /// `p` and `c` would of course live on different threads:
+    ///
+    /// ```
+    #[doc = doctest_import!($module, "RingBuffer")]
+    ///
+    #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 4)]
+    ///
+    /// if let Ok(chunk) = p.write_chunk_uninit(4) {
+    ///     chunk.fill_from_iter([10, 11, 12]);
+    ///     // Note that we requested 4 slots but we've only written to 3 of them!
+    /// } else {
+    ///     unreachable!();
+    /// }
+    ///
+    /// assert_eq!(p.slots(), 1);
+    /// assert_eq!(c.slots(), 3);
+    ///
+    /// if let Ok(chunk) = c.read_chunk(2) {
+    ///     assert_eq!(chunk.into_iter().collect::<Vec<_>>(), [10, 11]);
+    /// } else {
+    ///     unreachable!();
+    /// }
+    ///
+    /// // One element is still in the queue:
+    /// assert_eq!(c.peek(), Ok(&12));
+    ///
+    /// let data = vec![20, 21];
+    /// // NB: write_chunk_uninit() could be used for possibly better performance:
+    /// if let Ok(mut chunk) = p.write_chunk(2) {
+    #[doc = choice!($contiguous,
+        ///     // NB: a chunk of 2 was not available at the end of the buffer,
+        ///     //     so one slot was skipped and this is a chunk at the beginning:
+        ///     chunk.as_mut_slice().copy_from_slice(&data);
+        ::
+        ///     let (first, second) = chunk.as_mut_slices();
+        ///     let mid = first.len();
+        ///     first.copy_from_slice(&data[..mid]);
+        ///     second.copy_from_slice(&data[mid..]);
+    )]
+    ///     chunk.commit_all();
+    /// } else {
+    ///     unreachable!();
+    /// }
+    ///
+    /// assert_eq!(c.slots(), 3);
+    #[doc = choice!($contiguous,
+        /// // The skipped slot is not available (for now)!
+        /// assert!(p.is_full());
+        /// assert_eq!(c.pop(), Ok(12));
+        /// // Popping this element has unblocked the skipped slot:
+        /// // TODO: fix this:
+        /// //assert_eq!(p.slots(), 2);
+        /// // TODO: try also this alternative (but then remove it?):
+        /// //assert!(p.write_chunk(2).is_ok());
+        ///
+        /// let mut v = Vec::<i32>::with_capacity(2);
+        /// if let Ok(chunk) = c.read_chunk(2) {
+        ///     v.extend(chunk.as_slice());
+        ///     chunk.commit_all();
+        /// } else {
+        ///     unreachable!();
+        /// }
+        ///
+        /// assert_eq!(v, [20, 21]);
+        ::
+        /// assert_eq!(p.slots(), 1);
+        ///
+        /// let mut v = Vec::<i32>::with_capacity(3);
+        /// if let Ok(chunk) = c.read_chunk(3) {
+        ///     let (first, second) = chunk.as_slices();
+        ///     v.extend(first);
+        ///     v.extend(second);
+        ///     chunk.commit_all();
+        /// } else {
+        ///     unreachable!();
+        /// }
+        ///
+        /// assert_eq!(v, [12, 20, 21]);
+    )]
+    /// assert!(c.is_empty());
+    /// ```
+    ///
+    #[doc = choice!($contiguous,
+        /// TODO: modify iterator example, use slots_contiguous()
+        ::
+        /// The iterator API can be used to move items from one ring buffer to another:
+        ///
+        /// ```
+        #[doc = doctest_import!($module, "{Consumer, Producer}")]
+        ///
+        /// // TODO: make this work for "array" variants:
+        /// //fn move_items<T>(src: &mut Consumer<T>, dst: &mut Producer<T>) -> usize {
+        /// //    let n = src.slots().min(dst.slots());
+        /// //    dst.write_chunk_uninit(n).unwrap().fill_from_iter(src.read_chunk(n).unwrap())
+        /// //}
+        /// ```
+    )]
+)]
+///
+/// ## Common Access Patterns
+///
+/// TODO: does this make sense for "contiguous" variants?
+///
+/// The following examples show the [`Producer`] side;
+/// similar patterns can of course be used with [`Consumer::read_chunk()`] as well.
+/// Furthermore, the examples use [`Producer::write_chunk_uninit()`],
+/// along with a bit of `unsafe` code.
+/// To avoid this, you can use [`Producer::write_chunk()`] instead,
+/// which requires the trait bound `T: Default` and will lead to a small runtime overhead.
+///
+/// Copy a whole slice of items into the ring buffer, but only if space permits
+/// (if not, the entire input slice is returned as an error):
+///
+/// ```
+/// use rtrb::{Producer, CopyToUninit as _};
+/// // TODO:
+#[doc = doctest_import!($module, "{Producer, CopyToUninit as _}", "// ")]
+///
+/// fn push_entire_slice<'a, T>(queue: &mut Producer<T>, slice: &'a [T]) -> Result<(), &'a [T]>
+/// where
+///     T: Copy,
+/// {
+///     if let Ok(mut chunk) = queue.write_chunk_uninit(slice.len()) {
+///         let (first, second) = chunk.as_mut_slices();
+///         let mid = first.len();
+///         slice[..mid].copy_to_uninit(first);
+///         slice[mid..].copy_to_uninit(second);
+///         // SAFETY: All slots have been initialized
+///         unsafe { chunk.commit_all() };
+///         Ok(())
+///     } else {
+///         Err(slice)
+///     }
+/// }
+/// ```
+///
+/// Copy as many items as possible from a given slice, returning the number of copied items:
+///
+/// ```
+/// use rtrb::{Producer, CopyToUninit as _, ChunkError::TooFewSlots};
+/// // TODO:
+#[doc = doctest_import!($module, "{Producer, CopyToUninit as _, ChunkError::TooFewSlots}", "// ")]
+///
+/// fn push_partial_slice<T>(queue: &mut Producer<T>, slice: &[T]) -> usize
+/// where
+///     T: Copy,
+/// {
+///     let mut chunk = match queue.write_chunk_uninit(slice.len()) {
+///         Ok(chunk) => chunk,
+///         // Remaining slots are returned, this will always succeed:
+///         Err(TooFewSlots(n)) => queue.write_chunk_uninit(n).unwrap(),
+///     };
+///     let end = chunk.len();
+///     let (first, second) = chunk.as_mut_slices();
+///     let mid = first.len();
+///     slice[..mid].copy_to_uninit(first);
+///     slice[mid..end].copy_to_uninit(second);
+///     // SAFETY: All slots have been initialized
+///     unsafe { chunk.commit_all() };
+///     end
+/// }
+/// ```
+///
+/// Write as many slots as possible, given an iterator
+/// (and return the number of written slots):
+///
+/// ```
+/// use rtrb::{Producer, ChunkError::TooFewSlots};
+/// // TODO:
+#[doc = doctest_import!($module, "{Producer, ChunkError::TooFewSlots}", "// ")]
+///
+/// fn push_from_iter<T, I>(queue: &mut Producer<T>, iter: I) -> usize
+/// where
+///     T: Default,
+///     I: IntoIterator<Item = T>,
+/// {
+///     let iter = iter.into_iter();
+///     let n = match iter.size_hint() {
+///         (_, None) => queue.slots(),
+///         (_, Some(n)) => n,
+///     };
+///     let chunk = match queue.write_chunk_uninit(n) {
+///         Ok(chunk) => chunk,
+///         // Remaining slots are returned, this will always succeed:
+///         Err(TooFewSlots(n)) => queue.write_chunk_uninit(n).unwrap(),
+///     };
+///     chunk.fill_from_iter(iter)
+/// }
+/// ```
+    )};
 }
