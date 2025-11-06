@@ -13,8 +13,7 @@
 //! | [`embedded`] | array ||||
 //! | [`bip_arc`]/[`bip_arc2`] | heap | ✔️ | ✔️ | ✔️ |
 //! | [`bip_array`] | array || ✔️ | ✔️ |
-//! | [`vrb_arc`] | mmap | ✔️ | ✔️ | ✔️ |
-//! | [`vrb`] | mmap || ✔️ | ✔️ |
+//! | [`vrb_arc2`] | mmap | ✔️ | ✔️ | ✔️ |
 //!
 //!
 //! # General Properties
@@ -180,9 +179,7 @@ pub mod bip_arc2;
 pub mod bip_array;
 pub mod embedded;
 #[cfg(feature = "vrb")]
-pub mod vrb;
-#[cfg(feature = "vrb")]
-pub mod vrb_arc;
+pub mod vrb_arc2;
 
 // TODO: boxed, from_ptr, new_at_ptr (+ same for bip)
 
