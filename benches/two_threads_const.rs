@@ -123,16 +123,16 @@ $(
                 let mut sent_i = 0;
                 let mut expected_i = 0;
                 while expected_i < iters {
-                    // eagerly pop as many items as possible ...
+                    // Try to push a single item ...
+                    #[allow(clippy::incompatible_msrv)] // stable since 1.49
+                    if push(&mut p0, black_box(sent_i as u8)) {
+                        sent_i += 1;
+                    }
+                    // ... then eagerly pop as many items as possible:
                     #[allow(clippy::incompatible_msrv)] // stable since 1.49
                     while let Some(x) = black_box(pop(&mut c1)) {
                         assert_eq!(x, expected_i as u8);
                         expected_i += 1;
-                    }
-                    // ... then try to push a single item:
-                    #[allow(clippy::incompatible_msrv)] // stable since 1.49
-                    if push(&mut p0, black_box(sent_i as u8)) {
-                        sent_i += 1;
                     }
                 }
 
@@ -173,8 +173,8 @@ create_two_threads_const_benchmark! {
     "rtrb::array",
     { ($N:expr) => {{
         use rtrb::array::RingBuffer;
-        static RB: RingBuffer<u8, $N> = RingBuffer::new();
-        (RB.producer().unwrap(), RB.consumer().unwrap())
+        let rb = Box::leak(Box::new(RingBuffer::<u8, $N>::new()));
+        (rb.producer().unwrap(), rb.consumer().unwrap())
     }}},
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
@@ -182,8 +182,8 @@ create_two_threads_const_benchmark! {
     "rtrb::bip_array",
     { ($N:expr) => {{
         use rtrb::bip_array::RingBuffer;
-        static RB: RingBuffer<u8, $N> = RingBuffer::new();
-        (RB.producer().unwrap(), RB.consumer().unwrap())
+        let rb = Box::leak(Box::new(RingBuffer::<u8, $N>::new()));
+        (rb.producer().unwrap(), rb.consumer().unwrap())
     }}},
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),

@@ -8,8 +8,8 @@ create_two_threads_const_benchmark!(
     "rtrb::array",
     { ($N:expr) => {{
         use rtrb::array::RingBuffer;
-        static RB: RingBuffer<u8, $N> = RingBuffer::new();
-        (RB.producer().unwrap(), RB.consumer().unwrap())
+        let rb = Box::leak(Box::new(RingBuffer::<u8, $N>::new()));
+        (rb.producer().unwrap(), rb.consumer().unwrap())
     }}},
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
@@ -17,8 +17,8 @@ create_two_threads_const_benchmark!(
     "rtrb::embedded",
     { ($N:expr) => {{
         use rtrb::embedded::RingBuffer;
-        static RB: RingBuffer<u8, $N> = RingBuffer::new();
-        (RB.producer().unwrap(), RB.consumer().unwrap())
+        let rb = Box::leak(Box::new(RingBuffer::<u8, $N>::new()));
+        (rb.producer().unwrap(), rb.consumer().unwrap())
     }}},
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
