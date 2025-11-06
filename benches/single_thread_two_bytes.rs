@@ -8,7 +8,9 @@
 #[cfg(feature = "std")]
 use std::io::{Read, Write};
 
-use criterion::{black_box, criterion_group, criterion_main};
+use core::hint::black_box;
+
+use criterion::{criterion_group, criterion_main};
 use criterion::{AxisScale, PlotConfiguration};
 
 use rtrb::{CopyToUninit, RingBuffer};

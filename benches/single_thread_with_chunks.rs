@@ -2,9 +2,10 @@
 //!
 //! Single-threaded usage is *not* a typical use case!
 
+use std::hint::black_box;
 use std::io::{Read, Write};
 
-use criterion::{black_box, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main};
 use criterion::{AxisScale, PlotConfiguration};
 
 use rtrb::{CopyToUninit, RingBuffer};

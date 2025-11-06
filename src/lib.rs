@@ -197,6 +197,7 @@ const IS_ABANDONED: u8 = 0b10000000;
 #[doc(hidden)]
 pub use arc::{Consumer, Producer, RingBuffer};
 
+#[cfg(feature = "alloc")]
 #[doc(hidden)]
 // TODO: remove this once docs are updated:
 pub use arc::chunks;

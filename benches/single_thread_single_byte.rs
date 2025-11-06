@@ -3,7 +3,9 @@
 //! This is *not* a typical use case but it should nevertheless be useful
 //! for comparing the overhead of different methods.
 
-use criterion::{black_box, criterion_group, criterion_main};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main};
 use criterion::{AxisScale, PlotConfiguration};
 
 use rtrb::RingBuffer;
