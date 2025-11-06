@@ -68,6 +68,7 @@ $(
         };
     }
 
+    add_bench!(2);
     add_bench!(4);
     add_bench!(8);
     add_bench!(16);
@@ -142,6 +143,7 @@ $(
         };
     }
 
+    add_bench!(2);
     add_bench!(4);
     add_bench!(8);
     add_bench!(16);
