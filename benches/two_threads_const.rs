@@ -27,66 +27,6 @@ $(
     // NB: wrap-around differs between implementations (N vs. N-1 elements)
 )+
 
-    let mut group = criterion.benchmark_group("const-size");
-    group.plot_config(criterion::PlotConfiguration::default()
-        .summary_scale(criterion::AxisScale::Logarithmic));
-
-$(
-    macro_rules! add_bench {
-        ($N:expr) => {
-            group.bench_with_input(BenchmarkId::new($id, $N), &$N, |b, _| b.iter_custom(|iters| {
-                macro_rules! create $create
-                let (mut p, mut c) = create!($N);
-                let (push, pop) = help_with_type_inference(&p, &c, $push, $pop);
-                let push_thread = {
-                    std::thread::spawn(move || {
-                        // The timing starts once both threads are ready.
-                        let start = std::time::Instant::now();
-                        for i in 0..iters {
-                            while !push(&mut p, black_box(i as u8)) {
-                                std::hint::spin_loop();
-                            }
-                        }
-                        start
-                    })
-                };
-                // While the second thread is still starting up, this thread will busy-wait.
-                for i in 0..iters {
-                    loop {
-                        if let Some(x) = pop(&mut c) {
-                            assert_eq!(x, i as u8);
-                            break;
-                        }
-                        std::hint::spin_loop();
-                    }
-                }
-                // The timing stops once all items have been received.
-                let stop = std::time::Instant::now();
-                let start = push_thread.join().unwrap();
-                stop.duration_since(start)
-            }));
-        };
-    }
-
-    add_bench!(2);
-    add_bench!(4);
-    add_bench!(8);
-    add_bench!(16);
-    add_bench!(32);
-    add_bench!(64);
-    add_bench!(128);
-    add_bench!(256);
-    add_bench!(512);
-    add_bench!(1024);
-    add_bench!(2048);
-    add_bench!(4096);
-    add_bench!(8192);
-    add_bench!(16384);
-    add_bench!(32768);
-)+
-
-    group.finish();
-
     let mut group_eager_pop = criterion.benchmark_group("eager-pop");
     group_eager_pop.plot_config(criterion::PlotConfiguration::default()
         .summary_scale(criterion::AxisScale::Logarithmic));
