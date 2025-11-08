@@ -2495,10 +2495,12 @@ macro_rules! fn_producer_write_chunk_uninit {
                     }
                 }
             } else {
-                // No need to refresh `head`, it cannot overtake `tail`.
+                // No need to refresh `head` here, it cannot overtake `tail`.
             }
             let offset;
             if slots < n {
+                // NB: If we reach this point, we know that either the buffer is empty,
+                // or collapsed_head < collapsed_tail.
                 // Is there enough space at the end of the buffer?
                 slots = b.capacity() - collapsed_tail;
                 if slots < n {
