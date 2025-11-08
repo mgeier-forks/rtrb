@@ -1578,6 +1578,8 @@ macro_rules! fn_producer_slots {
 
 macro_rules! fn_producer_slots_contiguousX {
     (bip = yes) => {
+        /// Returns size of first contiguous chunk and `true` if it is definitely the only one.
+        /// If `false`, there may be another chunk at the beginning of the buffer.
         // TODO: inline?
         fn slots_contiguous_helper(&self) -> (usize, bool) {
             // TODO: code reuse with write_chunk_uninit() and next_tail()
@@ -1630,8 +1632,7 @@ macro_rules! fn_producer_slots_contiguousX {
             let b = &self.buffer;
             let head = b.head.load(Ordering::Acquire);
             self.cached_head.set(head);
-            let tail = self.cached_tail.get();
-            (slots, b.collapse_position(head) - b.collapse_position(tail))
+            (slots, b.collapse_position(head))
         }
 
         /// Returns the number of slots of the next contiguous segment available for writing with
@@ -2321,6 +2322,11 @@ macro_rules! fn_write_chunk_uninit_commit_unchecked {
             let mut tail = self.producer.cached_tail.get();
             let collapsed_tail = b.collapse_position(tail);
             if self.ptr == b.data_ptr() && collapsed_tail != 0 {
+                // We are writing a chunk at the beginning of the buffer
+                // but the write index is not at the beginning!
+                // This means we have skipped some slots and have to
+                // set `skip` and fast-forward `tail`.
+
                 // NB: It is safe to store `skip` before `tail`, because the consumer
                 // will potentially only read between `head` and (the old) `tail`,
                 // without looking at `skip`.
@@ -2328,10 +2334,10 @@ macro_rules! fn_write_chunk_uninit_commit_unchecked {
                 // the consumer would see new data at the beginning of the buffer,
                 // but wouldn't know that the end has to be skipped.
                 b.skip.store(collapsed_tail, Ordering::Release);
-                // TODO: make this a reusable function?
-                tail = b.increment(tail, b.capacity() - collapsed_tail);
+                tail = b.increment(tail, b.capacity() - collapsed_tail + n);
+            } else {
+                tail = b.increment(tail, n);
             }
-            tail = b.increment(tail, n);
             b.tail.store(tail, Ordering::Release);
             self.producer.cached_tail.set(tail);
             n
@@ -3680,6 +3686,11 @@ macro_rules! mod_chunks_docstring {
     ///
     /// assert_eq!(p.slots(), 1);
     /// assert_eq!(c.slots(), 3);
+    #[doc = choice!($contiguous,
+        /// // Note that all of those slots are available in a single contiguous chunk:
+        /// assert_eq!(c.slots_contiguous(), (3, 0));
+        ::
+    )]
     ///
     /// if let Ok(chunk) = c.read_chunk(2) {
     ///     assert_eq!(chunk.into_iter().collect::<Vec<_>>(), [10, 11]);
@@ -3690,12 +3701,19 @@ macro_rules! mod_chunks_docstring {
     /// // One element is still in the queue:
     /// assert_eq!(c.peek(), Ok(&12));
     ///
+    /// assert_eq!(p.slots(), 3);
+    #[doc = choice!($contiguous,
+        /// // NB: Those free slots are available in two contiguous chunks:
+        /// assert_eq!(p.slots_contiguous(), (1, 2));
+        ::
+    )]
+    ///
     /// let data = vec![20, 21];
     /// // NB: write_chunk_uninit() could be used for possibly better performance:
     /// if let Ok(mut chunk) = p.write_chunk(2) {
     #[doc = choice!($contiguous,
         ///     // NB: a chunk of 2 was not available at the end of the buffer,
-        ///     //     so one slot was skipped and this is a chunk at the beginning:
+        ///     //     so one slot was skipped and we got a chunk at the beginning.
         ///     chunk.as_mut_slice().copy_from_slice(&data);
         ::
         ///     let (first, second) = chunk.as_mut_slices();
@@ -3710,12 +3728,12 @@ macro_rules! mod_chunks_docstring {
     ///
     /// assert_eq!(c.slots(), 3);
     #[doc = choice!($contiguous,
-        /// // The skipped slot is not available (for now)!
-        /// assert!(p.is_full());
+        /// assert!(p.is_full()); // The skipped slot is not available (for now)!
         /// assert_eq!(c.pop(), Ok(12));
         /// // Popping this element has unblocked the skipped slot:
         /// // TODO: fix this:
         /// //assert_eq!(p.slots(), 2);
+        /// //assert_eq!(p.slots_contiguous(), (2, 0));
         /// // TODO: try also this alternative (but then remove it?):
         /// //assert!(p.write_chunk(2).is_ok());
         ///
