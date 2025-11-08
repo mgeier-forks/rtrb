@@ -43,16 +43,12 @@ $(
                 let echo_thread = std::thread::spawn(move || {
                     for _ in 0..iters {
                         let x = loop {
-                            #[allow(clippy::incompatible_msrv)] // stable since 1.49
                             if let Some(x) = black_box(pop(&mut c0)) {
                                 break x;
                             }
-                            #[allow(clippy::incompatible_msrv)] // stable since 1.49
                             std::hint::spin_loop();
                         };
-                        #[allow(clippy::incompatible_msrv)] // stable since 1.49
                         while !push(&mut p1, black_box(x)) {
-                            #[allow(clippy::incompatible_msrv)] // stable since 1.49
                             std::hint::spin_loop();
                         }
                     }
@@ -64,12 +60,10 @@ $(
                 let mut expected_i = 0;
                 while expected_i < iters {
                     // Try to push a single item ...
-                    #[allow(clippy::incompatible_msrv)] // stable since 1.49
                     if push(&mut p0, black_box(sent_i as u8)) {
                         sent_i += 1;
                     }
                     // ... then eagerly pop as many items as possible:
-                    #[allow(clippy::incompatible_msrv)] // stable since 1.49
                     while let Some(x) = black_box(pop(&mut c1)) {
                         assert_eq!(x, expected_i as u8);
                         expected_i += 1;

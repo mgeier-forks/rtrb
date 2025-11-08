@@ -1,4 +1,4 @@
-#![allow(clippy::incompatible_msrv)] // for NonNull methods
+#![allow(clippy::incompatible_msrv)] // for NonNull methods (stable since 1.80.0)
 
 use std::{io::Write as _, marker::PhantomData, ptr::NonNull, time::Duration};
 
