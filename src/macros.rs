@@ -1927,7 +1927,7 @@ macro_rules! fn_consumer_slots {
         // TODO: code reuse with other "slots" variations?
         pub fn slots(&self) -> usize {
             let b = &self.buffer;
-            let head = self.cached_head.get();
+            let mut head = self.cached_head.get();
             let tail = b.tail.load(Ordering::Acquire);
             self.cached_tail.set(tail);
             if head == tail {
@@ -1939,8 +1939,22 @@ macro_rules! fn_consumer_slots {
                 collapsed_tail - collapsed_head
             } else {
                 let skip = b.skip.load(Ordering::Acquire);
-                collapsed_tail + skip - collapsed_head
-                // TODO: update "skip" (and "head") if collapsed_head == skip? Can that even happen?
+                // TODO: code reuse with slots_contiguous..()?
+                let slots_at_end = skip - collapsed_head;
+                if slots_at_end != 0 {
+                    return collapsed_tail + slots_at_end;
+                }
+                // There are no more slots at the end of the buffer,
+                // let's clear `skip` and wrap around!
+                if skip != b.capacity() {
+                    b.skip.store(b.capacity(), Ordering::Release);
+                }
+                head = b.increment(head, b.capacity() - collapsed_head);
+                // NB: `skip` is stored before `head`.
+                b.head.store(head, Ordering::Release);
+                self.cached_head.set(head);
+                debug_assert_eq!(b.collapse_position(head), 0);
+                collapsed_tail
             }
         }
     };
@@ -1974,6 +1988,8 @@ macro_rules! fn_consumer_slots_contiguousX {
                 if slots != 0 {
                     return (slots, false);
                 }
+                // There are no more slots at the end of the buffer,
+                // let's clear `skip` and wrap around!
                 if skip != b.capacity() {
                     b.skip.store(b.capacity(), Ordering::Release);
                 }
