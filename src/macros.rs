@@ -482,7 +482,7 @@ macro_rules! ring_buffer {
         });
 
         impl_!(Consumer, N = $N, arc = $arc, {
-            fn_consumer_pop!(N = $N, arc = $arc, bip = $bip, module = $module);
+            fn_consumer_pop!(N = $N, arc = $arc, module = $module);
             fn_consumer_peek!(N = $N, arc = $arc, module = $module);
             fn_consumer_read_chunk!(N = $N, bip = $bip, contiguous = $contiguous);
             fn_consumer_slots!(N = $N, arc = $arc, bip = $bip, module = $module);
@@ -1817,35 +1817,7 @@ macro_rules! fn_producer_next_tail {
 }
 
 macro_rules! fn_consumer_pop {
-    (N = $N:ident, arc = $arc:ident, bip = yes, module = $module:literal) => {
-        // TODO: docs
-        pub fn pop(&mut self) -> Result<T, PopError> {
-            if let Some(head) = self.next_head() {
-                let b = &self.buffer;
-                // SAFETY: head points to an initialized slot.
-                let value = unsafe { b.slot_ptr(head).read() };
-
-                // TODO: can we only access `skip` if collapsed_tail < collapsed_head?
-                // TODO: document this somewhere?
-
-                let skip = b.skip.load(Ordering::Acquire);
-                let head = if skip != b.capacity() && b.collapse_position(head) + 1 == skip {
-                    // NB: `skip` is stored before `head`.
-                    b.skip.store(b.capacity(), Ordering::Release);
-                    b.increment(head, 1 + b.capacity() - skip)
-                } else {
-                    b.increment1(head)
-                };
-                // TODO: now that we are doing this, can we reduce access to `skip` elsewhere?
-                b.head.store(head, Ordering::Release);
-                self.cached_head.set(head);
-                Ok(value)
-            } else {
-                Err(PopError::Empty)
-            }
-        }
-    };
-    (N = $N:ident, arc = $arc:ident, bip = no, module = $module:literal) => {
+    (N = $N:ident, arc = $arc:ident, module = $module:literal) => {
         /// Attempts to pop the next element from the queue.
         ///
         /// The element is *moved* out of the ring buffer and its slot
@@ -3799,7 +3771,7 @@ macro_rules! mod_chunks_docstring {
         /// //assert_eq!(p.slots(), 2);
         /// //assert_eq!(p.slots_contiguous(), (2, 0));
         /// // TODO: try also this alternative (but then remove it?):
-        /// assert!(p.write_chunk(2).is_ok());
+        /// //assert!(p.write_chunk(2).is_ok());
         ///
         /// let mut v = Vec::<i32>::with_capacity(2);
         /// if let Ok(chunk) = c.read_chunk(2) {
