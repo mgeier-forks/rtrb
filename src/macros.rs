@@ -2501,10 +2501,24 @@ macro_rules! fn_producer_write_chunk_uninit {
                     // ... and try again.
                     let is_empty = head == tail;
                     if !is_empty && collapsed_tail <= collapsed_head {
-                        // `head` did not wrap around.
-                        slots = collapsed_head - collapsed_tail;
-                        if slots < n {
-                            return Err(ChunkError::TooFewSlots(slots));
+                        // `head` did not wrap around after refreshing.
+                        // However, we also need to check if it landed on `skip`:
+                        let skip = b.skip.load(Ordering::Acquire);
+                        if collapsed_head == skip {
+                            // `head` is beyond the valid slots and has to be reset.
+                            head = b.increment(head, self.capacity() - skip);
+                            b.head.store(head, Ordering::Release);
+                            // TODO: order of storing head and skip?
+                            self.cached_head.set(head);
+                            collapsed_head = b.collapse_position(head);
+                            b.skip.store(b.capacity(), Ordering::Release);
+                            debug_assert_eq!(collapsed_head, 0);
+                            // `head` did wrap around after all, we'll continue below.
+                        } else {
+                            slots = collapsed_head - collapsed_tail;
+                            if slots < n {
+                                return Err(ChunkError::TooFewSlots(slots));
+                            }
                         }
                     } else {
                         // `head` did wrap around, we'll continue below.
@@ -3771,7 +3785,7 @@ macro_rules! mod_chunks_docstring {
         /// //assert_eq!(p.slots(), 2);
         /// //assert_eq!(p.slots_contiguous(), (2, 0));
         /// // TODO: try also this alternative (but then remove it?):
-        /// //assert!(p.write_chunk(2).is_ok());
+        /// assert!(p.write_chunk(2).is_ok());
         ///
         /// let mut v = Vec::<i32>::with_capacity(2);
         /// if let Ok(chunk) = c.read_chunk(2) {
