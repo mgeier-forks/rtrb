@@ -1,6 +1,6 @@
 #![cfg(feature = "alloc")]
 
-use rtrb::bip_arc::RingBuffer;
+use rtrb::bip_arc::{Consumer, Producer, RingBuffer};
 
 #[test]
 fn basic() {
@@ -13,51 +13,65 @@ fn basic() {
     assert!(p.write_chunk_uninit(4).is_err());
 }
 
+const P_SLOTS: [fn(&mut Producer<i32>, usize, usize); 5] = [
+    |p, one, two| {
+        assert_eq!(p.slots(), one + two);
+    },
+    |p, one, two| {
+        assert_eq!(p.slots_contiguous(), (one, two));
+    },
+    |p, one, _| {
+        assert_eq!(p.slots_contiguous_first(), one);
+    },
+    |p, one, two| {
+        assert!(p.write_chunk(one.max(two)).is_ok());
+    },
+    |_, _, _| {},
+];
+
+const C_SLOTS: [fn(&mut Consumer<i32>, usize, usize); 5] = [
+    |c, one, _| {
+        assert_eq!(c.slots(), one);
+    },
+    |c, one, two| {
+        assert_eq!(c.slots_contiguous(), (one, two));
+    },
+    |c, one, _| {
+        assert_eq!(c.slots_contiguous_first(), one);
+    },
+    |c, one, _| {
+        assert!(c.read_chunk(one).is_ok());
+    },
+    |_, _, _| {},
+];
+
 #[test]
 fn slots() {
-    // TODO: don't test slots_contiguous_max()?
-    // TODO: test all slots functions separately because of caching?
-    // TODO: test all slots functions twice in succession because of caching?
-    // TODO: testing p/c slots at the same time should be fine
-    // TODO: test without slots functions!
+    // different "slots" functions are tested separately because of caching.
 
-    // TODO: test write_chunk() which would skip, but then don't commit!
     // TODO: follow-up by multiple push(), show that `skip` is not set.
-    let (mut p, mut c) = RingBuffer::<i32>::new(5);
-    assert_eq!(p.slots(), 5);
-    assert_eq!(p.slots_contiguous(), (5, 0));
-    assert_eq!(p.slots_contiguous_first(), 5);
-    assert_eq!(p.slots_contiguous_max(), 5);
-    assert_eq!(c.slots(), 0);
-    assert_eq!(c.slots_contiguous(), (0, 0));
-    assert_eq!(c.slots_contiguous_first(), 0);
+    for (p_slots, c_slots) in P_SLOTS.iter().zip(C_SLOTS) {
+        let (mut p, mut c) = RingBuffer::<i32>::new(5);
 
-    p.write_chunk(3).unwrap().commit_all();
-    assert_eq!(p.slots(), 2);
-    assert_eq!(p.slots_contiguous(), (2, 0));
-    assert_eq!(p.slots_contiguous_first(), 2);
-    assert_eq!(p.slots_contiguous_max(), 2);
-    assert_eq!(c.slots(), 3);
-    assert_eq!(c.slots_contiguous(), (3, 0));
-    assert_eq!(c.slots_contiguous_first(), 3);
+        macro_rules! assert_slots {
+            ($p0:expr, $p1:expr; $c0:expr, $c1:expr) => {
+                p_slots(&mut p, $p0, $p1);
+                c_slots(&mut c, $c0, $c1);
+                // repeat the same thing because caches might have been updated:
+                p_slots(&mut p, $p0, $p1);
+                c_slots(&mut c, $c0, $c1);
+            };
+        }
 
-    c.read_chunk(3).unwrap().commit_all();
-    assert_eq!(p.slots(), 5);
-    assert_eq!(p.slots_contiguous(), (2, 3));
-    assert_eq!(p.slots_contiguous_first(), 2);
-    assert_eq!(p.slots_contiguous_max(), 3);
-    assert_eq!(c.slots(), 0);
-    assert_eq!(c.slots_contiguous(), (0, 0));
-    assert_eq!(c.slots_contiguous_first(), 0);
-
-    p.write_chunk(3).unwrap().commit_all(); // 2 slots are skipped
-    //assert_eq!(p.slots(), 2); // TODO: should be available, even though read index is still at pos. 4
-    //assert_eq!(p.slots_contiguous(), (2, 0));
-    //assert_eq!(p.slots_contiguous_first(), 2);
-    //assert_eq!(p.slots_contiguous_max(), 2);
-    //assert_eq!(c.slots(), 0);
-    //assert_eq!(c.slots_contiguous(), (0, 0));
-    //assert_eq!(c.slots_contiguous_first(), 0);
+        assert_slots!(5, 0; 0, 0);
+        p.write_chunk(3).unwrap().commit_all();
+        assert_slots!(2, 0; 3, 0);
+        c.read_chunk(3).unwrap().commit_all();
+        assert_slots!(2, 3; 0, 0);
+        p.write_chunk(3).unwrap().commit_all(); // 2 slots are skipped
+        // The read index is 2, but writing is still possible, because `skip` is also 2!
+        //assert_slots!(2, 0; 0, 0); // TODO: should be available, even though read index is still at pos. 4
+    }
 }
 
 // TODO: test if skipped elements are dropped
