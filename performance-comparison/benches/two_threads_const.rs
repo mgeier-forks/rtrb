@@ -33,4 +33,12 @@ create_two_threads_const_benchmark!(
     |p, i| p.enqueue(i).is_ok(),
     |c| c.dequeue(),
     ::
+    "ach-spsc",
+    { ($N:expr) => {{
+        let rb = Box::leak(Box::new(ach_spsc::Spsc::<u8, $N>::new()));
+        (rb.take_sender().unwrap(), rb.take_recver().unwrap())
+    }}},
+    |p, i| p.try_send(i).is_ok(),
+    |c| c.try_recv(),
+    ::
 );
