@@ -468,7 +468,7 @@ macro_rules! ring_buffer {
             fn_producer_is_abandoned!(N = $N, arc = $arc, module = $module);
             fn_producer_has_consumer!(N = $N, arc = $arc, module = $module);
 
-            fn_producer_next_tail!();
+            fn_producer_next_tail!(bip = $bip);
         });
 
         struct_consumer!(N = $N, arc = $arc);
@@ -1841,10 +1841,17 @@ macro_rules! fn_pc_capacity {
     };
 }
 
-/// NB: next_tail() can also be used for "bip", because `b.skip` is never set.
-/// One element can always be inserted without skipping.
 macro_rules! fn_producer_next_tail {
-    () => {
+    (bip = yes) => {
+        fn_producer_next_tail_helper!(skip);
+    };
+    (bip = no) => {
+        fn_producer_next_tail_helper!();
+    };
+}
+
+macro_rules! fn_producer_next_tail_helper {
+    ($($skip:ident)?) => {
         /// Get the tail position for writing the next slot, if available.
         ///
         /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
@@ -1860,7 +1867,24 @@ macro_rules! fn_producer_next_tail {
                 self.cached_head.set(head);
                 // ... and check if it's *really* full.
                 if b.distance(head, tail) == b.capacity() {
-                    // `head` didn't change, queue is full.
+                    // `head` didn't change, ...
+                    $(
+                        // ... but for Bip Buffers we still need to check `skip`:
+                        let $skip = b.skip.load(Ordering::Acquire);
+                        if b.collapse_position(head) == $skip {
+                            let head = b.increment(head, self.capacity() - $skip);
+                            b.head.store(head, Ordering::Release);
+                            self.cached_head.set(head);
+
+                            // NB: We (i.e. the producer) reset the head index, but the consumer
+                            // doesn't know about this, and it assumes that its cached head
+                            // is always up to date, unless it coincides with `skip`.
+                            // Therefore, we do *not* reset `skip` here.
+
+                            return Some(tail);
+                        }
+                    )?
+                    // Now the buffer is definitely full.
                     return None;
                 }
             }
