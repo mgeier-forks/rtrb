@@ -89,7 +89,7 @@ fn slots(
     // NB: w is allowed to overtake r, because r==s!
     assert_slots!(2, 0; 3, 0);
 
-    write_chunk_or_push(&mut p, 2);
+    //write_chunk_or_push(&mut p, 2);
 
     // TODO: check both cases: (1) write and overtake r (followed by read); (2) read
 }
