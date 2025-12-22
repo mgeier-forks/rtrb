@@ -848,6 +848,7 @@ macro_rules! fn_ring_buffer_drop_all_elements {
         fn_ring_buffer_drop_all_elements_helper!();
     };
 }
+
 macro_rules! fn_ring_buffer_drop_all_elements_helper {
     ($($skip:ident)?) => {
         /// Drop all elements that are still in the buffer.
@@ -1786,17 +1787,15 @@ macro_rules! fn_producer_is_full {
                 ///
                 #[doc = doctest_create_ring_buffer!(N = $N, arc = $arc, capacity = 8)]
                 /// assert_eq!(p.write(&[1, 2, 3, 4, 5]).unwrap(), 5);
-                /// let mut a = [0; 5];
-                /// assert_eq!(c.read(&mut a).unwrap(), 5);
-                /// assert_eq!(a, [1, 2, 3, 4, 5]);
+                /// let mut a = [0; 4];
+                /// assert_eq!(c.read(&mut a).unwrap(), 4);
+                /// assert_eq!(a, [1, 2, 3, 4]);
                 /// // This will skip 3 slots:
-                /// assert_eq!(p.write(&[5, 4, 3, 2, 1]).unwrap(), 5);
+                /// assert_eq!(p.write(&[4, 3, 2, 1]).unwrap(), 4);
                 /// assert!(p.is_full());
                 /// assert_eq!(p.capacity(), 8);
                 /// assert_eq!(p.slots(), 0);
                 /// assert_eq!(c.slots(), 5);
-                /// // TODO: slots() might actually reset "skip" in this case?!?
-                /// // TODO: better write 5 then read 4 then write 4?
                 /// ```
                 ::
             )]
@@ -2445,6 +2444,7 @@ macro_rules! fn_write_chunk_uninit_commit_unchecked {
                 // but wouldn't know that the end has to be skipped.
                 b.skip.store(collapsed_tail, Ordering::Release);
                 tail = b.increment(tail, b.capacity() - collapsed_tail + n);
+                debug_assert_eq!(b.collapse_position(tail), n);
             } else {
                 tail = b.increment(tail, n);
             }
