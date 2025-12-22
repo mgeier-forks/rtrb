@@ -1576,7 +1576,7 @@ macro_rules! fn_producer_slots {
         #[doc = fn_producer_slots_docstring!(N = $N, arc = $arc, bip = yes, module = $module)]
         pub fn slots(&self) -> usize {
             let b = &self.buffer;
-            let head = b.head.load(Ordering::Acquire);
+            let mut head = b.head.load(Ordering::Acquire);
             self.cached_head.set(head);
             let tail = self.cached_tail.get();
             let is_empty = head == tail;
@@ -1588,7 +1588,15 @@ macro_rules! fn_producer_slots {
             } else {
                 let skip = b.skip.load(Ordering::Acquire);
                 if collapsed_head == skip {
-                    // `head` can be ignored, it will be reset to the beginning by the consumer.
+                    head = b.increment(head, self.capacity() - skip);
+                    b.head.store(head, Ordering::Release);
+                    self.cached_head.set(head);
+
+                    // NB: We (i.e. the producer) reset the head index, but the consumer
+                    // doesn't know about this, and it assumes that its cached head
+                    // is always up to date, unless it coincides with `skip`.
+                    // Therefore, we do *not* reset `skip` here.
+
                     b.capacity() - collapsed_tail
                 } else {
                     collapsed_head - collapsed_tail
@@ -1637,7 +1645,15 @@ macro_rules! fn_producer_slots_contiguousX {
             }
             let skip = b.skip.load(Ordering::Acquire);
             if collapsed_head == skip {
-                // `head` can be ignored, it will be reset to the beginning by the consumer.
+                head = b.increment(head, self.capacity() - skip);
+                b.head.store(head, Ordering::Release);
+                self.cached_head.set(head);
+
+                // NB: We (i.e. the producer) reset the head index, but the consumer
+                // doesn't know about this, and it assumes that its cached head
+                // is always up to date, unless it coincides with `skip`.
+                // Therefore, we do *not* reset `skip` here.
+
                 (b.capacity() - collapsed_tail, true, false)
             } else {
                 (collapsed_head - collapsed_tail, true, false)
