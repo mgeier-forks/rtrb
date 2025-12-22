@@ -1533,9 +1533,8 @@ macro_rules! fn_producer_push {
     };
 }
 
-#[rustfmt::skip] // https://github.com/rust-lang/rustfmt/issues/5974
-macro_rules! fn_producer_slots {
-    (N = $N:ident, arc = $arc:ident, bip = $bip:ident, module = $module:literal) => {
+macro_rules! fn_producer_slots_docstring {
+    (N = $N:ident, arc = $arc:ident, bip = $bip:ident, module = $module:literal) => { docstring!(
         /// Returns the number of slots available for writing.
         ///
         /// Since items can be concurrently consumed on another thread, the actual number
@@ -1567,6 +1566,36 @@ macro_rules! fn_producer_slots {
         ///
         /// assert_eq!(p.slots(), 4095);
         /// ```
+    )};
+}
+
+macro_rules! fn_producer_slots {
+    (N = $N:ident, arc = $arc:ident, bip = yes, module = $module:literal) => {
+        #[doc = fn_producer_slots_docstring!(N = $N, arc = $arc, bip = yes, module = $module)]
+        pub fn slots(&self) -> usize {
+            let b = &self.buffer;
+            let head = b.head.load(Ordering::Acquire);
+            self.cached_head.set(head);
+            let tail = self.cached_tail.get();
+            let is_empty = head == tail;
+            let collapsed_head = b.collapse_position(head);
+            let collapsed_tail = b.collapse_position(tail);
+            if is_empty || collapsed_head < collapsed_tail {
+                // `skip` is irrelevant here.
+                b.capacity() - collapsed_tail + collapsed_head
+            } else {
+                let skip = b.skip.load(Ordering::Acquire);
+                if collapsed_head == skip {
+                    // `head` can be ignored, it will be reset to the beginning by the consumer.
+                    b.capacity() - collapsed_tail
+                } else {
+                    collapsed_head - collapsed_tail
+                }
+            }
+        }
+    };
+    (N = $N:ident, arc = $arc:ident, bip = no, module = $module:literal) => {
+        #[doc = fn_producer_slots_docstring!(N = $N, arc = $arc, bip = no, module = $module)]
         pub fn slots(&self) -> usize {
             let b = &self.buffer;
             let head = b.head.load(Ordering::Acquire);
@@ -1584,6 +1613,9 @@ macro_rules! fn_producer_slots_contiguousX {
         // TODO: inline?
         fn slots_contiguous_helper(&self) -> (usize, bool, bool) {
             // TODO: code reuse with write_chunk_uninit() and next_tail()
+
+            // TODO: skip?
+
             let b = &self.buffer;
             let mut head = self.cached_head.get();
             let tail = self.cached_tail.get();
@@ -1994,7 +2026,7 @@ macro_rules! fn_consumer_slots_contiguousX {
             let mut collapsed_head = b.collapse_position(head);
             let mut collapsed_tail = b.collapse_position(tail);
             if !is_empty && collapsed_tail <= collapsed_head {
-                // NB: We are only allowed to use `skip` if (collapsed) `tail < head`
+                // NB: `skip` is only relevant if (collapsed) `tail < head`
                 //     (or if the buffer is full).
                 let skip = b.skip.load(Ordering::Acquire);
                 slots = skip - collapsed_head;
