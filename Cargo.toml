@@ -35,6 +35,7 @@ rustdoc-args = ["--generate-macro-expansion", "--generate-link-to-definition"]
 libc = { version = "0.2", optional = true }
 
 [dev-dependencies]
+rstest = "0.26.1"
 rand = "0.8"
 criterion = "0.7"
 # TODO: This is only needed for the doctests of cache_padded.rs! Is there a way to avoid this?
