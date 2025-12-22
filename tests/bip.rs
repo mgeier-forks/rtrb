@@ -47,11 +47,19 @@ const C_SLOTS: [fn(&mut Consumer<i32>, usize, usize); 5] = [
 
 #[test]
 fn slots() {
-    // different "slots" functions are tested separately because of caching.
+    // different "slots" functions are tested separately and in all combinations (including no-op)
+    // because of caching and potential resetting of `skip`.
 
     // TODO: follow-up by multiple push(), show that `skip` is not set.
-    for (p_slots, c_slots) in P_SLOTS.iter().zip(C_SLOTS) {
-        let (mut p, mut c) = RingBuffer::<i32>::new(5);
+
+    // NB: This iterates over the cartesian product:
+    for (p_slots, c_slots) in C_SLOTS
+        .iter()
+        .flat_map(|cs| P_SLOTS.map(move |ps| (ps, cs)))
+    {
+        // TODO: another cartesian product with write_chunk_or_push() and read_chunk_or_pop()?
+
+        let (mut p, mut c) = RingBuffer::new(5);
 
         macro_rules! assert_slots {
             ($p0:expr, $p1:expr; $c0:expr, $c1:expr) => {
@@ -63,14 +71,25 @@ fn slots() {
             };
         }
 
+        // w: write index, r: read index, s: skip, x: data, _: empty, ( ): unable to write/read.
+
+        // ₀_₁_₂_₃_₄_. w=0, r=0, s=_
         assert_slots!(5, 0; 0, 0);
         p.write_chunk(3).unwrap().commit_all();
+        // ₀x₁x₂x₃_₄_. w=3, r=0, s=_
         assert_slots!(2, 0; 3, 0);
         c.read_chunk(3).unwrap().commit_all();
+        // ₀_₁_₂_₃_₄_. w=3, r=3, s=_
         assert_slots!(2, 3; 0, 0);
-        p.write_chunk(3).unwrap().commit_all(); // 2 slots are skipped
-        // The read index is 2, but writing is still possible, because `skip` is also 2!
-        //assert_slots!(2, 0; 0, 0); // TODO: should be available, even though read index is still at pos. 4
+        // 2 slots are skipped:
+        p.write_chunk(3).unwrap().commit_all();
+        // ₀x₁x₂x₃_₄_. w=3, r=3->0, s=3
+        // NB: w is allowed to overtake r, because r==s!
+        assert_slots!(2, 0; 3, 0);
+
+        assert!(p.write_chunk(3).is_err());
+
+        // TODO: check both cases: (1) write and overtake r (followed by read); (2) read
     }
 }
 

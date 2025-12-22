@@ -2304,7 +2304,7 @@ macro_rules! fn_consumer_next_head {
             }
             debug_assert_ne!(head, tail);
             if b.collapse_position(tail) < b.collapse_position(head) {
-                // NB: We are only allowed to use `skip` if (collapsed) `tail < head`.
+                // NB: `skip` is only relevant if `tail < head` (both collapsed).
                 let skip = b.skip.load(Ordering::Acquire);
                 if b.collapse_position(head) == skip {
                     // Nothing to read at the end of the buffer, wrap `head` and clear `skip`.
@@ -2505,13 +2505,18 @@ macro_rules! fn_producer_write_chunk_uninit {
                         // However, we also need to check if it landed on `skip`:
                         let skip = b.skip.load(Ordering::Acquire);
                         if collapsed_head == skip {
-                            // `head` is beyond the valid slots and has to be reset.
+                            // `head` is beyond the valid slots and can be reset
+                            // (to make subsequent calls potentially faster).
                             head = b.increment(head, self.capacity() - skip);
                             b.head.store(head, Ordering::Release);
-                            // TODO: order of storing head and skip?
                             self.cached_head.set(head);
+
+                            // NB: We (i.e. the producer) reset the head index, but the consumer
+                            // doesn't know about this, and it assumes that its cached head
+                            // is always up to date, unless it coincides with `skip`.
+                            // Therefore, we do *not* reset `skip` here.
+
                             collapsed_head = b.collapse_position(head);
-                            b.skip.store(b.capacity(), Ordering::Release);
                             debug_assert_eq!(collapsed_head, 0);
                             // `head` did wrap around after all, we'll continue below.
                         } else {
@@ -3776,6 +3781,7 @@ macro_rules! mod_chunks_docstring {
     ///
     /// assert_eq!(c.slots(), 3);
     #[doc = choice!($contiguous,
+        /// assert_eq!(c.slots_contiguous(), (1, 2));
         /// assert!(p.is_full()); // The skipped slot is not available (for now)!
         /// assert_eq!(c.pop(), Ok(12));
         /// // TODO: try also with read_chunk(1) (but then remove?)
