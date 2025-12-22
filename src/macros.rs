@@ -1613,9 +1613,6 @@ macro_rules! fn_producer_slots_contiguousX {
         // TODO: inline?
         fn slots_contiguous_helper(&self) -> (usize, bool, bool) {
             // TODO: code reuse with write_chunk_uninit() and next_tail()
-
-            // TODO: skip?
-
             let b = &self.buffer;
             let mut head = self.cached_head.get();
             let tail = self.cached_tail.get();
@@ -1636,7 +1633,13 @@ macro_rules! fn_producer_slots_contiguousX {
                 debug_assert!(slots != 0 || b.capacity() == 0);
                 return (slots, true, true);
             }
-            (collapsed_head - collapsed_tail, true, false)
+            let skip = b.skip.load(Ordering::Acquire);
+            if collapsed_head == skip {
+                // `head` can be ignored, it will be reset to the beginning by the consumer.
+                (b.capacity() - collapsed_tail, true, false)
+            } else {
+                (collapsed_head - collapsed_tail, true, false)
+            }
         }
 
         /// Returns the number of slots of the next two contiguous segments available
