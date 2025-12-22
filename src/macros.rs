@@ -1371,6 +1371,8 @@ macro_rules! struct_consumer {
                 /// A copy of `buffer.head` for quick access.
                 ///
                 /// This value is always in sync with `buffer.head`.
+                /// For Bip Buffers, there is an exception: if `cached_head == buffer.skip`,
+                /// `buffer.head` may have been reset by the producer.
                 cached_head: Cell<usize>,
                 /// A copy of `buffer.tail` for quick access.
                 ///
