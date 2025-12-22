@@ -2330,7 +2330,7 @@ macro_rules! fn_consumer_next_head {
                     // `tail` did change, but it didn't wrap around.
                     return Some(head);
                 }
-            } else if head < tail {
+            } else if b.collapse_position(head) < b.collapse_position(tail) {
                 // The tail might have wrapped around in the meantime.
                 tail = b.tail.load(Ordering::Acquire);
                 self.cached_tail.set(tail);
@@ -2343,10 +2343,11 @@ macro_rules! fn_consumer_next_head {
                 let skip = b.skip.load(Ordering::Acquire);
                 if b.collapse_position(head) == skip {
                     // Nothing to read at the end of the buffer, wrap `head` and clear `skip`.
+                    // NB: `skip` is stored before `head`.
+                    b.skip.store(b.capacity(), Ordering::Release);
                     head = b.increment(head, b.capacity() - skip);
                     b.head.store(head, Ordering::Release);
                     self.cached_head.set(head);
-                    b.skip.store(b.capacity(), Ordering::Release);
 
                     // NB: The producer only sets `skip` if it writes at least one slot
                     // at the beginning of the buffer.  Therefore, we know that the
