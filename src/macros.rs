@@ -867,7 +867,20 @@ macro_rules! fn_ring_buffer_drop_all_elements_helper {
             let mut head = self.head.load(Ordering::Relaxed);
             let tail = self.tail.load(Ordering::Relaxed);
             $(
-                let $skip = self.skip.load(Ordering::Relaxed);
+                let $skip = if self.collapse_position(head) == 0 {
+                    // There are exactly 3 ways for this to happen:
+                    // * nothing has been consumed yet, which means nothing has been skipped yet,
+                    //   which means `skip` is still at its initial position.
+                    // * `head` has been wrapped by the consumer,
+                    //   which means that `skip` has also been reset.
+                    // * `head` has been wrapped by the producer, which means that `skip` is invalid
+                    //   (or it has been reset later by the consumer).
+                    //
+                    // In all cases we can ignore `self.skip` and simply use its default:
+                    self.capacity()
+                } else {
+                    self.skip.load(Ordering::Relaxed)
+                };
             )?
             // Loop over all slots that hold a value and drop them.
             while head != tail {
@@ -2035,6 +2048,7 @@ macro_rules! fn_consumer_slots {
                 }
                 // There are no more slots at the end of the buffer,
                 // let's clear `skip` and wrap around!
+                // TODO: the following is always true?
                 if skip != b.capacity() {
                     // NB: `skip` is stored before `head`.
                     b.skip.store(b.capacity(), Ordering::Release);
@@ -2079,6 +2093,7 @@ macro_rules! fn_consumer_slots_contiguousX {
                 }
                 // There are no more slots at the end of the buffer,
                 // let's clear `skip` and wrap around!
+                // TODO: the following is always true?
                 if skip != b.capacity() {
                     b.skip.store(b.capacity(), Ordering::Release);
                 }
@@ -2613,7 +2628,7 @@ macro_rules! fn_producer_write_chunk_uninit {
             let offset;
             if slots < n {
                 // NB: If we reach this point, we know that either the buffer is empty,
-                // or collapsed_head < collapsed_tail.
+                // or `collapsed_head < collapsed_tail`.
                 // Is there enough space at the end of the buffer?
                 slots = b.capacity() - collapsed_tail;
                 if slots < n {

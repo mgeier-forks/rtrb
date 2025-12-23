@@ -28,9 +28,9 @@ fn slots(
         |p: &mut Producer<i32>, one, _| {
             assert_eq!(p.slots_contiguous_first(), one);
         },
-        //|p: &mut Producer<i32>, one: usize, two| {
-        //    assert!(p.write_chunk(one.max(two)).is_ok());
-        //},
+        |p: &mut Producer<i32>, one: usize, two| {
+            assert!(p.write_chunk(one.max(two)).is_ok());
+        },
         |_: &mut Producer<i32>, _, _| {},
     )]
     p_slots: fn(&mut Producer<i32>, usize, usize),
@@ -51,7 +51,7 @@ fn slots(
     )]
     c_slots: fn(&mut Consumer<i32>, usize, usize),
     #[values(
-        //|p: &mut Producer<i32>, slots| p.write_chunk(slots).unwrap().commit_all(),
+        |p: &mut Producer<i32>, slots| p.write_chunk(slots).unwrap().commit_all(),
         |p: &mut Producer<i32>, slots| for _ in 0..slots { assert!(p.push(0).is_ok()); },
     )]
     write_chunk_or_push: fn(p: &mut Producer<i32>, usize),
@@ -88,10 +88,11 @@ fn slots(
     // ₀x₁x₂x₃_₄_. w=3, r=3->0, s=3
     // NB: w is allowed to overtake r, because r==s!
     assert_slots!(2, 0; 3, 0);
-
-    //write_chunk_or_push(&mut p, 2);
+    write_chunk_or_push(&mut p, 2);
+    // ₀x₁x₂x₃x₄x. w=0, r=3, s=3->0
 
     // TODO: check both cases: (1) write and overtake r (followed by read); (2) read
 }
 
 // TODO: test if skipped elements are dropped
+// TODO: test if dropping directly after skipping works
