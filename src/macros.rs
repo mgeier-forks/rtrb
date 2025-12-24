@@ -2371,6 +2371,7 @@ macro_rules! fn_consumer_has_producer {
 ///
 /// This is a strict subset of the functionality implemented in `read_chunk()`.
 /// For performance, this special case is implemented separately.
+// TODO: check if using slots_contiguous_helper() is reasonably performant for bip
 macro_rules! fn_consumer_next_head {
     (bip = yes) => {
         fn next_head(&self) -> Option<usize> {
@@ -2387,9 +2388,11 @@ macro_rules! fn_consumer_next_head {
                 // ... and check if it's *really* empty.
                 if head == tail {
                     // `tail` didn't change, queue is empty.
+                    // NB: `skip` can be ignored because the producer cannot have reset `head`.
                     return None;
                 } else if b.collapse_position(head) < b.collapse_position(tail) {
                     // `tail` did change, but it didn't wrap around.
+                    // TODO: check `skip`
                     return Some(head);
                 }
             } else if b.collapse_position(head) < b.collapse_position(tail) {
