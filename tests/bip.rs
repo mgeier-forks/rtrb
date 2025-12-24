@@ -33,6 +33,9 @@ fn slots(
         |p: &mut Producer<i32>, one: usize, two| {
             assert!(p.write_chunk(one.max(two)).is_ok());
         },
+        |p: &mut Producer<i32>, one: usize, two| {
+            assert!(p.write_chunk(one.max(two) + 1).is_err());
+        },
         |_: &mut Producer<i32>, _, _| {},
     )]
     p_slots: fn(&mut Producer<i32>, usize, usize),
@@ -48,6 +51,9 @@ fn slots(
         },
         |c: &mut Consumer<i32>, one, _| {
             assert!(c.read_chunk(one).is_ok());
+        },
+        |c: &mut Consumer<i32>, one, _| {
+            assert!(c.read_chunk(one + 1).is_err());
         },
         |_: &mut Consumer<i32>, _, _| {},
     )]
