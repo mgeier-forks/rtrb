@@ -2035,6 +2035,7 @@ macro_rules! fn_consumer_slots {
             if head == tail {
                 return 0;
             }
+            // TODO: cached head might be stale!
             let collapsed_head = b.collapse_position(head);
             let collapsed_tail = b.collapse_position(tail);
             if collapsed_head < collapsed_tail {
@@ -2079,7 +2080,6 @@ macro_rules! fn_consumer_slots_contiguousX {
             let b = &self.buffer;
             let mut head = self.cached_head.get();
             let mut tail = self.cached_tail.get();
-            let mut slots = 0;
             let mut is_empty = head == tail;
             let mut collapsed_head = b.collapse_position(head);
             let mut collapsed_tail = b.collapse_position(tail);
@@ -2087,8 +2087,9 @@ macro_rules! fn_consumer_slots_contiguousX {
                 // NB: `skip` is only relevant if (collapsed) `tail < head`
                 //     (or if the buffer is full).
                 let skip = b.skip.load(Ordering::Acquire);
-                slots = skip - collapsed_head;
+                let slots = skip - collapsed_head;
                 if slots != 0 {
+                    // TODO: there might be additional slots at the beginning
                     return (slots, false);
                 }
                 // There are no more slots at the end of the buffer,
@@ -2102,15 +2103,20 @@ macro_rules! fn_consumer_slots_contiguousX {
                 b.head.store(head, Ordering::Release);
                 self.cached_head.set(head);
                 collapsed_head = b.collapse_position(head);
+                debug_assert_eq!(collapsed_head, 0);
+                // No slots at the end, but there might still be some at the beginning.
             } else {
-                // nothing to do here, we have to refresh tail
+                // Nothing to do here, we have to refresh tail (which may wrap around).
+
+                // TODO: `cached_head` might be stale (coinciding with `skip`)?
             }
             tail = b.tail.load(Ordering::Acquire);
             self.cached_tail.set(tail);
             collapsed_tail = b.collapse_position(tail);
             is_empty = head == tail;
+            // TODO: `cached_head` might still be stale!
             if is_empty || collapsed_head < collapsed_tail {
-                debug_assert_eq!(slots, 0);
+                // TODO: no additional slots at the beginning
                 (collapsed_tail - collapsed_head, true)
             } else {
                 // TODO: if tail has wrapped around, there might be slots between head and skip!

@@ -1,5 +1,7 @@
 #![cfg(feature = "alloc")]
 
+// TODO: try to reuse this for power-of-2 tests with bip_arc2?
+
 use rtrb::bip_arc::{Consumer, Producer, RingBuffer};
 
 #[test]
@@ -85,11 +87,14 @@ fn slots(
     assert_slots!(2, 3; 0, 0);
     // 2 slots are skipped:
     p.write_chunk(3).unwrap().commit_all();
-    // ₀x₁x₂x₃_₄_. w=3, r=3->0, s=3
+    // ₀x₁x₂x₃_₄_. w=3, r=3, s=3
     // NB: w is allowed to overtake r, because r==s!
     assert_slots!(2, 0; 3, 0);
     write_chunk_or_push(&mut p, 2);
-    // ₀x₁x₂x₃x₄x. w=0, r=3, s=3->0
+    // ₀x₁x₂x₃x₄x. w=0, r=0, s=(3)
+    //assert_slots!(0, 0; 5, 0);
+    //read_chunk_or_pop(&mut c, 4);
+    // ₀_₁_₂_₃_₄x. w=0, r=4, s=_
 
     // TODO: check both cases: (1) write and overtake r (followed by read); (2) read
 }
