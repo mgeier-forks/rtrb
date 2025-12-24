@@ -2578,6 +2578,69 @@ macro_rules! fn_producer_write_chunk_uninit {
             n: usize,
         ) -> Result<generic!(WriteChunkUninit<'_>, N = $N), ChunkError> {
             let b = &self.buffer;
+            let (mut slots, refreshed, try_at_beginning) = self.slots_contiguous_helper();
+            if slots >= n {
+                let offset = b.collapse_position(self.cached_tail.get());
+                // SAFETY: `offset` has been set to a valid position.
+                return Ok(unsafe { WriteChunkUninit::new(self, n, offset) })
+            } else if try_at_beginning {
+                let mut head = self.cached_head.get();
+                let mut collapsed_head = b.collapse_position(head);
+                if collapsed_head >= n {
+                    // SAFETY: 0 is a valid position.
+                    return Ok(unsafe { WriteChunkUninit::new(self, n, 0) })
+                }
+                if !refreshed {
+                    head = b.head.load(Ordering::Acquire);
+                    self.cached_head.set(head);
+                    collapsed_head = b.collapse_position(head);
+                    if collapsed_head >= n {
+                        // SAFETY: 0 is a valid position.
+                        return Ok(unsafe { WriteChunkUninit::new(self, n, 0) })
+                    }
+                }
+                slots = slots.max(collapsed_head);
+            }
+            return Err(ChunkError::TooFewSlots(slots))
+        }
+    };
+    (N = $N:ident, bip = no, contiguous = $contiguous:ident) => {
+        #[doc = fn_producer_write_chunk_uninit_docstring!(bip = no, contiguous = $contiguous)]
+        pub fn write_chunk_uninit(
+            &mut self,
+            n: usize,
+        ) -> Result<generic!(WriteChunkUninit<'_>, N = $N), ChunkError> {
+            let head = self.cached_head.get();
+            let tail = self.cached_tail.get();
+            let b = &self.buffer;
+            // Check if the queue has *possibly* not enough slots.
+            if b.capacity() - b.distance(head, tail) < n {
+                // Refresh the head ...
+                let head = b.head.load(Ordering::Acquire);
+                self.cached_head.set(head);
+                // ... and check if there *really* are not enough slots.
+                let slots = b.capacity() - b.distance(head, tail);
+                if slots < n {
+                    return Err(ChunkError::TooFewSlots(slots));
+                }
+            }
+            let offset = b.collapse_position(tail);
+            // SAFETY: `offset` has been set to a valid position.
+            Ok(unsafe { WriteChunkUninit::new(self, n, offset) })
+        }
+    };
+}
+
+// TODO: try if this is faster:
+/*
+macro_rules! fn_producer_write_chunk_uninit {
+    (N = $N:ident, bip = yes, contiguous = $contiguous:ident) => {
+        #[doc = fn_producer_write_chunk_uninit_docstring!(bip = yes, contiguous = $contiguous)]
+        pub fn write_chunk_uninit(
+            &mut self,
+            n: usize,
+        ) -> Result<generic!(WriteChunkUninit<'_>, N = $N), ChunkError> {
+            let b = &self.buffer;
             let mut head = self.cached_head.get();
             let tail = self.cached_tail.get();
             // TODO: check if everything is compatible with power-of-2 addressing.
@@ -2694,6 +2757,7 @@ macro_rules! fn_producer_write_chunk_uninit {
         }
     };
 }
+*/
 
 #[rustfmt::skip] // https://github.com/rust-lang/rustfmt/issues/5974
 macro_rules! fn_producer_write_chunk {
