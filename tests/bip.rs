@@ -48,14 +48,16 @@ fn slots(
     read: fn(C, &[i32]),
 ) {
     let (mut p, mut c) = RingBuffer::new(5);
+    let p = &mut p;
+    let c = &mut c;
 
     macro_rules! assert_slots {
         ($p0:expr, $p1:expr; $c0:expr, $c1:expr) => {
-            p_slots(&mut p, $p0, $p1);
-            c_slots(&mut c, $c0, $c1);
+            p_slots(p, $p0, $p1);
+            c_slots(c, $c0, $c1);
             // repeat the same thing because caches might have been updated:
-            p_slots(&mut p, $p0, $p1);
-            c_slots(&mut c, $c0, $c1);
+            p_slots(p, $p0, $p1);
+            c_slots(c, $c0, $c1);
         };
     }
 
@@ -63,10 +65,10 @@ fn slots(
 
     // ₀_₁_₂_₃_₄_. w=0, r=0, s=_
     assert_slots!(5, 0; 0, 0);
-    write(&mut p, &[0, 1, 2]);
+    write(p, &[0, 1, 2]);
     // ₀0₁1₂2₃_₄_. w=3, r=0, s=_
     assert_slots!(2, 0; 3, 0);
-    read(&mut c, &[0, 1, 2]);
+    read(c, &[0, 1, 2]);
     // ₀_₁_₂_₃_₄_. w=3, r=3, s=_
     assert_slots!(2, 3; 0, 0);
     // 2 slots are skipped:
@@ -79,13 +81,13 @@ fn slots(
     // ₀9₁8₂7₃_₄_. w=3, r=3, s=3
     // NB: w is allowed to overtake r, because r==s!
     assert_slots!(2, 0; 3, 0);
-    write(&mut p, &[6]);
+    write(p, &[6]);
     // ₀9₁8₂7₃6₄_. w=4, r=3/0, s=3
     assert_slots!(1, 0; 4, 0);
-    write(&mut p, &[5]);
+    write(p, &[5]);
     // ₀9₁8₂7₃6₄5. w=0, r=3/0, s=(3)
     assert_slots!(0, 0; 5, 0);
-    read(&mut c, &[9, 8, 7, 6]);
+    read(c, &[9, 8, 7, 6]);
     // ₀_₁_₂_₃_₄5. w=0, r=4, s=_
     assert_slots!(4, 0; 1, 0);
 
