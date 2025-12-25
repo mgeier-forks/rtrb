@@ -7,24 +7,37 @@ use rtrb::bip_arc::{Consumer, Producer, RingBuffer};
 type C<'a> = &'a mut Consumer<i32>;
 type P<'a> = &'a mut Producer<i32>;
 
+macro_rules! assert_eq_stringify {
+    ($tested:expr, $expected:expr) => {
+        if !($tested == $expected) {
+            panic!(
+                "assertion `{} == {:?}` failed, wrong value: {:?}",
+                stringify!($tested),
+                $expected,
+                $tested
+            );
+        }
+    };
+}
+
 // Different "slots" functions are tested separately and in all combinations (including no-op)
 // because of caching and potential resetting of `skip`.
 // Where possible, we test both write/read_chunk and push/pop.
 #[rstest::rstest]
 fn slots(
     #[values(
-        |p: P, x, y| assert_eq!(p.slots(), x + y),
-        |p: P, x, y| assert_eq!(p.slots_contiguous(), (x, y)),
-        |p: P, x, _| assert_eq!(p.slots_contiguous_first(), x),
+        |p: P, x, y| assert_eq_stringify!(p.slots(), x + y),
+        |p: P, x, y| assert_eq_stringify!(p.slots_contiguous(), (x, y)),
+        |p: P, x, _| assert_eq_stringify!(p.slots_contiguous_first(), x),
         |p: P, x: usize, y| assert!(p.write_chunk(x.max(y)).is_ok()),
         |p: P, x: usize, y| assert!(p.write_chunk(x.max(y) + 1).is_err()),
-        |_: P, _, _| {},
+        //|_: P, _, _| {},
     )]
     p_slots: fn(P, usize, usize),
     #[values(
-        |c: C, x, _| assert_eq!(c.slots(), x),
-        |c: C, x, y| assert_eq!(c.slots_contiguous(), (x, y)),
-        |c: C, x, _| assert_eq!(c.slots_contiguous_first(), x),
+        |c: C, x, _| assert_eq_stringify!(c.slots(), x),
+        |c: C, x, y| assert_eq_stringify!(c.slots_contiguous(), (x, y)),
+        |c: C, x, _| assert_eq_stringify!(c.slots_contiguous_first(), x),
         |c: C, x, _| assert!(c.read_chunk(x).is_ok()),
         |c: C, x, _| assert!(c.read_chunk(x + 1).is_err()),
         |_: C, _, _| {},
@@ -79,23 +92,32 @@ fn slots(
         })
         .unwrap();
     // ₀9₁8₂7₃6₄_₅_₆_₇_. w=4, r=5, s=5
-    // NB: w is allowed to overtake r, because r==s!
-    assert_slots!(4, 0; 4, 0);
-    write(p, &[5, 4]);
-    //// ₀9₁8₂7₃6₄5₅4₆_₇_. w=6, r=5/0, s=5
-    assert_slots!(2, 0; 6, 0);
-    // NB: reading from 5 would be invalid, it starts at 0.
+    // NB: even though 4 slots are empty, only one can be written!
+    // TODO: there are several methods that will wrap head and reset skip
+    //assert_slots!(1, 0; 4, 0);
+    // NB: reading from index 5 would be invalid, the read index is reset to 0.
     read(c, &[9, 8, 7]);
+    // ₀_₁_₂_₃6₄_₅_₆_₇_. w=4, r=3, s=_
+    // NB: now the previously skipped slots can be written again.
+    assert_slots!(4, 3; 1, 0);
+    write(p, &[5, 4]);
     // ₀_₁_₂_₃6₄5₅4₆_₇_. w=6, r=3, s=_
     //assert_slots!(2, 3; 3, 0);
-    //write(p, &[5]);
-    //// ₀9₁8₂7₃6₄5₅_₆_₇_. w=0, r=3/0, s=(3)
-    //assert_slots!(0, 0; 5, 0);
-    //read(c, &[9, 8, 7, 6]);
-    //// ₀_₁_₂_₃_₄5₅_₆_₇_. w=0, r=4, s=_
-    //assert_slots!(4, 0; 1, 0);
-
-    // TODO: check both cases: (1) write and overtake r (followed by read); (2) read
+    // 2 slots are skipped:
+    p.write_chunk(3)
+        .map(|mut ch| {
+            ch.as_mut_slice().copy_from_slice(&[3, 2, 1]);
+            ch.commit_all();
+        })
+        .unwrap();
+    // ₀3₁2₂1₃6₄5₅4₆_₇_. w=3, r=3, s=6
+    //assert_slots!(0, 0; 3, 3);
+    assert!(p.is_full());
+    read(c, &[6, 5]);
+    // ₀3₁2₂1₃_₄_₅4₆_₇_. w=3, r=5, s=6
+    //assert_slots!(2, 0; 1, 3);
+    // Reading [3, 2, 1] is not possible, [4] has to be read first.
+    assert!(c.read_chunk(3).is_err());
 }
 
 // TODO: test if skipped elements are dropped
