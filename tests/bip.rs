@@ -84,11 +84,10 @@ fn slots(
     assert_slots!(1, 0; 4, 0);
     write(&mut p, &[5]);
     // ₀9₁8₂7₃6₄5. w=0, r=3/0, s=(3)
-
-    //assert_slots!(0, 0; 5, 0);
-
-    //read(&mut c, &[9, 8, 7, 6]);
+    assert_slots!(0, 0; 5, 0);
+    read(&mut c, &[9, 8, 7, 6]);
     // ₀_₁_₂_₃_₄5. w=0, r=4, s=_
+    assert_slots!(4, 0; 1, 0);
 
     // TODO: check both cases: (1) write and overtake r (followed by read); (2) read
 }

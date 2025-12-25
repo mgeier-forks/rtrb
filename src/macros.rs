@@ -1636,7 +1636,7 @@ macro_rules! fn_producer_slots_contiguousX {
         /// `true` if there may be another chunk at the beginning of the buffer.
         // TODO: inline?
         fn slots_contiguous_helper(&self) -> (usize, bool, bool) {
-            // TODO: code reuse with write_chunk_uninit() and next_tail()
+            // TODO: code reuse with next_tail()?
             let b = &self.buffer;
             let mut head = self.cached_head.get();
             let tail = self.cached_tail.get();
@@ -1700,12 +1700,12 @@ macro_rules! fn_producer_slots_contiguousX {
         /// (up to the [`capacity()`](Producer::capacity)).
         // TODO: inline?
         pub fn slots_contiguous(&self) -> (usize, usize) {
-            let (slots, refreshed, try_again) = self.slots_contiguous_helper();
-            if !try_again {
+            let (slots, refreshed, try_at_beginning) = self.slots_contiguous_helper();
+            if !try_at_beginning {
                 return (slots, 0);
             }
-            let mut head = self.cached_head.get();
             let b = &self.buffer;
+            let mut head = self.cached_head.get();
             if !refreshed {
                 head = b.head.load(Ordering::Acquire);
                 self.cached_head.set(head);
@@ -2075,54 +2075,52 @@ macro_rules! fn_consumer_slots {
 
 macro_rules! fn_consumer_slots_contiguousX {
     (bip = yes) => {
-        fn slots_contiguous_helper(&self) -> (usize, bool) {
-            // TODO: code reuse with read_chunk() and next_head()?
+        /// Returns size of first contiguous chunk and
+        /// `true` if `tail` has already been refreshed and
+        /// `true` if there may be another chunk at the beginning of the buffer.
+        // TODO: inline?
+        fn slots_contiguous_helper(&self) -> (usize, bool, bool) {
             let b = &self.buffer;
             let mut head = self.cached_head.get();
             let mut tail = self.cached_tail.get();
-            let mut is_empty = head == tail;
             let mut collapsed_head = b.collapse_position(head);
             let mut collapsed_tail = b.collapse_position(tail);
-            if !is_empty && collapsed_tail <= collapsed_head {
-                // NB: `skip` is only relevant if (collapsed) `tail < head`
-                //     (or if the buffer is full).
-                let skip = b.skip.load(Ordering::Acquire);
-                let slots = skip - collapsed_head;
-                if slots != 0 {
-                    // TODO: there might be additional slots at the beginning
-                    return (slots, false);
-                }
-                // There are no more slots at the end of the buffer,
-                // let's clear `skip` and wrap around!
-                // TODO: the following is always true?
-                if skip != b.capacity() {
-                    b.skip.store(b.capacity(), Ordering::Release);
-                }
+            // We have to check whether `head` has been reset by the producer.
+            // For this, we need to load `skip`.
+            let mut skip = b.skip.load(Ordering::Acquire);
+            if collapsed_head == skip {
+                skip = b.capacity();
+                b.skip.store(skip, Ordering::Release);
+                // NB: `b.head` might already have been reset by the producer,
+                // but it doesn't hurt to set it a second time.
                 head = b.increment(head, b.capacity() - collapsed_head);
                 // NB: `skip` is stored before `head`.
                 b.head.store(head, Ordering::Release);
                 self.cached_head.set(head);
                 collapsed_head = b.collapse_position(head);
                 debug_assert_eq!(collapsed_head, 0);
-                // No slots at the end, but there might still be some at the beginning.
-            } else {
-                // Nothing to do here, we have to refresh tail (which may wrap around).
-
-                // TODO: `cached_head` might be stale (coinciding with `skip`)?
+                // TODO: create unit test for capacity == 0
+                debug_assert!(collapsed_head != skip || b.capacity() == 0);
             }
+            let mut is_empty = head == tail;
+            if !is_empty && collapsed_tail <= collapsed_head {
+                // NB: `skip` is only relevant if (collapsed) `tail < head`
+                //     (or if the buffer is full).
+                let slots = skip - collapsed_head;
+                debug_assert_ne!(slots, 0);
+                return (slots, false, true);
+            }
+            // We have to refresh `tail` (which may wrap around).
             tail = b.tail.load(Ordering::Acquire);
             self.cached_tail.set(tail);
             collapsed_tail = b.collapse_position(tail);
             is_empty = head == tail;
-            // TODO: `cached_head` might still be stale!
-            if is_empty || collapsed_head < collapsed_tail {
-                // TODO: no additional slots at the beginning
-                (collapsed_tail - collapsed_head, true)
+            if !is_empty && collapsed_tail <= collapsed_head {
+                let slots = skip - collapsed_head;
+                debug_assert_ne!(slots, 0);
+                (slots, true, true)
             } else {
-                // TODO: if tail has wrapped around, there might be slots between head and skip!
-                // TODO: repeat the code from above?
-                // TODO: another `bool` might be needed ...
-                (collapsed_tail, true)
+                (collapsed_tail - collapsed_head, true, false)
             }
         }
 
@@ -2149,23 +2147,17 @@ macro_rules! fn_consumer_slots_contiguousX {
         /// [`Producer::write_chunk()`] or [`Producer::write_chunk_uninit()`],
         /// but at most up to the [`capacity()`](Consumer::capacity)).
         pub fn slots_contiguous(&self) -> (usize, usize) {
-            let (slots, refreshed) = self.slots_contiguous_helper();
-            if refreshed {
+            let (slots, refreshed, try_at_beginning) = self.slots_contiguous_helper();
+            if !try_at_beginning {
                 return (slots, 0);
             }
             let b = &self.buffer;
-            let head = self.cached_head.get();
-            let collapsed_head = b.collapse_position(head);
-            let tail = b.tail.load(Ordering::Acquire);
-            self.cached_tail.set(tail);
-            let collapsed_tail = b.collapse_position(tail);
-            let is_empty = head == tail;
-            if is_empty || collapsed_head < collapsed_tail {
-                debug_assert_eq!(slots, 0);
-                (collapsed_tail - collapsed_head, 0)
-            } else {
-                (slots, collapsed_tail)
+            let mut tail = self.cached_tail.get();
+            if !refreshed {
+                tail = b.tail.load(Ordering::Acquire);
+                self.cached_tail.set(tail);
             }
+            (slots, b.collapse_position(tail))
         }
 
         /// Returns the number of slots of the next contiguous segment available for reading with
@@ -2392,15 +2384,17 @@ macro_rules! fn_consumer_next_head {
                     return None;
                 } else if b.collapse_position(head) < b.collapse_position(tail) {
                     // `tail` did change, but it didn't wrap around.
-                    // TODO: check `skip`
+                    // TODO: check `skip`?
                     return Some(head);
                 }
             } else if b.collapse_position(head) < b.collapse_position(tail) {
+                // TODO: check `skip`?
                 // The tail might have wrapped around in the meantime.
                 tail = b.tail.load(Ordering::Acquire);
                 self.cached_tail.set(tail);
             } else {
                 // The tail cannot overtake the head, no need to refresh at this point.
+                // TODO: check `skip`?
             }
             debug_assert_ne!(head, tail);
             if b.collapse_position(tail) < b.collapse_position(head) {
@@ -2859,6 +2853,54 @@ macro_rules! fn_consumer_read_chunk {
             n: usize,
         ) -> Result<generic!(ReadChunk<'_>, N = $N), ChunkError> {
             let b = &self.buffer;
+            let (slots, _, _) = self.slots_contiguous_helper();
+            if slots >= n {
+                let offset = b.collapse_position(self.cached_head.get());
+                // SAFETY: `offset` has been set to a valid position.
+                Ok(unsafe { ReadChunk::new(self, n, offset) })
+            } else {
+                Err(ChunkError::TooFewSlots(slots))
+            }
+        }
+    };
+    (N = $N:ident, bip = no, contiguous = $contiguous:ident) => {
+        #[doc = fn_consumer_read_chunk_docstring!(bip = no, contiguous = $contiguous)]
+        pub fn read_chunk(
+            &mut self,
+            n: usize,
+        ) -> Result<generic!(ReadChunk<'_>, N = $N), ChunkError> {
+            let head = self.cached_head.get();
+            let tail = self.cached_tail.get();
+            let b = &self.buffer;
+            // Check if the queue has *possibly* not enough slots.
+            if b.distance(head, tail) < n {
+                // Refresh the tail ...
+                let tail = b.tail.load(Ordering::Acquire);
+                self.cached_tail.set(tail);
+                // ... and check if there *really* are not enough slots.
+                let slots = b.distance(head, tail);
+                if slots < n {
+                    return Err(ChunkError::TooFewSlots(slots));
+                }
+            }
+            let offset = b.collapse_position(head);
+            // SAFETY: `offset` has been set to a valid position.
+            Ok(unsafe { ReadChunk::new(self, n, offset) })
+        }
+    };
+}
+
+// TODO: performance measurements? remove?
+/*
+macro_rules! fn_consumer_read_chunk {
+    (N = $N:ident, bip = yes, contiguous = $contiguous:ident) => {
+        #[doc = fn_consumer_read_chunk_docstring!(bip = yes, contiguous = $contiguous)]
+        pub fn read_chunk(
+            &mut self,
+            n: usize,
+        ) -> Result<generic!(ReadChunk<'_>, N = $N), ChunkError> {
+            let b = &self.buffer;
+            // TODO: load `skip` first?
             let mut head = self.cached_head.get();
             let mut tail = self.cached_tail.get();
             let mut slots = 0;
@@ -2952,6 +2994,7 @@ macro_rules! fn_consumer_read_chunk {
         }
     };
 }
+*/
 
 macro_rules! fn_write_chunk_uninit_as_mut_sliceX_docstring {
     () => { docstring!(
