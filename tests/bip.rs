@@ -47,7 +47,7 @@ fn slots(
     )]
     read: fn(C, &[i32]),
 ) {
-    let (mut p, mut c) = RingBuffer::new(5);
+    let (mut p, mut c) = RingBuffer::new(8);
     let p = &mut p;
     let c = &mut c;
 
@@ -63,33 +63,37 @@ fn slots(
 
     // w: write index, r: read index, s: skip, _: empty
 
-    // ₀_₁_₂_₃_₄_. w=0, r=0, s=_
-    assert_slots!(5, 0; 0, 0);
-    write(p, &[0, 1, 2]);
-    // ₀0₁1₂2₃_₄_. w=3, r=0, s=_
-    assert_slots!(2, 0; 3, 0);
-    read(c, &[0, 1, 2]);
-    // ₀_₁_₂_₃_₄_. w=3, r=3, s=_
-    assert_slots!(2, 3; 0, 0);
-    // 2 slots are skipped:
-    p.write_chunk(3)
+    // ₀_₁_₂_₃_₄_₅_₆_₇_. w=0, r=0, s=_
+    assert_slots!(8, 0; 0, 0);
+    write(p, &[0, 1, 2, 3, 4]);
+    // ₀0₁1₂2₃3₄4₅_₆_₇_. w=5, r=0, s=_
+    assert_slots!(3, 0; 5, 0);
+    read(c, &[0, 1, 2, 3, 4]);
+    // ₀_₁_₂_₃_₄_₅_₆_₇_. w=5, r=5, s=_
+    assert_slots!(3, 5; 0, 0);
+    // 3 slots are skipped:
+    p.write_chunk(4)
         .map(|mut ch| {
-            ch.as_mut_slice().copy_from_slice(&[9, 8, 7]);
+            ch.as_mut_slice().copy_from_slice(&[9, 8, 7, 6]);
             ch.commit_all();
         })
         .unwrap();
-    // ₀9₁8₂7₃_₄_. w=3, r=3, s=3
+    // ₀9₁8₂7₃6₄_₅_₆_₇_. w=4, r=5, s=5
     // NB: w is allowed to overtake r, because r==s!
-    assert_slots!(2, 0; 3, 0);
-    write(p, &[6]);
-    // ₀9₁8₂7₃6₄_. w=4, r=3/0, s=3
-    assert_slots!(1, 0; 4, 0);
-    write(p, &[5]);
-    // ₀9₁8₂7₃6₄5. w=0, r=3/0, s=(3)
-    assert_slots!(0, 0; 5, 0);
-    read(c, &[9, 8, 7, 6]);
-    // ₀_₁_₂_₃_₄5. w=0, r=4, s=_
-    assert_slots!(4, 0; 1, 0);
+    assert_slots!(4, 0; 4, 0);
+    write(p, &[5, 4]);
+    //// ₀9₁8₂7₃6₄5₅4₆_₇_. w=6, r=5/0, s=5
+    assert_slots!(2, 0; 6, 0);
+    // NB: reading from 5 would be invalid, it starts at 0.
+    read(c, &[9, 8, 7]);
+    // ₀_₁_₂_₃6₄5₅4₆_₇_. w=6, r=3, s=_
+    //assert_slots!(2, 3; 3, 0);
+    //write(p, &[5]);
+    //// ₀9₁8₂7₃6₄5₅_₆_₇_. w=0, r=3/0, s=(3)
+    //assert_slots!(0, 0; 5, 0);
+    //read(c, &[9, 8, 7, 6]);
+    //// ₀_₁_₂_₃_₄5₅_₆_₇_. w=0, r=4, s=_
+    //assert_slots!(4, 0; 1, 0);
 
     // TODO: check both cases: (1) write and overtake r (followed by read); (2) read
 }
