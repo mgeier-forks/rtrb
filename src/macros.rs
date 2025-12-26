@@ -549,7 +549,7 @@ macro_rules! ring_buffer {
                 fn_read_chunk_commit!(N = $N, arc = $arc, module = $module);
                 fn_X_chunk_X_len_and_is_empty!(contiguous = $contiguous);
 
-                fn_read_chunk_uninit_commit_unchecked!(contiguous = $contiguous);
+                fn_read_chunk_commit_unchecked!(contiguous = $contiguous);
             });
 
             impl_debug!(N = $N,
@@ -2410,7 +2410,7 @@ macro_rules! fn_write_chunk_uninit_commit_unchecked {
     };
 }
 
-macro_rules! fn_read_chunk_uninit_commit_unchecked {
+macro_rules! fn_read_chunk_commit_unchecked {
     (contiguous = yes) => {
         unsafe fn commit_unchecked(self, n: usize) -> usize {
             for i in 0..n {
