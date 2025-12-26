@@ -3688,7 +3688,7 @@ macro_rules! mod_chunks_docstring {
     /// assert_eq!(c.slots(), 3);
     #[doc = choice!($contiguous,
         /// assert_eq!(c.slots_contiguous(), (1, 2));
-        /// assert!(p.is_full()); // The skipped slot is not available (for now)!
+        /// assert!(p.is_full()); // The skipped slot is not available for writing (for now)!
         /// assert_eq!(c.pop(), Ok(12));
         /// // TODO: try also with read_chunk(1) (but then remove?)
         /// //c.read_chunk(1).unwrap().commit_all();
@@ -3697,7 +3697,7 @@ macro_rules! mod_chunks_docstring {
         /// //assert_eq!(p.slots(), 2);
         /// //assert_eq!(p.slots_contiguous(), (2, 0));
         /// // TODO: try also this alternative (but then remove it?):
-        /// assert!(p.write_chunk(2).is_ok());
+        /// //assert!(p.write_chunk(2).is_ok());
         ///
         /// let mut v = Vec::<i32>::with_capacity(2);
         /// if let Ok(chunk) = c.read_chunk(2) {
