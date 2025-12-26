@@ -36,8 +36,8 @@ libc = { version = "0.2", optional = true }
 
 [dev-dependencies]
 rstest = "0.26.1"
-rand = "0.8"
-criterion = "0.7"
+rand = "0.9"
+criterion = "0.8"
 # TODO: This is only needed for the doctests of cache_padded.rs! Is there a way to avoid this?
 crossbeam-utils = { version = "0.8", default-features = false }
 crossbeam-queue-pr338 = { git = "https://github.com/mgeier/crossbeam", branch = "spsc", package = "crossbeam-queue" }
@@ -76,6 +76,10 @@ name = "two_threads"
 harness = false
 # Threads are only available in std
 required-features = ["std"]
+
+[[bench]]
+name = "two_threads_with_chunks"
+harness = false
 
 [[bench]]
 name = "two_threads_const"
