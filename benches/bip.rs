@@ -140,7 +140,6 @@ $(
 $(
     group_small.bench_function($id, |b| {
         b.iter_custom(|iters| {
-                        //println!("=== new iteration, size {iters}");
             let (create, write_chunk, read_chunk) = help_with_type_inference($create, $write_chunk, $read_chunk);
             // Queue is very short in order to force a lot of contention between threads.
             let (mut p, mut c) = create(4);
@@ -150,18 +149,14 @@ $(
                     let start = std::time::Instant::now();
                     let mut i = 0;
                     while i < iters {
-                        //println!("write {i}");
                         // NB: we change chunk sizes in hope for unpredictable "skip" behavior.
-        // TODO: more random. spin on 2, then optional 1?
-                        while !write_chunk(&mut p, black_box(&[i as u8])) {
-                            std::hint::spin_loop();
-                        }
-                        i += 1;
                         while !write_chunk(&mut p, black_box(&[i as u8, (i + 1) as u8])) {
                             std::hint::spin_loop();
                         }
                         i += 2;
-                        //println!("write done {i}");
+                        if write_chunk(&mut p, black_box(&[i as u8])) {
+                            i += 1;
+                        }
                     }
                     start
                 })
@@ -169,17 +164,14 @@ $(
             // While the second thread is still starting up, this thread will busy-wait.
             let mut i = 0;
             while i < iters {
-                        //println!("read {i}");
                 let mut a = [0, 0];
                 if read_chunk(&mut c, black_box(&mut a)) {
                     assert_eq!(a, [i as u8, (i + 1) as u8]);
-                        //println!("read {i} success 2");
                     i += 2;
                 }
                 let mut a = [0];
                 if read_chunk(&mut c, black_box(&mut a)) {
                     assert_eq!(a, [i as u8]);
-                        //println!("read {i} success 1");
                     i += 1;
                 }
             }
