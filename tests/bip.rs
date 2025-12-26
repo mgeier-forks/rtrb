@@ -25,17 +25,19 @@ macro_rules! assert_eq_stringify {
 // Where possible, we test both write/read_chunk and push/pop.
 #[rstest::rstest]
 fn slots(
+    // TODO: "resetting" and "non-resetting" assertion functions (read vs. write?)
+    // TODO: include peek() in "resetting"
     #[values(
         |p: P, x, y| assert_eq_stringify!(p.slots(), x + y),
         |p: P, x, y| assert_eq_stringify!(p.slots_contiguous(), (x, y)),
         |p: P, x, _| assert_eq_stringify!(p.slots_contiguous_first(), x),
         |p: P, x: usize, y| assert!(p.write_chunk(x.max(y)).is_ok()),
         |p: P, x: usize, y| assert!(p.write_chunk(x.max(y) + 1).is_err()),
-        //|_: P, _, _| {},
+        |_: P, _, _| {},
     )]
     p_slots: fn(P, usize, usize),
     #[values(
-        |c: C, x, _| assert_eq_stringify!(c.slots(), x),
+        |c: C, x, y| assert_eq_stringify!(c.slots(), x + y),
         |c: C, x, y| assert_eq_stringify!(c.slots_contiguous(), (x, y)),
         |c: C, x, _| assert_eq_stringify!(c.slots_contiguous_first(), x),
         |c: C, x, _| assert!(c.read_chunk(x).is_ok()),
@@ -93,16 +95,19 @@ fn slots(
         .unwrap();
     // ₀9₁8₂7₃6₄_₅_₆_₇_. w=4, r=5, s=5
     // NB: even though 4 slots are empty, only one can be written!
-    // TODO: there are several methods that will wrap head and reset skip
-    //assert_slots!(1, 0; 4, 0);
-    // NB: reading from index 5 would be invalid, the read index is reset to 0.
+    // TODO: replace with "non-resetting" assertion:
+    assert!(p.write_chunk(2).is_err());
+    // NB: only a following read operation will reset r&s!
+    // TODO: replace with "resetting" assertion:
+    assert!(c.read_chunk(4).is_ok());
+    assert_slots!(4, 0; 4, 0);
     read(c, &[9, 8, 7]);
     // ₀_₁_₂_₃6₄_₅_₆_₇_. w=4, r=3, s=_
     // NB: now the previously skipped slots can be written again.
     assert_slots!(4, 3; 1, 0);
     write(p, &[5, 4]);
     // ₀_₁_₂_₃6₄5₅4₆_₇_. w=6, r=3, s=_
-    //assert_slots!(2, 3; 3, 0);
+    assert_slots!(2, 3; 3, 0);
     // 2 slots are skipped:
     p.write_chunk(3)
         .map(|mut ch| {
@@ -111,13 +116,18 @@ fn slots(
         })
         .unwrap();
     // ₀3₁2₂1₃6₄5₅4₆_₇_. w=3, r=3, s=6
-    //assert_slots!(0, 0; 3, 3);
+    assert_slots!(0, 0; 3, 3);
     assert!(p.is_full());
     read(c, &[6, 5]);
     // ₀3₁2₂1₃_₄_₅4₆_₇_. w=3, r=5, s=6
-    //assert_slots!(2, 0; 1, 3);
+    assert_slots!(2, 0; 1, 3);
     // Reading [3, 2, 1] is not possible, [4] has to be read first.
     assert!(c.read_chunk(3).is_err());
+    read(c, &[4]);
+    // ₀3₁2₂1₃_₄_₅_₆_₇_. w=3, r=6, s=6
+    // NB: only a following read operation will reset r&s!
+    assert_eq!(c.peek(), Ok(&3));
+    assert_slots!(5, 0; 3, 0);
 }
 
 // TODO: test if skipped elements are dropped
