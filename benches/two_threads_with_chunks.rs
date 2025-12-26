@@ -173,8 +173,8 @@ criterion_main!(benches);
 use std::io::{Read as _, Write as _};
 
 create_two_threads_with_chunks_benchmark!(
-    "rtrb-write-read",
-    rtrb::RingBuffer::new,
+    "arc-write-read",
+    rtrb::arc::RingBuffer::new,
     |p, s| match p.write(s) {
         Ok(n) => &s[n..],
         _ => s,
@@ -182,6 +182,35 @@ create_two_threads_with_chunks_benchmark!(
     |c, s| match c.read(s) {
         Ok(n) => &s[..n],
         _ => &[],
+    },
+    ::
+    "bip_arc-write_chunk-read_chunk",
+    rtrb::bip_arc::RingBuffer::new,
+    |p, s| {
+        // TODO: is it more efficient to call write_chunk() without slots_contiguous...() before?
+        // TODO: write_chunk() uses slots_contiguous_helper() internally
+        let slots = p.slots_contiguous_max().min(s.len());
+        /*
+        if slots == 0 {
+            return s;
+        }
+        */
+        let mut chunk = p.write_chunk(slots).unwrap();
+        chunk.as_mut_slice().copy_from_slice(&s[..slots]);
+        chunk.commit_all();
+        &s[slots..]
+    },
+    |c, s| {
+        let slots = c.slots_contiguous_first().min(s.len());
+        /*
+        if slots == 0 {
+            return &[];
+        }
+        */
+        let chunk = c.read_chunk(slots).unwrap();
+        s[..slots].copy_from_slice(chunk.as_slice());
+        chunk.commit_all();
+        &s[..slots]
     },
     ::
 );
