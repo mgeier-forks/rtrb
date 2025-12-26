@@ -2648,8 +2648,8 @@ macro_rules! fn_consumer_read_chunk_docstring {
 }
 
 macro_rules! fn_consumer_read_chunk {
-    (N = $N:ident, bip = yes, contiguous = $contiguous:ident) => {
-        #[doc = fn_consumer_read_chunk_docstring!(bip = yes, contiguous = $contiguous)]
+    (N = $N:ident, bip = yes, contiguous = yes) => {
+        #[doc = fn_consumer_read_chunk_docstring!(bip = yes, contiguous = yes)]
         pub fn read_chunk(
             &mut self,
             n: usize,
