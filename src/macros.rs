@@ -3670,8 +3670,8 @@ macro_rules! mod_chunks_docstring {
     /// // NB: write_chunk_uninit() could be used for possibly better performance:
     /// if let Ok(mut chunk) = p.write_chunk(2) {
     #[doc = choice!($contiguous,
-        ///     // NB: a chunk of 2 was not available at the end of the buffer,
-        ///     //     so one slot was skipped and we got a chunk at the beginning.
+        ///     // A chunk of 2 was not available at the end of the buffer,
+        ///     // so one slot was skipped and we got a chunk at the beginning.
         ///     chunk.as_mut_slice().copy_from_slice(&data);
         ::
         ///     let (first, second) = chunk.as_mut_slices();
@@ -3689,14 +3689,13 @@ macro_rules! mod_chunks_docstring {
         /// assert_eq!(c.slots_contiguous(), (1, 2));
         /// assert!(p.is_full()); // The skipped slot is not available for writing (for now)!
         /// assert_eq!(c.pop(), Ok(12));
-        /// // TODO: try also with read_chunk(1) (but then remove?)
-        /// //c.read_chunk(1).unwrap().commit_all();
-        /// // Popping this element has unblocked the skipped slot:
-        /// // TODO: fix this:
-        /// //assert_eq!(p.slots(), 2);
-        /// //assert_eq!(p.slots_contiguous(), (2, 0));
-        /// // TODO: try also this alternative (but then remove it?):
-        /// //assert!(p.write_chunk(2).is_ok());
+        /// // Popping this element has *not* reset the read index,
+        /// // making only one of two empty slots available for writing:
+        /// assert_eq!(p.slots(), 1);
+        /// // Any operation on the consumer (except capacity() and is_abandoned()) ...
+        /// assert_eq!(c.peek(), Ok(&20));
+        /// // ... will reset the read index and make both slots available for writing:
+        /// assert_eq!(p.slots(), 2);
         ///
         /// let mut v = Vec::<i32>::with_capacity(2);
         /// if let Ok(chunk) = c.read_chunk(2) {

@@ -43,6 +43,7 @@ fn slots(
         |c: C, x, _| assert!(c.read_chunk(x).is_ok()),
         |c: C, x, _| assert!(c.read_chunk(x + 1).is_err()),
         |c: C, x, _| assert_eq!(c.peek().is_ok(), x > 0),
+        |c: C, x, _| assert_eq!(c.is_empty(), x == 0),
     )]
     c_slots: fn(C, usize, usize),
     #[values(
