@@ -80,6 +80,8 @@ required-features = ["std"]
 [[bench]]
 name = "two_threads_with_chunks"
 harness = false
+# Threads are only available in std
+required-features = ["std"]
 
 [[bench]]
 name = "two_threads_const"
