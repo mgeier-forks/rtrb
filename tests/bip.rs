@@ -20,13 +20,12 @@ macro_rules! assert_eq_stringify {
     };
 }
 
-// Different "slots" functions are tested separately and in all combinations (including no-op)
-// because of caching and potential resetting of `skip`.
+// Different "slots" functions are tested separately and in all combinations
+// (including a no-op) because of caching.
 // Where possible, we test both write/read_chunk and push/pop.
 #[rstest::rstest]
 fn slots(
-    // TODO: "resetting" and "non-resetting" assertion functions (read vs. write?)
-    // TODO: include peek() in "resetting"
+    // NB: None of these functions will reset `skip`:
     #[values(
         |p: P, x, y| assert_eq_stringify!(p.slots(), x + y),
         |p: P, x, y| assert_eq_stringify!(p.slots_contiguous(), (x, y)),
@@ -36,13 +35,14 @@ fn slots(
         |_: P, _, _| {},
     )]
     p_slots: fn(P, usize, usize),
+    // NB: All these functions are resetting `skip` if `head == skip`:
     #[values(
         |c: C, x, y| assert_eq_stringify!(c.slots(), x + y),
         |c: C, x, y| assert_eq_stringify!(c.slots_contiguous(), (x, y)),
         |c: C, x, _| assert_eq_stringify!(c.slots_contiguous_first(), x),
         |c: C, x, _| assert!(c.read_chunk(x).is_ok()),
         |c: C, x, _| assert!(c.read_chunk(x + 1).is_err()),
-        |_: C, _, _| {},
+        |c: C, x, _| assert_eq!(c.peek().is_ok(), x > 0),
     )]
     c_slots: fn(C, usize, usize),
     #[values(
@@ -65,6 +65,22 @@ fn slots(
     let (mut p, mut c) = RingBuffer::new(8);
     let p = &mut p;
     let c = &mut c;
+
+    macro_rules! assert_p_slots {
+        ($p0:expr, $p1:expr) => {
+            p_slots(p, $p0, $p1);
+            // repeat the same thing because caches might have been updated:
+            p_slots(p, $p0, $p1);
+        };
+    }
+
+    macro_rules! assert_c_slots {
+        ($c0:expr, $c1:expr) => {
+            c_slots(c, $c0, $c1);
+            // repeat the same thing because caches might have been updated:
+            c_slots(c, $c0, $c1);
+        };
+    }
 
     macro_rules! assert_slots {
         ($p0:expr, $p1:expr; $c0:expr, $c1:expr) => {
@@ -94,16 +110,15 @@ fn slots(
         })
         .unwrap();
     // ₀9₁8₂7₃6₄_₅_₆_₇_. w=4, r=5, s=5
-    // NB: even though 4 slots are empty, only one can be written!
-    // TODO: replace with "non-resetting" assertion:
-    assert!(p.write_chunk(2).is_err());
-    // NB: only a following read operation will reset r&s!
-    // TODO: replace with "resetting" assertion:
-    assert!(c.read_chunk(4).is_ok());
-    assert_slots!(4, 0; 4, 0);
+    // Even though 4 slots are empty, only one can be written right now ...
+    assert_p_slots!(1, 0);
+    // ... but any consumer operation will reset r&s ...
+    assert_c_slots!(4, 0);
+    // ... and now all 4 slots are available for writing.
+    // ₀9₁8₂7₃6₄_₅_₆_₇_. w=4, r=0, s=_
+    assert_p_slots!(4, 0);
     read(c, &[9, 8, 7]);
     // ₀_₁_₂_₃6₄_₅_₆_₇_. w=4, r=3, s=_
-    // NB: now the previously skipped slots can be written again.
     assert_slots!(4, 3; 1, 0);
     write(p, &[5, 4]);
     // ₀_₁_₂_₃6₄5₅4₆_₇_. w=6, r=3, s=_
@@ -125,9 +140,13 @@ fn slots(
     assert!(c.read_chunk(3).is_err());
     read(c, &[4]);
     // ₀3₁2₂1₃_₄_₅_₆_₇_. w=3, r=6, s=6
-    // NB: only a following read operation will reset r&s!
-    assert_eq!(c.peek(), Ok(&3));
-    assert_slots!(5, 0; 3, 0);
+    // Even though the slots are empty, we cannot write beyond r ...
+    assert_p_slots!(3, 0);
+    // ... but any consumer operation will reset r&s ...
+    assert_c_slots!(3, 0);
+    // ... and now all empty slots are available for writing.
+    // ₀3₁2₂1₃_₄_₅_₆_₇_. w=3, r=0, s=_
+    assert_p_slots!(5, 0);
 }
 
 // TODO: test if skipped elements are dropped
