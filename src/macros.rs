@@ -1606,7 +1606,6 @@ macro_rules! fn_producer_slots_contiguousX {
             }
             head = b.head.load(Ordering::Acquire);
             self.cached_head.set(head);
-            debug_assert_ne!(head, tail); // buffer is not empty
             collapsed_head = b.collapse_position(head);
             if collapsed_head < collapsed_tail {
                 let slots = b.capacity() - collapsed_tail;
