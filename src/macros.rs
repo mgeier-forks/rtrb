@@ -509,7 +509,7 @@ macro_rules! ring_buffer {
         impl_debug!(N = $N, RingBuffer);
         impl_debug!(N = $N, arc = $arc, Producer, Consumer);
 
-        #[doc = mod_chunks_docstring!(storage = $storage, N = $N, arc = $arc, contiguous = $contiguous, module = $module)]
+        #[doc = mod_chunks_docstring!(storage = $storage, N = $N, arc = $arc, bip = $bip, contiguous = $contiguous, module = $module)]
         pub mod chunks {
             use core::{fmt, mem::MaybeUninit};
             use $crate::atomic::*;
@@ -3593,7 +3593,7 @@ macro_rules! fn_read_chunk_into_iter_size_hint {
 }
 
 macro_rules! mod_chunks_docstring {
-    (storage = $storage:ident, N = $N:ident, arc = $arc:ident, contiguous = $contiguous:ident, module = $module:literal) => { docstring!(
+    (storage = $storage:ident, N = $N:ident, arc = $arc:ident, bip = $bip:ident, contiguous = $contiguous:ident, module = $module:literal) => { docstring!(
 /// Writing and reading multiple items at once into and from a [`RingBuffer`].
 ///
 /// Multiple items at once can be moved from an iterator into the ring buffer by using
@@ -3644,7 +3644,7 @@ macro_rules! mod_chunks_docstring {
     ///
     /// assert_eq!(p.slots(), 1);
     /// assert_eq!(c.slots(), 3);
-    #[doc = choice!($contiguous,
+    #[doc = choice!($bip,
         /// // Note that all of those slots are available in a single contiguous chunk:
         /// assert_eq!(c.slots_contiguous(), (3, 0));
         ::
@@ -3660,8 +3660,8 @@ macro_rules! mod_chunks_docstring {
     /// assert_eq!(c.peek(), Ok(&12));
     ///
     /// assert_eq!(p.slots(), 3);
-    #[doc = choice!($contiguous,
-        /// // NB: Those free slots are available in two contiguous chunks:
+    #[doc = choice!($bip,
+        /// // Those free slots are available in two contiguous chunks:
         /// assert_eq!(p.slots_contiguous(), (1, 2));
         ::
     )]
@@ -3669,7 +3669,7 @@ macro_rules! mod_chunks_docstring {
     /// let data = vec![20, 21];
     /// // NB: write_chunk_uninit() could be used for possibly better performance:
     /// if let Ok(mut chunk) = p.write_chunk(2) {
-    #[doc = choice!($contiguous,
+    #[doc = choice!($bip,
         ///     // A chunk of 2 was not available at the end of the buffer,
         ///     // so one slot was skipped and we got a chunk at the beginning.
         ///     chunk.as_mut_slice().copy_from_slice(&data);
@@ -3685,7 +3685,7 @@ macro_rules! mod_chunks_docstring {
     /// }
     ///
     /// assert_eq!(c.slots(), 3);
-    #[doc = choice!($contiguous,
+    #[doc = choice!($bip,
         /// assert_eq!(c.slots_contiguous(), (1, 2));
         /// assert!(p.is_full()); // The skipped slot is not available for writing (for now)!
         /// assert_eq!(c.pop(), Ok(12));
@@ -3724,7 +3724,7 @@ macro_rules! mod_chunks_docstring {
     /// assert!(c.is_empty());
     /// ```
     ///
-    #[doc = choice!($contiguous,
+    #[doc = choice!($bip,
         /// TODO: modify iterator example, use slots_contiguous()
         ::
         /// The iterator API can be used to move items from one ring buffer to another:
