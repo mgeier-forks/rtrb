@@ -1,12 +1,10 @@
-#storage = "vrb"
-N = false
 arc = true
-bip = false
 contiguous = true
 padded = true
 # NB: The capacity will always be rounded up to a power of two
 # (a multiple of (page size / size of `T`)), so `pow2 = false` doesn't make sense.
 pow2 = true
+storage = "vrb"
 
 module_docstring = """
 //! Ring buffer using a virtual memory trick.

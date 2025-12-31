@@ -1,10 +1,28 @@
-{% if N %}
-{% set params = "T, const N: usize" %}
-{% set args = "T, N" %}
-{% set blank_lifetime = "'_, N" %}
-{% else %}
-{% set params = "T" %}
-{% set args = "T" %}
-{% set blank_lifetime = "'_" %}
+{% if bip is undefined %}{% set bip = false %}{% endif %}
+{% if bip and contiguous is undefined %}{% set contiguous = true %}{% endif %}
+{% if contiguous is undefined %}{% set contiguous = false %}{% endif %}
+{% if N is undefined %}
+  {% if storage == "array" %}
+    {% set N = true %}
+  {% else %}
+    {% set N = false %}
+  {% endif %}
 {% endif %}
-
+{##}
+{% if N %}
+  {% set params = "T, const N: usize" %}
+  {% set args = "T, N" %}
+  {% set blank_lifetime = "'_, N" %}
+{% else %}
+  {% set params = "T" %}
+  {% set args = "T" %}
+  {% set blank_lifetime = "'_" %}
+{% endif %}
+{##}
+{% macro CachePadded(arg) %}
+{% if padded %}CachePadded<{{ arg }}>{% else %}{{ arg }}{% endif %}
+{% endmacro %}
+{##}
+{% macro CachePadded_new(arg) %}
+{% if padded %}CachePadded::new({{ arg }}){% else %}{{ arg }}{% endif %}
+{% endmacro %}

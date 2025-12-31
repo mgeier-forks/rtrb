@@ -1,12 +1,7 @@
-#storage = "array"
-# TODO: array implies N?
-N = true
 arc = false
-bip = false
-# TODO: bip implies contiguous?
-contiguous = false
 padded = true
 pow2 = false
+storage = "array"
 
 module_docstring = """
 //! TODO: array docs

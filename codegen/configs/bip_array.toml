@@ -1,10 +1,8 @@
-#storage = "array"
-N = true
 arc = false
 bip = true
-contiguous = true
 padded = true
 pow2 = false
+storage = "array"
 
 module_docstring = """
 //! A bi-partite ring buffer whose elements are stored in an [array].
