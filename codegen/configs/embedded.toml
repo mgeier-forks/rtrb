@@ -5,3 +5,10 @@ bip = false
 contiguous = false
 padded = false
 pow2 = false
+
+module_docstring = """
+//! TODO: embedded
+//!
+//! no cache padding, no dynamic allocation
+//! power-of-two optimizations might be done automatically by the compiler? TODO: verify
+"""

@@ -5,3 +5,9 @@ bip = true
 contiguous = true
 padded = true
 pow2 = false
+
+module_docstring = """
+//! A bi-partite ring buffer whose elements are stored in an [array].
+//!
+//! See [`rtrb::bip_arc`] for a bi-partite ring buffer with dynamic storage.
+"""

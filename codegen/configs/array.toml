@@ -7,3 +7,7 @@ bip = false
 contiguous = false
 padded = true
 pow2 = false
+
+module_docstring = """
+//! TODO: array docs
+"""

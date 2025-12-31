@@ -5,3 +5,9 @@ bip = true
 contiguous = true
 padded = true
 pow2 = true
+
+module_docstring = """
+//! A bi-partite ring buffer whose capacity is a power of two.
+//!
+//! See ...
+"""

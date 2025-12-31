@@ -5,3 +5,34 @@ bip = true
 contiguous = true
 padded = true
 pow2 = false
+
+module_docstring = """
+//! A bi-partite ring buffer.
+//!
+//! Simon Cooke (2003)
+//! <https://www.codeproject.com/Articles/3479/The-Bip-Buffer-The-Circular-Buffer-with-a-Twist>
+//! (not thread-safe)
+//!
+//! two revolving regions
+//!
+//! "two-phase allocation system" (reserve + commit)
+//!
+//! history:
+//! "The FIFO logic can tell if the FIFO is empty because the head and tail values are the same, and it's full if the head is one greater than the tail."
+//!
+//! "Once more free space is available to the left of region A than to the right of it, a second region (comically named "region B") is created in that space."
+//!
+//! Reserve -> Commit; GetContiguousBlock -> DecommitBlock.
+//!
+//! 2019:
+//! <https://ferrous-systems.com/blog/lock-free-ring-buffer/>
+//! <https://blog.systems.ethz.ch/blog/2019/the-design-and-implementation-of-a-lock-free-ring-buffer-with-contiguous-reservations.html>
+//!
+//! Other Rust implementations:
+//! <https://crates.io/crates/bbqueue>
+//! <https://crates.io/crates/bipbuffer> (not thread-safe)
+//! <https://crates.io/crates/spsc-bip-buffer>
+//!
+//! Implementations in other languages:
+//! <https://github.com/willemt/bipbuffer> (C)
+"""

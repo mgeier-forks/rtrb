@@ -5,3 +5,7 @@ bip = false
 contiguous = false
 padded = true
 pow2 = true
+
+module_docstring = """
+//! TODO: arc2 docs
+"""
