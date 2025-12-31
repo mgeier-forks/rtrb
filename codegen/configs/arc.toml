@@ -1,0 +1,9 @@
+#storage = "vec"
+# TODO: vec implies N = false?
+N = false
+arc = true
+bip = false
+# TODO: make contiguous false by default?
+contiguous = false
+padded = true
+pow2 = false

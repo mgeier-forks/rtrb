@@ -1,0 +1,22 @@
+[package]
+name = "codegen"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+default = ["watch"]
+watch = ["dep:notify", "dep:rtrb"]
+
+[dependencies]
+glob = "0.3"
+minijinja = { version = "2.14", default-features = false, features = [
+  "deserialization",
+  "loader",
+  "multi_template",
+] }
+notify = { version = "8.2", optional = true }
+#rtrb = { path = "..", optional = true }
+rtrb = { version = "0.3", optional = true }
+toml = "0.9"
+

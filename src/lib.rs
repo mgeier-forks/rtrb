@@ -164,9 +164,6 @@ mod atomic {
     pub use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 }
 
-#[macro_use]
-mod macros;
-
 #[cfg(feature = "alloc")]
 pub mod arc;
 #[cfg(feature = "alloc")]
@@ -193,11 +190,6 @@ const IS_ABANDONED: u8 = 0b10000000;
 #[cfg(feature = "alloc")]
 #[doc(hidden)]
 pub use arc::{Consumer, Producer, RingBuffer};
-
-#[cfg(feature = "alloc")]
-#[doc(hidden)]
-// TODO: remove this once docs are updated:
-pub use arc::chunks;
 
 #[doc(hidden)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

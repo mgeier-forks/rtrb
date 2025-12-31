@@ -19,6 +19,7 @@ exclude = [
 ]
 
 [workspace]
+members = ["codegen"]
 exclude = ["crossbeam", "performance-comparison"]
 
 [features]

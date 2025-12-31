@@ -1,3 +1,6 @@
+// This file has been auto-generated ...
+
+
 //! A bi-partite ring buffer.
 //!
 //! Simon Cooke (2003)
@@ -27,20 +30,13 @@
 //! Implementations in other languages:
 //! <https://github.com/willemt/bipbuffer> (C)
 
-ring_buffer! {
-    storage = vec,
-    N = no,
-    arc = yes,
-    bip = yes,
-    contiguous = yes,
-    padded = yes,
-    pow2 = no,
-    module = "rtrb::bip_arc",
-    rb_doc = docstring!(
-        /// Bi-partite ring buffer.
-        ///
-        /// TODO: some more docs, maybe links? [`RingBuffer::new()`].
-        ///
-        /// *See also the [module-level documentation](crate::bip_arc).*
-    )
+
+/// A bounded single-producer single-consumer (SPSC) queue.
+///
+/// Elements can be written with a [`Producer`] and read with a [`Consumer`],
+/// both of which can be obtained with [`RingBuffer::new()`].
+///
+/// *See also the [module-level documentation](rtrb::bip_arc).*
+pub struct RingBuffer<T> {
 }
+

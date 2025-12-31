@@ -1,0 +1,10 @@
+{% if N %}
+{% set params = "T, const N: usize" %}
+{% set args = "T, N" %}
+{% set blank_lifetime = "'_, N" %}
+{% else %}
+{% set params = "T" %}
+{% set args = "T" %}
+{% set blank_lifetime = "'_" %}
+{% endif %}
+

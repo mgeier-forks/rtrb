@@ -1,0 +1,7 @@
+#storage = "array"
+N = true
+arc = false
+bip = false
+contiguous = false
+padded = false
+pow2 = false

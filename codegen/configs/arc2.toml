@@ -1,0 +1,7 @@
+#storage = "vec"
+N = false
+arc = true
+bip = false
+contiguous = false
+padded = true
+pow2 = true
