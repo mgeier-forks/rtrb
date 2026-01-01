@@ -12,6 +12,7 @@ pub use producer::Producer;
 mod consumer;
 pub use consumer::Consumer;
 
+pub mod chunks;
 
 /// Error type for [`Consumer::peek()`].
 #[doc(inline)]

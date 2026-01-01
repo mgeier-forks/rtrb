@@ -17,6 +17,7 @@ pub use consumer::Consumer;
 mod arc_ring_buffer;
 {% endif %}
 
+pub mod chunks;
 
 /// Error type for [`Consumer::peek()`].
 #[doc(inline)]

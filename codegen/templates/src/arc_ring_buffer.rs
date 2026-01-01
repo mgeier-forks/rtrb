@@ -12,6 +12,7 @@ use crate::IS_ABANDONED;
 use super::{Consumer, Producer, RingBuffer};
 
 // Non-public helper type.
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ArcRingBuffer<T{{ N_param }}> {
     ptr: NonNull<RingBuffer<T{{ N_arg }}>>,
 }
@@ -23,7 +24,7 @@ impl<T{{ N_param }}> ArcRingBuffer<T{{ N_arg }}> {
     // NB: this takes ownership of the RingBuffer, making sure that only one
     //     Producer and Consumer are ever created.
     #[allow(clippy::new_ret_no_self)]
-    fn new(rb: RingBuffer<T>) -> (Producer<T>, Consumer<T>) {
+    pub fn new(rb: RingBuffer<T>) -> (Producer<T>, Consumer<T>) {
         debug_assert_eq!(rb.flags.load(Ordering::Relaxed) & IS_ABANDONED, 0);
         let head = rb.head.load(Ordering::Relaxed);
         let tail = rb.tail.load(Ordering::Relaxed);
@@ -93,12 +94,6 @@ impl<T{{ N_param }}> core::ops::Deref for ArcRingBuffer<T{{ N_arg }}> {
     fn deref(&self) -> &Self::Target {
         // SAFETY: There are never any mutable references.
         unsafe { self.ptr.as_ref() }
-    }
-}
-
-impl<T{{ N_param }}> PartialEq for ArcRingBuffer<T{{ N_arg }}> {
-    fn eq(&self, other: &Self) -> bool {
-        self.ptr == other.ptr
     }
 }
 {% endif %}

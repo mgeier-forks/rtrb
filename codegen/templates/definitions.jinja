@@ -17,9 +17,11 @@
   {% set N_arg = "" %}
 {% endif %}
 {% if arc %}
-  {% set arc_tick = "" %}
+  {% set arc_tick_a = "" %}
+  {% set arc_tick_blank = "" %}
 {% else %}
-  {% set arc_tick = "'_, " %}
+  {% set arc_tick_a = "'a, " %}
+  {% set arc_tick_blank = "'_, " %}
 {% endif %}
 {##}
 {% macro CachePadded(arg) %}

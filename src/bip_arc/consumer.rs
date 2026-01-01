@@ -2,7 +2,8 @@
 
 use core::cell::Cell;
 
-use super::{PopError, PeekError, RingBuffer};
+use crate::atomic::*;
+use super::{PopError, PeekError, RingBuffer, ChunkError, chunks::ReadChunk};
 use crate::IS_ABANDONED;
 use super::arc_ring_buffer::ArcRingBuffer;
 
@@ -29,18 +30,18 @@ use super::arc_ring_buffer::ArcRingBuffer;
 /// will be deallocated.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<T> {
-    buffer: ArcRingBuffer<T>,
+    pub(super) buffer: ArcRingBuffer<T>,
     /// A copy of `buffer.head` for quick access.
     ///
     /// This value is always in sync with `buffer.head`.
     /// For Bip Buffers, there is an exception: if `cached_head == buffer.skip`,
     /// `buffer.head` may have been reset by the producer.
-    cached_head: Cell<usize>,
+    pub(super) cached_head: Cell<usize>,
     /// A copy of `buffer.tail` for quick access.
     ///
     /// This value can be stale and sometimes needs to be resynchronized
     /// with `buffer.tail`.
-    cached_tail: Cell<usize>,
+    pub(super) cached_tail: Cell<usize>,
 }
 
 /// It can be moved ...
@@ -454,5 +455,44 @@ impl<T> Consumer<T> {
         Some(head)
     }
 
-    //fn_consumer_read_chunk!(N = $N, bip = $bip, contiguous = $contiguous);
+    /// Prepares a chunk of `n` slots for reading.
+    ///
+    /// [`ReadChunk::as_slice()`]
+    /// provides immutable access to the slots.
+    /// After reading from those slots, they explicitly have to be made available
+    /// to be written again by the [`Producer`] by calling [`ReadChunk::commit()`]
+    /// or [`ReadChunk::commit_all()`].
+    ///
+    /// Alternatively, items can be moved out of the [`ReadChunk`] using iteration
+    /// because it implements [`IntoIterator`]
+    /// ([`ReadChunk::into_iter()`] can be used to explicitly turn it into an [`Iterator`]).
+    /// All moved items are automatically made available to be written again by
+    /// the [`Producer`].
+    ///
+    /// # Errors
+    ///
+    /// If not enough slots are available, an error
+    /// (containing the number of available slots) is returned.
+    /// Use
+    /// [`slots_contiguous_first()`](Consumer::slots_contiguous_first)
+    /// to obtain the number of available slots beforehand.
+    ///
+    /// # Examples
+    ///
+    /// See the documentation of the [`chunks`](chunks#examples) module.
+    pub fn read_chunk(
+        &mut self,
+        n: usize,
+    ) -> Result<ReadChunk<'_, T>, ChunkError> {
+        let b = &self.buffer;
+        let (slots, _, _) = self.slots_contiguous_helper();
+        if slots >= n {
+            // TODO: use refreshed_head.or_else(self.cached_head.get)
+            let offset = b.collapse_position(self.cached_head.get());
+            // SAFETY: `offset` has been set to a valid position.
+            Ok(unsafe { ReadChunk::new(self, n, offset) })
+        } else {
+            Err(ChunkError::TooFewSlots(slots))
+        }
+    }
 }

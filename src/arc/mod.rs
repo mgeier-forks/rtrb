@@ -10,6 +10,7 @@ mod consumer;
 pub use consumer::Consumer;
 mod arc_ring_buffer;
 
+pub mod chunks;
 
 /// Error type for [`Consumer::peek()`].
 #[doc(inline)]

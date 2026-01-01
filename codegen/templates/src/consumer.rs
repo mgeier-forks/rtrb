@@ -5,10 +5,13 @@
 
 use core::cell::Cell;
 
-use super::{PopError, PeekError, RingBuffer};
+use crate::atomic::*;
+use super::{PopError, PeekError, RingBuffer, ChunkError, chunks::ReadChunk};
 {% if arc %}
 use crate::IS_ABANDONED;
 use super::arc_ring_buffer::ArcRingBuffer;
+{% else %}
+use crate::{HAS_CONSUMER, HAS_PRODUCER};
 {% endif %}
 
 /// The consumer side of a [`RingBuffer`].
@@ -35,27 +38,27 @@ use super::arc_ring_buffer::ArcRingBuffer;
 /// will be deallocated.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<T{{ N_param }}> {
-    buffer: ArcRingBuffer<T{{ N_arg }}>,
+    pub(super) buffer: ArcRingBuffer<T{{ N_arg }}>,
     /// A copy of `buffer.head` for quick access.
     ///
     /// This value is always in sync with `buffer.head`.
     /// For Bip Buffers, there is an exception: if `cached_head == buffer.skip`,
     /// `buffer.head` may have been reset by the producer.
-    cached_head: Cell<usize>,
+    pub(super) cached_head: Cell<usize>,
     /// A copy of `buffer.tail` for quick access.
     ///
     /// This value can be stale and sometimes needs to be resynchronized
     /// with `buffer.tail`.
-    cached_tail: Cell<usize>,
+    pub(super) cached_tail: Cell<usize>,
 }
 {% else %}
 ///
 /// A `Consumer` can only be created with [`RingBuffer::consumer()`].
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<'a, T{{ N_param }}> {
-    buffer: &'a RingBuffer<T{{ N_arg }}>,
-    cached_head: Cell<usize>,
-    cached_tail: Cell<usize>,
+    pub(super) buffer: &'a RingBuffer<T{{ N_arg }}>,
+    pub(super) cached_head: Cell<usize>,
+    pub(super) cached_tail: Cell<usize>,
 }
 
 impl<T{{ N_param }}> Drop for Consumer<'_, T{{ N_arg }}> {
@@ -79,12 +82,12 @@ impl<T{{ N_param }}> Drop for Consumer<'_, T{{ N_arg }}> {
 /// ```
 // SAFETY: After moving a consumer to another thread, there is still only a single thread
 // that can access the consumer side of the queue.
-unsafe impl<T: Send{{ N_param }}> Send for Consumer<{{ arc_tick }}T{{ N_arg }}>
+unsafe impl<T: Send{{ N_param }}> Send for Consumer<{{ arc_tick_blank }}T{{ N_arg }}>
 where
     RingBuffer<T{{ N_arg }}>: Sync
 {}
 
-impl<T{{ N_param }}> Consumer<{{ arc_tick }}T{{ N_arg }}> {
+impl<T{{ N_param }}> Consumer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// Attempts to pop the next element from the queue.
     ///
     /// The element is *moved* out of the ring buffer and its slot
@@ -516,5 +519,77 @@ impl<T{{ N_param }}> Consumer<{{ arc_tick }}T{{ N_arg }}> {
     }
 {% endif %}
 
-    //fn_consumer_read_chunk!(N = $N, bip = $bip, contiguous = $contiguous);
+    /// Prepares a chunk of `n` slots for reading.
+    ///
+{% if contiguous %}
+    /// [`ReadChunk::as_slice()`]
+{% else %}
+    /// [`ReadChunk::as_slices()`]
+{% endif %}
+    /// provides immutable access to the slots.
+    /// After reading from those slots, they explicitly have to be made available
+    /// to be written again by the [`Producer`] by calling [`ReadChunk::commit()`]
+    /// or [`ReadChunk::commit_all()`].
+    ///
+    /// Alternatively, items can be moved out of the [`ReadChunk`] using iteration
+    /// because it implements [`IntoIterator`]
+    /// ([`ReadChunk::into_iter()`] can be used to explicitly turn it into an [`Iterator`]).
+    /// All moved items are automatically made available to be written again by
+    /// the [`Producer`].
+    ///
+    /// # Errors
+    ///
+    /// If not enough slots are available, an error
+    /// (containing the number of available slots) is returned.
+    /// Use
+{% if bip %}
+    /// [`slots_contiguous_first()`](Consumer::slots_contiguous_first)
+{% else %}
+    /// [`slots()`](Consumer::slots)
+{% endif %}
+    /// to obtain the number of available slots beforehand.
+    ///
+    /// # Examples
+    ///
+    /// See the documentation of the [`chunks`](chunks#examples) module.
+{% if bip %}
+    pub fn read_chunk(
+        &mut self,
+        n: usize,
+    ) -> Result<ReadChunk<'_, T{{ N_arg }}>, ChunkError> {
+        let b = &self.buffer;
+        let (slots, _, _) = self.slots_contiguous_helper();
+        if slots >= n {
+            // TODO: use refreshed_head.or_else(self.cached_head.get)
+            let offset = b.collapse_position(self.cached_head.get());
+            // SAFETY: `offset` has been set to a valid position.
+            Ok(unsafe { ReadChunk::new(self, n, offset) })
+        } else {
+            Err(ChunkError::TooFewSlots(slots))
+        }
+    }
+{% else %}
+    pub fn read_chunk(
+        &mut self,
+        n: usize,
+    ) -> Result<ReadChunk<'_, T{{ N_arg }}>, ChunkError> {
+        let head = self.cached_head.get();
+        let tail = self.cached_tail.get();
+        let b = &self.buffer;
+        // Check if the queue has *possibly* not enough slots.
+        if b.distance(head, tail) < n {
+            // Refresh the tail ...
+            let tail = b.tail.load(Ordering::Acquire);
+            self.cached_tail.set(tail);
+            // ... and check if there *really* are not enough slots.
+            let slots = b.distance(head, tail);
+            if slots < n {
+                return Err(ChunkError::TooFewSlots(slots));
+            }
+        }
+        let offset = b.collapse_position(head);
+        // SAFETY: `offset` has been set to a valid position.
+        Ok(unsafe { ReadChunk::new(self, n, offset) })
+    }
+{% endif %}
 }

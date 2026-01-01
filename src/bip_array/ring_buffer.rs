@@ -19,11 +19,11 @@ use super::{Consumer, Producer};
 /// *See also the [module-level documentation](rtrb::bip_array).*
 #[derive(Debug)]
 pub struct RingBuffer<T, const N: usize> {
-    head: CachePadded<AtomicUsize>,
-    tail: CachePadded<AtomicUsize>,
+    pub(super) head: CachePadded<AtomicUsize>,
+    pub(super) tail: CachePadded<AtomicUsize>,
     // TODO: measure whether CachePadded helps
-    skip: CachePadded<AtomicUsize>,
-    flags: AtomicU8,
+    pub(super) skip: CachePadded<AtomicUsize>,
+    pub(super) flags: AtomicU8,
     /// The static array holding slots.
     ///
     /// This must be in an `UnsafeCell` because both producer and consumer
@@ -47,12 +47,12 @@ impl<T, const N: usize> RingBuffer<T, N> {
         }
     }
 
-    fn data_ptr(&self) -> *mut T {
+    pub(super) fn data_ptr(&self) -> *mut T {
         // TODO: what happens if N == 0?
         self.slots.get().cast()
     }
 
-    fn capacity(&self) -> usize {
+    pub(super) fn capacity(&self) -> usize {
         N
     }
 }
@@ -251,7 +251,7 @@ impl<T, const N: usize> RingBuffer<T, N> {
         capacity
     }
 
-    fn collapse_position(&self, pos: usize) -> usize {
+    pub(super) fn collapse_position(&self, pos: usize) -> usize {
         // Wraps from the range `0 .. 2 * capacity` to `0 .. capacity`.
         debug_assert!(pos == 0 || pos < 2 * self.capacity());
         if pos < self.capacity() {
@@ -268,13 +268,13 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// `pos` must be valid.
     ///
     /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
-    unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
+    pub(super) unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
         // SAFETY: See docstring.
         unsafe { self.data_ptr().add(self.collapse_position(pos)) }
     }
 
     /// Increments a position by going `n` slots forward.
-    fn increment(&self, pos: usize, n: usize) -> usize {
+    pub(super) fn increment(&self, pos: usize, n: usize) -> usize {
         debug_assert!(pos == 0 || pos < 2 * self.capacity());
         debug_assert!(n <= self.capacity());
         let threshold = 2 * self.capacity() - n;
@@ -288,7 +288,7 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// Increments a position by going one slot forward.
     ///
     /// This might be more efficient than self.increment(..., 1).
-    fn increment1(&self, pos: usize) -> usize {
+    pub(super) fn increment1(&self, pos: usize) -> usize {
         debug_assert_ne!(self.capacity(), 0);
         debug_assert!(pos < 2 * self.capacity());
         if pos < 2 * self.capacity() - 1 {
@@ -299,7 +299,7 @@ impl<T, const N: usize> RingBuffer<T, N> {
     }
 
     /// Returns the distance between two positions.
-    fn distance(&self, a: usize, b: usize) -> usize {
+    pub(super) fn distance(&self, a: usize, b: usize) -> usize {
         debug_assert!(a == 0 || a < 2 * self.capacity());
         debug_assert!(b == 0 || b < 2 * self.capacity());
         if a <= b {

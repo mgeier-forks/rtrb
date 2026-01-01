@@ -2,7 +2,8 @@
 
 use core::cell::Cell;
 
-use super::{PushError, RingBuffer};
+use crate::atomic::*;
+use super::{PushError, RingBuffer, ChunkError, chunks::{WriteChunk, WriteChunkUninit}};
 use crate::IS_ABANDONED;
 use super::arc_ring_buffer::ArcRingBuffer;
 
@@ -30,16 +31,16 @@ use super::arc_ring_buffer::ArcRingBuffer;
 /// will be deallocated.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Producer<T> {
-    buffer: ArcRingBuffer<T>,
+    pub(super) buffer: ArcRingBuffer<T>,
     /// A copy of `buffer.head` for quick access.
     ///
     /// This value can be stale and sometimes needs to be resynchronized
     /// with `buffer.head`.
-    cached_head: Cell<usize>,
+    pub(super) cached_head: Cell<usize>,
     /// A copy of `buffer.tail` for quick access.
     ///
     /// This value is always in sync with `buffer.tail`.
-    cached_tail: Cell<usize>,
+    pub(super) cached_tail: Cell<usize>,
 }
 
 /// It can be moved ...
@@ -400,6 +401,106 @@ impl<T> Producer<T> {
         Some(tail)
     }
 
-    //fn_producer_write_chunk!(N = $N, bip = $bip, contiguous = $contiguous);
-    //fn_producer_write_chunk_uninit!(N = $N, bip = $bip, contiguous = $contiguous);
+    /// Prepares a chunk of `n` slots (initially containing their [`Default`] value)
+    /// for writing.
+    ///
+    /// [`WriteChunk::as_mut_slice()`]
+    /// provides mutable access to the slots.
+    /// After writing to those slots, they explicitly have to be made available
+    /// to be read by the [`Consumer`] by calling [`WriteChunk::commit()`]
+    /// or [`WriteChunk::commit_all()`].
+    ///
+    /// For an alternative that does not require the trait bound [`Default`],
+    /// see [`Producer::write_chunk_uninit()`].
+    ///
+    /// If items are supposed to be moved from an iterator into the ring buffer,
+    /// [`Producer::write_chunk_uninit()`] followed by [`WriteChunkUninit::fill_from_iter()`]
+    /// can be used.
+    ///
+    /// # Errors
+    ///
+    /// If not enough slots are available, an error
+    /// (containing the number of available slots) is returned.
+    /// Use
+    /// [`slots_contiguous_max()`](Producer::slots_contiguous_max) (or
+    /// [`slots_contiguous_first()`](Producer::slots_contiguous_first))
+    /// to obtain the number of available slots beforehand.
+    ///
+    /// # Examples
+    ///
+    /// See the documentation of the [`chunks`](crate::chunks#examples) module.
+    pub fn write_chunk(
+        &mut self,
+        n: usize,
+    ) -> Result<WriteChunk<'_, T>, ChunkError>
+    where
+        T: Default,
+    {
+        self.write_chunk_uninit(n).map(WriteChunk::from)
+    }
+
+    /// Prepares a chunk of `n` (uninitialized) slots for writing.
+    ///
+    /// [`WriteChunkUninit::as_mut_slice()`]
+    /// provides mutable access
+    /// to the uninitialized slots.
+    /// After writing to those slots, they explicitly have to be made available
+    /// to be read by the [`Consumer`] by calling [`WriteChunkUninit::commit()`]
+    /// or [`WriteChunkUninit::commit_all()`].
+    ///
+    /// Alternatively, [`WriteChunkUninit::fill_from_iter()`] can be used
+    /// to move items from an iterator into the available slots.
+    /// All moved items are automatically made available to be read by the [`Consumer`].
+    ///
+    /// # Errors
+    ///
+    /// If not enough slots are available, an error
+    /// (containing the number of available slots) is returned.
+    /// Use
+    /// [`slots_contiguous_max()`](Producer::slots_contiguous_max) (or
+    /// [`slots_contiguous_first()`](Producer::slots_contiguous_first))
+    /// to obtain the number of available slots beforehand.
+    ///
+    /// # Safety
+    ///
+    /// This function itself is safe, as is [`WriteChunkUninit::fill_from_iter()`].
+    /// However, when using
+    /// [`WriteChunkUninit::as_mut_slice()`],
+    /// the user has to make sure that the relevant slots have been initialized
+    /// before calling [`WriteChunkUninit::commit()`] or [`WriteChunkUninit::commit_all()`].
+    ///
+    /// For a safe alternative that provides
+    /// a mutable slice    /// of [`Default`]-initialized slots, see [`Producer::write_chunk()`].
+    pub fn write_chunk_uninit(
+        &mut self,
+        n: usize,
+    ) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
+        let b = &self.buffer;
+        let (mut slots, refreshed, try_at_beginning) = self.slots_contiguous_helper();
+        if slots >= n {
+            let offset = b.collapse_position(self.cached_tail.get());
+            // SAFETY: `offset` has been set to a valid position.
+            return Ok(unsafe { WriteChunkUninit::new(self, n, offset) });
+        } else if try_at_beginning {
+            // TODO: get refreshed_head.or_else(self.cached_head.get)
+            let mut head = self.cached_head.get();
+            let mut collapsed_head = b.collapse_position(head);
+            if collapsed_head >= n {
+                // SAFETY: 0 is a valid position.
+                return Ok(unsafe { WriteChunkUninit::new(self, n, 0) });
+            }
+            // TODO: refreshed_head.is_none()
+            if !refreshed {
+                head = b.head.load(Ordering::Acquire);
+                self.cached_head.set(head);
+                collapsed_head = b.collapse_position(head);
+                if collapsed_head >= n {
+                    // SAFETY: 0 is a valid position.
+                    return Ok(unsafe { WriteChunkUninit::new(self, n, 0) });
+                }
+            }
+            slots = slots.max(collapsed_head);
+        }
+        Err(ChunkError::TooFewSlots(slots))
+    }
 }

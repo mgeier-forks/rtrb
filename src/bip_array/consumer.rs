@@ -2,7 +2,9 @@
 
 use core::cell::Cell;
 
-use super::{PopError, PeekError, RingBuffer};
+use crate::atomic::*;
+use super::{PopError, PeekError, RingBuffer, ChunkError, chunks::ReadChunk};
+use crate::{HAS_CONSUMER, HAS_PRODUCER};
 
 /// The consumer side of a [`RingBuffer`].
 ///
@@ -19,9 +21,9 @@ use super::{PopError, PeekError, RingBuffer};
 /// A `Consumer` can only be created with [`RingBuffer::consumer()`].
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<'a, T, const N: usize> {
-    buffer: &'a RingBuffer<T, N>,
-    cached_head: Cell<usize>,
-    cached_tail: Cell<usize>,
+    pub(super) buffer: &'a RingBuffer<T, N>,
+    pub(super) cached_head: Cell<usize>,
+    pub(super) cached_tail: Cell<usize>,
 }
 
 impl<T, const N: usize> Drop for Consumer<'_, T, N> {
@@ -413,5 +415,44 @@ impl<T, const N: usize> Consumer<'_, T, N> {
         Some(head)
     }
 
-    //fn_consumer_read_chunk!(N = $N, bip = $bip, contiguous = $contiguous);
+    /// Prepares a chunk of `n` slots for reading.
+    ///
+    /// [`ReadChunk::as_slice()`]
+    /// provides immutable access to the slots.
+    /// After reading from those slots, they explicitly have to be made available
+    /// to be written again by the [`Producer`] by calling [`ReadChunk::commit()`]
+    /// or [`ReadChunk::commit_all()`].
+    ///
+    /// Alternatively, items can be moved out of the [`ReadChunk`] using iteration
+    /// because it implements [`IntoIterator`]
+    /// ([`ReadChunk::into_iter()`] can be used to explicitly turn it into an [`Iterator`]).
+    /// All moved items are automatically made available to be written again by
+    /// the [`Producer`].
+    ///
+    /// # Errors
+    ///
+    /// If not enough slots are available, an error
+    /// (containing the number of available slots) is returned.
+    /// Use
+    /// [`slots_contiguous_first()`](Consumer::slots_contiguous_first)
+    /// to obtain the number of available slots beforehand.
+    ///
+    /// # Examples
+    ///
+    /// See the documentation of the [`chunks`](chunks#examples) module.
+    pub fn read_chunk(
+        &mut self,
+        n: usize,
+    ) -> Result<ReadChunk<'_, T, N>, ChunkError> {
+        let b = &self.buffer;
+        let (slots, _, _) = self.slots_contiguous_helper();
+        if slots >= n {
+            // TODO: use refreshed_head.or_else(self.cached_head.get)
+            let offset = b.collapse_position(self.cached_head.get());
+            // SAFETY: `offset` has been set to a valid position.
+            Ok(unsafe { ReadChunk::new(self, n, offset) })
+        } else {
+            Err(ChunkError::TooFewSlots(slots))
+        }
+    }
 }
