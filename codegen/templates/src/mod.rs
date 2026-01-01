@@ -73,6 +73,11 @@ pub use crate::ChunkError;
 #[doc(inline)]
 pub use crate::CopyToUninit;
 
+{% if arc %}
+mod arc_ring_buffer;
+use arc_ring_buffer::ArcRingBuffer;
+{% endif %}
+
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
 /// Elements can be written with a [`Producer`] and read with a [`Consumer`],

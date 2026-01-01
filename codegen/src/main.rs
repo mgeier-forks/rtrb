@@ -107,6 +107,9 @@ fn render(dir: &Path, name: &Path, contexts: &[(String, Value)]) {
     for (name, ctx) in contexts {
         let ctx = merge_maps([context! { module => format!("rtrb::{name}") }, ctx.clone()]);
         let rendered = tmpl.render(ctx).unwrap();
+        if rendered.trim().is_empty() {
+            continue;
+        }
         let path = dir.join(subdir).join(name).join(&rest);
         fs::write(&path, rendered)
             .unwrap_or_else(|err| panic!("unable to write {:?}: {}", &path, err));
