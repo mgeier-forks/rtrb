@@ -4,13 +4,56 @@
 //!
 //! See [`rtrb::bip_arc`] for a bi-partite ring buffer with dynamic storage.
 
-
+use core::{cell::Cell, fmt};
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
-
 use crate::atomic::*;
 // Padded indices to avoid false sharing.
 use crate::CachePadded;
+// TODO: import only when appropriate?
+use crate::{HAS_CONSUMER, HAS_PRODUCER};
+#[cfg(feature = "alloc")]
+use crate::IS_ABANDONED;
+
+/// Error type for [`Consumer::peek()`].
+#[doc(inline)]
+pub use crate::PeekError;
+
+/// Error type for [`Consumer::pop()`].
+#[doc(inline)]
+pub use crate::PopError;
+
+/// Error type for [`Producer::push()`].
+#[doc(inline)]
+pub use crate::PushError;
+
+/// Error type for [`Producer::write_chunk()`], [`Producer::write_chunk_uninit()`]
+/// and [`Consumer::read_chunk()`].
+///
+/// To get the maximum number of available slots beforehand
+/// (and therefore avoid this error), use
+/// [`Producer::slots_contiguous_max()`] and [`Consumer::slots_contiguous_first()`],
+/// respectively.
+#[doc(inline)]
+pub use crate::ChunkError;
+
+/// Extension trait providing a [`copy_to_uninit()`](CopyToUninit::copy_to_uninit)
+/// method on built-in slices.
+///
+/// This can be used to safely copy data to the
+/// slice returned from [`WriteChunkUninit::as_mut_slice()`].
+///
+/// To use this, the trait has to be brought into scope, e.g. with:
+///
+/// ```
+/// use rtrb::bip_array::CopyToUninit as _;
+/// ```
+///
+/// TODO: update link:
+///
+/// For a usage example, see [`crate::chunks`](crate::chunks#common-access-patterns).
+#[doc(inline)]
+pub use crate::CopyToUninit;
 
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
@@ -71,7 +114,242 @@ impl<T, const N: usize> Default for RingBuffer<T, N> {
     }
 }
 
+/// A `RingBuffer` can be shared between threads.
+///
+/// `T` does not need to be `Sync`, because we never share it across threads.
+// SAFETY: RingBuffer is only mutated (using *interior mutablility*)
+// via Producer/Consumer (which are !Sync), all other access can be shared.
+unsafe impl<T, const N: usize> Sync for RingBuffer<T, N> where T: Send {}
+
+// NB: `Send` might be implemented by different storage backends,
+// but it is not necessary for correct behavior of the RingBuffer.
+
+impl<T, const N: usize> PartialEq for RingBuffer<T, N> {
+    fn eq(&self, other: &Self) -> bool {
+        core::ptr::eq(self, other)
+    }
+}
+
+impl<T, const N: usize> Eq for RingBuffer<T, N> {}
+
 impl<T, const N: usize> RingBuffer<T, N> {
+    /// Creates a ring buffer with a capacity of `N`.
+    ///
+    /// A (single) [`Producer`] for writing into the ring buffer can be created with
+    /// [`producer()`](RingBuffer::producer).
+    /// A (single) [`Consumer`] for reading from the ring buffer can be created with
+    /// [`consumer()`](RingBuffer::consumer).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::bip_array::RingBuffer;
+    ///
+    /// let rb = RingBuffer::<f32, 128>::new();
+    /// ```
+    ///
+    /// Specifying an explicit type
+    /// is is only necessary if it cannot be deduced by the compiler.
+    ///
+    /// ```
+    /// use rtrb::bip_array::RingBuffer;
+    ///
+    /// let rb = RingBuffer::<_, 128>::new();
+    /// let mut p = rb.producer().unwrap();
+    /// assert_eq!(p.push(0.0f32), Ok(()));
+    /// ```
+    pub const fn new() -> Self {
+        const {
+            assert!(Self::update_capacity(N) == N, "`N` must be a power of two");
+        }
+        Self::construct()
+    }
+
+    /// Creates a [`Producer`] (if it doesn't exist yet) for writing into the `RingBuffer`.
+    ///
+    /// # Examples
+    ///
+    /// Only one producer and one consumer can exist at once,
+    /// but once a producer has been dropped, a new one can be created:
+    /// ```
+    /// use rtrb::bip_array::RingBuffer;
+    ///
+    /// let rb = RingBuffer::<_, 64>::new();
+    /// let mut p = rb.producer().unwrap();
+    /// let mut c = rb.consumer().unwrap();
+
+    /// assert!(rb.producer().is_none());
+    /// assert_eq!(p.push(10), Ok(()));
+    /// drop(p);
+    /// assert!(!c.has_producer());
+    /// assert!(!rb.has_producer());
+    /// let mut p = rb.producer().unwrap();
+    /// assert!(c.has_producer());
+    /// assert!(rb.has_producer());
+    /// assert_eq!(p.push(20), Ok(()));
+    /// assert_eq!(c.pop(), Ok(10));
+    /// assert_eq!(c.pop(), Ok(20));
+    /// ```
     pub fn producer(&self) -> Option<Producer<'_, N>> {
+        let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
+        if old_flags & HAS_PRODUCER == 0 {
+            let head = self.head.load(Ordering::Relaxed);
+            let tail = self.tail.load(Ordering::Relaxed);
+            Some(Producer {
+                buffer: self,
+                cached_head: Cell::new(head),
+                cached_tail: Cell::new(tail),
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Creates a [`Consumer`] (if it doesn't exist yet) for reading from the `RingBuffer`.
+    ///
+    /// # Examples
+    ///
+    /// Only one producer and one consumer can exist at once,
+    /// but once a consumer has been dropped, a new one can be created:
+    /// ```
+    /// use rtrb::bip_array::RingBuffer;
+    ///
+    /// let rb = RingBuffer::<_, 64>::new();
+    /// let mut p = rb.producer().unwrap();
+    /// let mut c = rb.consumer().unwrap();
+
+    /// assert!(rb.consumer().is_none());
+    /// assert_eq!(p.push(10), Ok(()));
+    /// assert_eq!(p.push(20), Ok(()));
+    /// assert_eq!(c.pop(), Ok(10));
+    /// drop(c);
+    /// assert!(!p.has_consumer());
+    /// assert!(!rb.has_consumer());
+    /// let mut c = rb.consumer().unwrap();
+    /// assert!(p.has_consumer());
+    /// assert!(rb.has_consumer());
+    /// assert_eq!(c.pop(), Ok(20));
+    /// ```
+    pub fn consumer(&self) -> Option<Consumer<'_, N>> {
+        let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
+        if old_flags & HAS_CONSUMER == 0 {
+            let head = self.head.load(Ordering::Relaxed);
+            let tail = self.tail.load(Ordering::Relaxed);
+            Some(Consumer {
+                buffer: self,
+                cached_head: Cell::new(head),
+                cached_tail: Cell::new(tail),
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Returns `true` if a [`Producer`] exists for this `RingBuffer`.
+    ///
+    /// If not, it can be created with [`producer()`](RingBuffer::producer).
+    ///
+    /// See also [`Consumer::has_producer()`].
+    pub fn has_producer(&self) -> bool {
+        self.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
+    }
+
+    /// Returns `true` if a [`Consumer`] exists for this `RingBuffer`.
+    ///
+    /// If not, it can be created with [`consumer()`](RingBuffer::consumer).
+    ///
+    /// See also [`Producer::has_consumer()`].
+    pub fn has_consumer(&self) -> bool {
+        self.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
+    }
+
+    /// Drop all elements that are still in the buffer.
+    ///
+    /// After this, head and tail indices are invalid.
+    ///
+    /// # Safety
+    ///
+    /// This can only be called in the `Drop` implementation of the ring buffer.
+    ///
+    /// The threads must have been synchronized before via `self.flags`.
+    #[inline(never)]
+    unsafe fn drop_all_elements(&mut self) {
+        // These atomic variables are *not* used for synchronizing the threads
+        // before destruction.  Relaxed ordering is sufficient here.
+        let mut head = self.head.load(Ordering::Relaxed);
+        let tail = self.tail.load(Ordering::Relaxed);
+        let skip = self.skip.load(Ordering::Relaxed);
+        // Loop over all slots that hold a value and drop them.
+        while head != tail {
+            if self.collapse_position(head) == skip {
+                head = self.increment(head, self.capacity() - skip);
+            }
+            // SAFETY: All slots between head and tail have been initialized.
+            unsafe { self.slot_ptr(head).drop_in_place() };
+            head = self.increment1(head);
+        }
+    }
+
+    const fn update_capacity(capacity: usize) -> usize {
+        // No need to update, we are not relying on power-of-two sizes.
+        capacity
+    }
+
+    fn collapse_position(&self, pos: usize) -> usize {
+        // Wraps from the range `0 .. 2 * capacity` to `0 .. capacity`.
+        debug_assert!(pos == 0 || pos < 2 * self.capacity());
+        if pos < self.capacity() {
+            pos
+        } else {
+            pos - self.capacity()
+        }
+    }
+
+    /// Returns a pointer to the (possibly uninitialized) slot at position `pos`.
+    ///
+    /// # Safety
+    ///
+    /// `pos` must be valid.
+    ///
+    /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
+    unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
+        // SAFETY: See docstring.
+        unsafe { self.data_ptr().add(self.collapse_position(pos)) }
+    }
+
+    /// Increments a position by going `n` slots forward.
+    fn increment(&self, pos: usize, n: usize) -> usize {
+        debug_assert!(pos == 0 || pos < 2 * self.capacity());
+        debug_assert!(n <= self.capacity());
+        let threshold = 2 * self.capacity() - n;
+        if pos < threshold {
+            pos + n
+        } else {
+            pos - threshold
+        }
+    }
+
+    /// Increments a position by going one slot forward.
+    ///
+    /// This might be more efficient than self.increment(..., 1).
+    fn increment1(&self, pos: usize) -> usize {
+        debug_assert_ne!(self.capacity(), 0);
+        debug_assert!(pos < 2 * self.capacity());
+        if pos < 2 * self.capacity() - 1 {
+            pos + 1
+        } else {
+            0
+        }
+    }
+
+    /// Returns the distance between two positions.
+    fn distance(&self, a: usize, b: usize) -> usize {
+        debug_assert!(a == 0 || a < 2 * self.capacity());
+        debug_assert!(b == 0 || b < 2 * self.capacity());
+        if a <= b {
+            b - a
+        } else {
+            2 * self.capacity() - a + b
+        }
     }
 }

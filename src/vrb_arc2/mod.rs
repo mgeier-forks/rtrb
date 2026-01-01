@@ -14,11 +14,54 @@
 //!
 //! ... `capacity` will be rounded up to page size ... (TODO: add this in constructor docs?)
 
-
-
+use core::{cell::Cell, fmt};
 use crate::atomic::*;
 // Padded indices to avoid false sharing.
 use crate::CachePadded;
+// TODO: import only when appropriate?
+use crate::{HAS_CONSUMER, HAS_PRODUCER};
+#[cfg(feature = "alloc")]
+use crate::IS_ABANDONED;
+
+/// Error type for [`Consumer::peek()`].
+#[doc(inline)]
+pub use crate::PeekError;
+
+/// Error type for [`Consumer::pop()`].
+#[doc(inline)]
+pub use crate::PopError;
+
+/// Error type for [`Producer::push()`].
+#[doc(inline)]
+pub use crate::PushError;
+
+/// Error type for [`Producer::write_chunk()`], [`Producer::write_chunk_uninit()`]
+/// and [`Consumer::read_chunk()`].
+///
+/// To get the maximum number of available slots beforehand
+/// (and therefore avoid this error), use
+/// [`Producer::slots()`] and [`Consumer::slots()`],
+/// respectively.
+#[doc(inline)]
+pub use crate::ChunkError;
+
+/// Extension trait providing a [`copy_to_uninit()`](CopyToUninit::copy_to_uninit)
+/// method on built-in slices.
+///
+/// This can be used to safely copy data to the
+/// slice returned from [`WriteChunkUninit::as_mut_slice()`].
+///
+/// To use this, the trait has to be brought into scope, e.g. with:
+///
+/// ```
+/// use rtrb::vrb_arc2::CopyToUninit as _;
+/// ```
+///
+/// TODO: update link:
+///
+/// For a usage example, see [`crate::chunks`](crate::chunks#common-access-patterns).
+#[doc(inline)]
+pub use crate::CopyToUninit;
 
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
@@ -26,5 +69,236 @@ use crate::CachePadded;
 /// both of which can be obtained with [`RingBuffer::new()`].
 ///
 /// *See also the [module-level documentation](rtrb::vrb_arc2).*
-compile_error!("TODO: vrb");
+// TODO: reuse from storage_vec, disabling "skip"?
+pub struct RingBuffer<T> {
+    head: CachePadded<AtomicUsize>,
+    tail: CachePadded<AtomicUsize>,
+    flags: AtomicU8,
+    /// Pointer to the first mapped region
+    data_ptr: *mut T,
+    capacity: usize,
+}
 
+impl<T> RingBuffer<T> {
+    // Private helper function.
+    fn construct(capacity: usize) -> Self {
+        use core::mem;
+        const {
+            // NB: This also disallows zero-sized types,
+            //     and therefore avoids division by zero further below:
+            assert!(
+                mem::size_of::<T>().is_power_of_two(),
+                "size of T must be a power of 2"
+            );
+        }
+        // TODO: what if capacity is 0?
+        // SAFETY: If `libc` is not buggy, this should be safe.
+        let pagesize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        assert_ne!(pagesize, -1);
+        let pagesize = usize::try_from(pagesize).unwrap();
+        assert!(pagesize.is_power_of_two());
+        assert!(pagesize >= mem::size_of::<T>());
+        assert_eq!(pagesize % mem::size_of::<T>(), 0);
+        let elements_per_page = pagesize / mem::size_of::<T>();
+        let pages = capacity.div_ceil(elements_per_page);
+        let capacity = pages * elements_per_page;
+        assert_eq!(capacity, Self::update_capacity(capacity));
+        let len = capacity * mem::size_of::<T>();
+
+        // SAFETY:
+        // - string is null-terminated
+        // - pointers, lengths and other arguments are valid
+        let data_ptr: *mut T = unsafe {
+            use libc::*;
+            let mut filename = *b"/tmp/rtrb-buffer-XXXXXX\0";
+            let filename = filename.as_mut_ptr().cast();
+            let fd = mkstemp(filename);
+            assert!(fd >= 0);
+            let r = unlink(filename);
+            assert_eq!(r, 0);
+            let r = ftruncate(fd, off_t::try_from(len).unwrap());
+            assert_eq!(r, 0);
+            // Get an address with twice the capacity available
+            let ptr_one = mmap(
+                core::ptr::null_mut(),
+                2 * len,
+                PROT_NONE,
+                MAP_PRIVATE | MAP_ANONYMOUS,
+                -1,
+                0,
+            );
+            assert_ne!(ptr_one, MAP_FAILED); // TODO: check for errno?
+            let r = mmap(
+                ptr_one,
+                len,
+                PROT_READ | PROT_WRITE,
+                MAP_SHARED | MAP_FIXED,
+                fd,
+                0,
+            );
+            assert_eq!(r, ptr_one); // TODO: check for errno?
+            let ptr_two = ptr_one.add(len);
+            let r = mmap(
+                ptr_two,
+                len,
+                PROT_READ | PROT_WRITE,
+                MAP_SHARED | MAP_FIXED,
+                fd,
+                0,
+            );
+            assert_eq!(r, ptr_two); // TODO: check for errno?
+            let r = close(fd);
+            assert_eq!(r, 0); // TODO: check for errno?
+            ptr_one.cast()
+        };
+        // Alignments larger than the page size are not supported.
+        assert!(data_ptr.is_aligned());
+        // TODO: reuse from storage_vec, disabling "skip"?
+        Self {
+            head: CachePadded::new(AtomicUsize::new(0)),
+            tail: CachePadded::new(AtomicUsize::new(0)),
+            flags: AtomicU8::new(0),
+            data_ptr,
+            capacity,
+        }
+    }
+
+    // TODO: reuse capacity() and data_ptr() from storage_vec?
+
+    fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    fn data_ptr(&self) -> *mut T {
+        self.data_ptr
+    }
+}
+
+impl<T> Drop for RingBuffer<T> {
+    /// Drops all non-empty slots and deallocates the storage.
+    fn drop(&mut self) {
+        // SAFETY: this is called exactly once, no references to any elements exist anymore.
+        unsafe { self.drop_all_elements() };
+        // SAFETY: The memory is not used anymore.
+        unsafe {
+            let len = self.capacity() * core::mem::size_of::<T>();
+            let ptr_one: *mut libc::c_void = self.data_ptr.cast();
+            let r = libc::munmap(ptr_one, len);
+            assert_eq!(r, 0); // TODO: check for errno?
+            let ptr_two = ptr_one.add(len);
+            let r = libc::munmap(ptr_two, len);
+            assert_eq!(r, 0); // TODO: check for errno?
+        }
+    }
+}
+
+/// A `RingBuffer` can be shared between threads.
+///
+/// `T` does not need to be `Sync`, because we never share it across threads.
+// SAFETY: RingBuffer is only mutated (using *interior mutablility*)
+// via Producer/Consumer (which are !Sync), all other access can be shared.
+unsafe impl<T> Sync for RingBuffer<T> where T: Send {}
+
+// NB: `Send` might be implemented by different storage backends,
+// but it is not necessary for correct behavior of the RingBuffer.
+
+impl<T> PartialEq for RingBuffer<T> {
+    fn eq(&self, other: &Self) -> bool {
+        core::ptr::eq(self, other)
+    }
+}
+
+impl<T> Eq for RingBuffer<T> {}
+
+impl<T> RingBuffer<T> {
+    /// Creates a ring buffer with at least the given `capacity`
+    /// and returns [`Producer`] and [`Consumer`].
+    ///
+    /// If the `capacity` isn't already a power of two, it is rounded up to the next one.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::vrb_arc2::RingBuffer;
+    ///
+    /// let (p, c) = RingBuffer::<f32>::new(100);
+    /// ```
+    ///
+    /// Specifying an explicit type
+    /// with the [turbofish](https://turbo.fish/)
+    /// is is only necessary if it cannot be deduced by the compiler.
+    ///
+    /// ```
+    /// use rtrb::vrb_arc2::RingBuffer;
+    ///
+    /// let (mut p, c) = RingBuffer::new(100);
+    /// assert_eq!(p.push(0.0f32), Ok(()));
+    /// ```
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
+        let capacity = Self::update_capacity(capacity);
+        ArcRingBuffer::new(Self::construct(capacity))
+    }
+
+    /// Drop all elements that are still in the buffer.
+    ///
+    /// After this, head and tail indices are invalid.
+    ///
+    /// # Safety
+    ///
+    /// This can only be called in the `Drop` implementation of the ring buffer.
+    ///
+    /// The threads must have been synchronized before via `self.flags`.
+    #[inline(never)]
+    unsafe fn drop_all_elements(&mut self) {
+        // These atomic variables are *not* used for synchronizing the threads
+        // before destruction.  Relaxed ordering is sufficient here.
+        let mut head = self.head.load(Ordering::Relaxed);
+        let tail = self.tail.load(Ordering::Relaxed);
+        // Loop over all slots that hold a value and drop them.
+        while head != tail {
+            // SAFETY: All slots between head and tail have been initialized.
+            unsafe { self.slot_ptr(head).drop_in_place() };
+            head = self.increment1(head);
+        }
+    }
+
+    const fn update_capacity(capacity: usize) -> usize {
+        capacity.next_power_of_two()
+    }
+
+    fn collapse_position(&self, pos: usize) -> usize {
+        // Wraps from any number to the range `0 .. capacity`.
+        // TODO: is capacity 0 supported?
+        pos & (self.capacity() - 1)
+    }
+
+    /// Returns a pointer to the (possibly uninitialized) slot at position `pos`.
+    ///
+    /// # Safety
+    ///
+    /// `pos` must be valid.
+    ///
+    /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
+    unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
+        // SAFETY: See docstring.
+        unsafe { self.data_ptr().add(self.collapse_position(pos)) }
+    }
+
+    /// Increments a position by going `n` slots forward.
+    fn increment(&self, pos: usize, n: usize) -> usize {
+        pos.wrapping_add(n)
+    }
+
+    /// Increments a position by going one slot forward.
+    ///
+    /// This might be more efficient than self.increment(..., 1).
+    fn increment1(&self, pos: usize) -> usize {
+        pos.wrapping_add(1)
+    }
+
+    /// Returns the distance between two positions.
+    fn distance(&self, a: usize, b: usize) -> usize {
+        b.wrapping_sub(a)
+    }
+}

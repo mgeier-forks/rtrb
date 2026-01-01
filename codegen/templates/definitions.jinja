@@ -12,11 +12,11 @@
 {% if N %}
   {% set params = "T, const N: usize" %}
   {% set args = "T, N" %}
-  {% set blank_lifetime = "'_, N" %}
+  {% set tick_blank = "'_, N" %}
 {% else %}
   {% set params = "T" %}
   {% set args = "T" %}
-  {% set blank_lifetime = "'_" %}
+  {% set tick_blank = "'_" %}
 {% endif %}
 {##}
 {% macro CachePadded(arg) %}
@@ -25,4 +25,20 @@
 {##}
 {% macro CachePadded_new(arg) %}
 {% if padded %}CachePadded::new({{ arg }}){% else %}{{ arg }}{% endif %}
+{% endmacro %}
+{##}
+{% macro doctest_create_ring_buffer(capacity) %}
+{% if N %}{% if arc %}
+    /// let (mut p, mut c) = RingBuffer::<_, {{ capacity }}>::new();
+{% else %}
+    /// let rb = RingBuffer::<_, {{ capacity }}>::new();
+    /// let mut p = rb.producer().unwrap();
+    /// let mut c = rb.consumer().unwrap();
+{% endif %}{% else %}{% if arc %}
+    /// let (mut p, mut c) = RingBuffer::new({{ capacity }});
+{% else %}
+    /// let rb = RingBuffer::new({{ capacity }});
+    /// let mut p = rb.producer().unwrap();
+    /// let mut c = rb.consumer().unwrap();
+{% endif %}{% endif %}
 {% endmacro %}

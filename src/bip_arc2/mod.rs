@@ -4,13 +4,56 @@
 //!
 //! See ...
 
-
+use core::{cell::Cell, fmt};
 use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
-
 use crate::atomic::*;
 // Padded indices to avoid false sharing.
 use crate::CachePadded;
+// TODO: import only when appropriate?
+use crate::{HAS_CONSUMER, HAS_PRODUCER};
+#[cfg(feature = "alloc")]
+use crate::IS_ABANDONED;
+
+/// Error type for [`Consumer::peek()`].
+#[doc(inline)]
+pub use crate::PeekError;
+
+/// Error type for [`Consumer::pop()`].
+#[doc(inline)]
+pub use crate::PopError;
+
+/// Error type for [`Producer::push()`].
+#[doc(inline)]
+pub use crate::PushError;
+
+/// Error type for [`Producer::write_chunk()`], [`Producer::write_chunk_uninit()`]
+/// and [`Consumer::read_chunk()`].
+///
+/// To get the maximum number of available slots beforehand
+/// (and therefore avoid this error), use
+/// [`Producer::slots_contiguous_max()`] and [`Consumer::slots_contiguous_first()`],
+/// respectively.
+#[doc(inline)]
+pub use crate::ChunkError;
+
+/// Extension trait providing a [`copy_to_uninit()`](CopyToUninit::copy_to_uninit)
+/// method on built-in slices.
+///
+/// This can be used to safely copy data to the
+/// slice returned from [`WriteChunkUninit::as_mut_slice()`].
+///
+/// To use this, the trait has to be brought into scope, e.g. with:
+///
+/// ```
+/// use rtrb::bip_arc2::CopyToUninit as _;
+/// ```
+///
+/// TODO: update link:
+///
+/// For a usage example, see [`crate::chunks`](crate::chunks#common-access-patterns).
+#[doc(inline)]
+pub use crate::CopyToUninit;
 
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
@@ -67,3 +110,117 @@ impl<T> Drop for RingBuffer<T> {
     }
 }
 
+/// A `RingBuffer` can be shared between threads.
+///
+/// `T` does not need to be `Sync`, because we never share it across threads.
+// SAFETY: RingBuffer is only mutated (using *interior mutablility*)
+// via Producer/Consumer (which are !Sync), all other access can be shared.
+unsafe impl<T> Sync for RingBuffer<T> where T: Send {}
+
+// NB: `Send` might be implemented by different storage backends,
+// but it is not necessary for correct behavior of the RingBuffer.
+
+impl<T> PartialEq for RingBuffer<T> {
+    fn eq(&self, other: &Self) -> bool {
+        core::ptr::eq(self, other)
+    }
+}
+
+impl<T> Eq for RingBuffer<T> {}
+
+impl<T> RingBuffer<T> {
+    /// Creates a ring buffer with at least the given `capacity`
+    /// and returns [`Producer`] and [`Consumer`].
+    ///
+    /// If the `capacity` isn't already a power of two, it is rounded up to the next one.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::bip_arc2::RingBuffer;
+    ///
+    /// let (p, c) = RingBuffer::<f32>::new(100);
+    /// ```
+    ///
+    /// Specifying an explicit type
+    /// with the [turbofish](https://turbo.fish/)
+    /// is is only necessary if it cannot be deduced by the compiler.
+    ///
+    /// ```
+    /// use rtrb::bip_arc2::RingBuffer;
+    ///
+    /// let (mut p, c) = RingBuffer::new(100);
+    /// assert_eq!(p.push(0.0f32), Ok(()));
+    /// ```
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
+        let capacity = Self::update_capacity(capacity);
+        ArcRingBuffer::new(Self::construct(capacity))
+    }
+
+    /// Drop all elements that are still in the buffer.
+    ///
+    /// After this, head and tail indices are invalid.
+    ///
+    /// # Safety
+    ///
+    /// This can only be called in the `Drop` implementation of the ring buffer.
+    ///
+    /// The threads must have been synchronized before via `self.flags`.
+    #[inline(never)]
+    unsafe fn drop_all_elements(&mut self) {
+        // These atomic variables are *not* used for synchronizing the threads
+        // before destruction.  Relaxed ordering is sufficient here.
+        let mut head = self.head.load(Ordering::Relaxed);
+        let tail = self.tail.load(Ordering::Relaxed);
+        let skip = self.skip.load(Ordering::Relaxed);
+        // Loop over all slots that hold a value and drop them.
+        while head != tail {
+            if self.collapse_position(head) == skip {
+                head = self.increment(head, self.capacity() - skip);
+            }
+            // SAFETY: All slots between head and tail have been initialized.
+            unsafe { self.slot_ptr(head).drop_in_place() };
+            head = self.increment1(head);
+        }
+    }
+
+    const fn update_capacity(capacity: usize) -> usize {
+        capacity.next_power_of_two()
+    }
+
+    fn collapse_position(&self, pos: usize) -> usize {
+        // Wraps from any number to the range `0 .. capacity`.
+        // TODO: is capacity 0 supported?
+        pos & (self.capacity() - 1)
+    }
+
+    /// Returns a pointer to the (possibly uninitialized) slot at position `pos`.
+    ///
+    /// # Safety
+    ///
+    /// `pos` must be valid.
+    ///
+    /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
+    unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
+        // SAFETY: See docstring.
+        unsafe { self.data_ptr().add(self.collapse_position(pos)) }
+    }
+
+    /// Increments a position by going `n` slots forward.
+    fn increment(&self, pos: usize, n: usize) -> usize {
+        pos.wrapping_add(n)
+    }
+
+    /// Increments a position by going one slot forward.
+    ///
+    /// This might be more efficient than self.increment(..., 1).
+    fn increment1(&self, pos: usize) -> usize {
+        pos.wrapping_add(1)
+    }
+
+    /// Returns the distance between two positions.
+    fn distance(&self, a: usize, b: usize) -> usize {
+        b.wrapping_sub(a)
+    }
+}
