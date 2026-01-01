@@ -182,7 +182,6 @@ pub mod vrb_arc2;
 
 const HAS_PRODUCER: u8 = 0b10000000;
 const HAS_CONSUMER: u8 = 0b01000000;
-#[cfg(feature = "alloc")]
 // NB: This overlaps with HAS_PRODUCER, they are never used at the same time.
 const IS_ABANDONED: u8 = 0b10000000;
 

@@ -7,17 +7,19 @@
 use alloc::boxed::Box;
 use core::{cell::Cell, ptr::NonNull};
 
-use super::{AtomicU8, Consumer, Ordering, Producer, RingBuffer, IS_ABANDONED};
+use crate::atomic::*;
+use crate::IS_ABANDONED;
+use super::{Consumer, Producer, RingBuffer};
 
 // Non-public helper type.
-struct ArcRingBuffer<{{ params }}> {
-    ptr: NonNull<RingBuffer<{{ args }}>>,
+pub(crate) struct ArcRingBuffer<T{{ N_param }}> {
+    ptr: NonNull<RingBuffer<T{{ N_arg }}>>,
 }
 
 // SAFETY: If RingBuffer is Send, ArcRingBuffer is as well.
-unsafe impl<{{ params }}> Send for ArcRingBuffer<{{ args }}> where RingBuffer<{{ args }}>: Send {}
+unsafe impl<T{{ N_param }}> Send for ArcRingBuffer<T{{ N_arg }}> where RingBuffer<T{{ N_arg }}>: Send {}
 
-impl<{{ params }}> ArcRingBuffer<{{ args }}> {
+impl<T{{ N_param }}> ArcRingBuffer<T{{ N_arg }}> {
     // NB: this takes ownership of the RingBuffer, making sure that only one
     //     Producer and Consumer are ever created.
     #[allow(clippy::new_ret_no_self)]
@@ -42,7 +44,7 @@ impl<{{ params }}> ArcRingBuffer<{{ args }}> {
     }
 }
 
-impl<{{ params }}> Drop for ArcRingBuffer<{{ args }}> {
+impl<T{{ N_param }}> Drop for ArcRingBuffer<T{{ N_arg }}> {
     fn drop(&mut self) {
         // SAFETY: must point to initialized Storage.
         let flags: &AtomicU8 = unsafe { &self.ptr.as_ref().flags };
@@ -76,7 +78,7 @@ impl<{{ params }}> Drop for ArcRingBuffer<{{ args }}> {
 
 /// Non-inlined part of `ArcRingBuffer::drop()`.
 #[inline(never)]
-unsafe fn drop_slow<{{ params }}>(ptr: NonNull<RingBuffer<{{ args }}>>) {
+unsafe fn drop_slow<T{{ N_param }}>(ptr: NonNull<RingBuffer<T{{ N_arg }}>>) {
     // SAFETY: This is allowed because the storage has been allocated with `Box::new()`.
     unsafe {
         // Turn the pointer back into a `Box` and immediately drop it,
@@ -85,8 +87,8 @@ unsafe fn drop_slow<{{ params }}>(ptr: NonNull<RingBuffer<{{ args }}>>) {
     }
 }
 
-impl<{{ params }}> core::ops::Deref for ArcRingBuffer<{{ args }}> {
-    type Target = RingBuffer<{{ args }}>;
+impl<T{{ N_param }}> core::ops::Deref for ArcRingBuffer<T{{ N_arg }}> {
+    type Target = RingBuffer<T{{ N_arg }}>;
 
     fn deref(&self) -> &Self::Target {
         // SAFETY: There are never any mutable references.
@@ -94,7 +96,7 @@ impl<{{ params }}> core::ops::Deref for ArcRingBuffer<{{ args }}> {
     }
 }
 
-impl<{{ params }}> PartialEq for ArcRingBuffer<{{ args }}> {
+impl<T{{ N_param }}> PartialEq for ArcRingBuffer<T{{ N_arg }}> {
     fn eq(&self, other: &Self) -> bool {
         self.ptr == other.ptr
     }

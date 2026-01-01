@@ -3,10 +3,12 @@
 use alloc::boxed::Box;
 use core::{cell::Cell, ptr::NonNull};
 
-use super::{AtomicU8, Consumer, Ordering, Producer, RingBuffer, IS_ABANDONED};
+use crate::atomic::*;
+use crate::IS_ABANDONED;
+use super::{Consumer, Producer, RingBuffer};
 
 // Non-public helper type.
-struct ArcRingBuffer<T> {
+pub(crate) struct ArcRingBuffer<T> {
     ptr: NonNull<RingBuffer<T>>,
 }
 

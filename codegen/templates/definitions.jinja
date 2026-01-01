@@ -10,13 +10,16 @@
 {% endif %}
 {##}
 {% if N %}
-  {% set params = "T, const N: usize" %}
-  {% set args = "T, N" %}
-  {% set tick_blank = "'_, N" %}
+  {% set N_param = ", const N: usize" %}
+  {% set N_arg = ", N" %}
 {% else %}
-  {% set params = "T" %}
-  {% set args = "T" %}
-  {% set tick_blank = "'_" %}
+  {% set N_param = "" %}
+  {% set N_arg = "" %}
+{% endif %}
+{% if arc %}
+  {% set arc_tick = "" %}
+{% else %}
+  {% set arc_tick = "'_, " %}
 {% endif %}
 {##}
 {% macro CachePadded(arg) %}
@@ -27,18 +30,22 @@
 {% if padded %}CachePadded::new({{ arg }}){% else %}{{ arg }}{% endif %}
 {% endmacro %}
 {##}
-{% macro doctest_create_ring_buffer(capacity) %}
+{% macro if_N(arg) %}
+{% if N %}{{ arg }}{% else %}{% endif %}
+{% endmacro %}
+{##}
+{% macro doctest_create_ring_buffer(capacity, prefix="") %}
 {% if N %}{% if arc %}
-    /// let (mut p, mut c) = RingBuffer::<_, {{ capacity }}>::new();
+    /// {{ prefix }}let (mut p, mut c) = RingBuffer::<_, {{ capacity }}>::new();
 {% else %}
-    /// let rb = RingBuffer::<_, {{ capacity }}>::new();
-    /// let mut p = rb.producer().unwrap();
-    /// let mut c = rb.consumer().unwrap();
+    /// {{ prefix }}let rb = RingBuffer::<_, {{ capacity }}>::new();
+    /// {{ prefix }}let mut p = rb.producer().unwrap();
+    /// {{ prefix }}let mut c = rb.consumer().unwrap();
 {% endif %}{% else %}{% if arc %}
-    /// let (mut p, mut c) = RingBuffer::new({{ capacity }});
+    /// {{ prefix }}let (mut p, mut c) = RingBuffer::new({{ capacity }});
 {% else %}
-    /// let rb = RingBuffer::new({{ capacity }});
-    /// let mut p = rb.producer().unwrap();
-    /// let mut c = rb.consumer().unwrap();
+    /// {{ prefix }}let rb = RingBuffer::new({{ capacity }});
+    /// {{ prefix }}let mut p = rb.producer().unwrap();
+    /// {{ prefix }}let mut c = rb.consumer().unwrap();
 {% endif %}{% endif %}
 {% endmacro %}
