@@ -13,8 +13,9 @@ use super::{Consumer, Producer};
 /// Elements can be written with a [`Producer`] and read with a [`Consumer`],
 /// both of which can be obtained with [`RingBuffer::new()`].
 ///
-/// *See also the [module-level documentation](rtrb::vrb_arc2).*
+/// *See also the [module-level documentation](crate::vrb_arc2).*
 // TODO: reuse from storage_vec, disabling "skip"?
+#[derive(Debug)]
 pub struct RingBuffer<T> {
     pub(super) head: CachePadded<AtomicUsize>,
     pub(super) tail: CachePadded<AtomicUsize>,

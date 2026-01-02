@@ -16,6 +16,61 @@
 //! | [`vrb_arc2`] | mmap | ✔️ | ✔️ | ✔️ |
 //!
 //!
+//! # A Quick Example
+//!
+//! ```no_run
+#![allow(clippy::needless_doctest_main)]
+#![doc = include_str!("../examples/quick.rs")]
+//! ```
+//!
+//! You can run this program locally with just a few steps
+//! (assuming [Rust](https://rustup.rs/) and [Git](https://git-scm.com/) is installed):
+//!
+//! ```text
+//! git clone https://github.com/mgeier/rtrb.git
+//! cd rtrb
+//! cargo run --example quick
+//! ```
+//!
+//! <details>
+//! <summary>Possible program output</summary>
+//!
+//! ```text
+//! waiting to pop ...
+//! pushed 10
+//! popped 10
+//! pushed 11
+//! pushed 12
+//! popped 11
+//! pushed 13
+//! pushed 14
+//! popped 12
+//! pushed 15
+//! pushed 16
+//! popped 13
+//! pushed 17
+//! 18 was skipped
+//! popped 14
+//! pushed 19
+//! 20 was skipped
+//! popped 15
+//! pushed 21
+//! 22 was skipped
+//! popped 16
+//! pushed 23
+//! 24 was skipped
+//! popped 17
+//! popped 19
+//! popped 21
+//! popped 23
+//! waiting to pop ...
+//! waiting to pop ...
+//! waiting to pop ...
+//! giving up
+//! ```
+//!
+//! </details>
+//!
 //! # General Properties
 //!
 //! ... SPSC ... bounded ... wrap-around ... single element vs chunks? ...
@@ -40,10 +95,13 @@
 //! are using the built-in
 //! [`prim@array`] type for storing ring buffer elements.
 //! This means that the capacity must be known at compile time.
-//! No dynamic memory is ever allocated.
-//! (TODO: except for `Display` impls of some error messages? with `alloc` feature)
+//! No dynamic memory is ever allocated
+//! (except in `Display` impls of some error messages,
+//! but only when the `alloc` feature is enabled).
 //!
-//! They have the advantage that their ring buffers can be used as `static` variables.
+//! TODO: example with and without N
+//!
+//! ... have the advantage that their ring buffers can be used as `static` variables.
 //!
 //! Here's an example using the [`rtrb::array`](mod@array) module:
 //!
@@ -77,6 +135,16 @@
 //! ... no other memory allocations ... (TODO: except for `Display` impls of some error messages?)
 //!
 //!
+//! # Reference Counted
+//!
+//! TODO
+//!
+//!
+//! # Cache Padded
+//!
+//! TODO
+//!
+//!
 //! # Calculation of Indices
 //!
 //! ... head/tail ... in range `0 .. 2 * capacity`, `pow2`: no limit except wrap-around ...
@@ -107,42 +175,9 @@
 //! communicate between "main code" and "interrupt handler" ...
 //!
 //! TODO: DMA? use "bip" variants.
-//!
-//! ---
-//!
-//! A [`RingBuffer`] consists of two parts:
-//! a [`Producer`] for writing into the ring buffer and
-//! a [`Consumer`] for reading from the ring buffer.
-//!
-//!
-//! # Examples
-//!
-//! Moving single elements into and out of a queue with
-//! [`Producer::push()`] and [`Consumer::pop()`], respectively:
-//!
-//! ```
-//! use rtrb::{RingBuffer, PushError, PopError};
-//!
-//! let (mut producer, mut consumer) = RingBuffer::new(2);
-//!
-//! assert_eq!(producer.push(10), Ok(()));
-//! assert_eq!(producer.push(20), Ok(()));
-//! assert_eq!(producer.push(30), Err(PushError::Full(30)));
-//!
-//! std::thread::spawn(move || {
-//!     assert_eq!(consumer.pop(), Ok(10));
-//!     assert_eq!(consumer.pop(), Ok(20));
-//!     assert_eq!(consumer.pop(), Err(PopError::Empty));
-//! }).join().unwrap();
-//! ```
-//!
-//! See the documentation of the [`chunks#examples`] module
-//! for examples that write multiple items at once with
-//! [`Producer::write_chunk_uninit()`] and [`Producer::write_chunk()`]
-//! and read multiple items with [`Consumer::read_chunk()`].
 
 #![cfg_attr(not(feature = "std"), no_std)]
-//#![deny(missing_docs, missing_debug_implementations)]
+#![deny(missing_docs, missing_debug_implementations)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::undocumented_unsafe_blocks, clippy::unnecessary_safety_comment)]
 // Add "Available on crate feature ... only." on docs.rs (where applicable).
@@ -189,6 +224,14 @@ const IS_ABANDONED: u8 = 0b10000000;
 #[cfg(feature = "alloc")]
 #[doc(hidden)]
 pub use arc::{Consumer, Producer, RingBuffer};
+
+// For backwards compatibility. May be deprecated and removed in the future.
+#[cfg(feature = "alloc")]
+#[doc(hidden)]
+pub mod chunks {
+    pub use crate::arc::chunks::{ReadChunk, ReadChunkIntoIter, WriteChunk, WriteChunkUninit};
+    pub use crate::ChunkError;
+}
 
 #[doc(hidden)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

@@ -3,6 +3,42 @@
 //! A bi-partite ring buffer whose capacity is a power of two.
 //!
 //! See ...
+//!
+//! # Usage
+//!
+//! A [`RingBuffer`] consists of two parts:
+//! a [`Producer`] for writing into the ring buffer and
+//! a [`Consumer`] for reading from the ring buffer.
+//!
+//! TODO: more usage instructions
+//!
+//! # Examples
+//!
+//! Moving single elements into and out of a queue with
+//! [`Producer::push()`] and [`Consumer::pop()`], respectively:
+//!
+//! ```
+//! use rtrb::bip_arc2::{RingBuffer, PushError, PopError};
+//!
+//! let (mut p, mut c) = RingBuffer::new(2);
+//!
+//! assert_eq!(p.push(10), Ok(()));
+//! assert_eq!(p.push(20), Ok(()));
+//! assert_eq!(p.push(30), Err(PushError::Full(30)));
+//!
+//! std::thread::scope(|s| {
+//!     s.spawn(move || {
+//!         assert_eq!(c.pop(), Ok(10));
+//!         assert_eq!(c.pop(), Ok(20));
+//!         assert_eq!(c.pop(), Err(PopError::Empty));
+//!     });
+//! });
+//! ```
+//!
+//! See the documentation of the [`chunks#examples`] module
+//! for examples that write multiple items at once with
+//! [`Producer::write_chunk_uninit()`] and [`Producer::write_chunk()`]
+//! and read multiple items with [`Consumer::read_chunk()`].
 
 mod ring_buffer;
 pub use ring_buffer::RingBuffer;
@@ -13,6 +49,10 @@ pub use consumer::Consumer;
 mod arc_ring_buffer;
 
 pub mod chunks;
+
+// Only used in documentation:
+#[allow(unused_imports)]
+use chunks::WriteChunkUninit;
 
 /// Error type for [`Consumer::peek()`].
 #[doc(inline)]

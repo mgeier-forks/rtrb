@@ -14,6 +14,10 @@ use super::arc_ring_buffer::ArcRingBuffer;
 use crate::{HAS_CONSUMER, HAS_PRODUCER};
 {% endif %}
 
+// Only used in documentation:
+#[allow(unused_imports)]
+use super::Producer;
+
 /// The consumer side of a [`RingBuffer`].
 ///
 /// A `Consumer` can be moved between threads,
@@ -70,15 +74,15 @@ impl<T{{ N_param }}> Drop for Consumer<'_, T{{ N_arg }}> {
 
 /// It can be moved ...
 /// ```
-/// use {{ module }}::Consumer;
+/// use {{ module_path }}::Consumer;
 /// fn assert_send<X: Send>() {}
-/// assert_send::<Consumer<u8{{ if_N("8") }}>();
+/// assert_send::<Consumer<u8{{ if_N(", 8") }}>>();
 /// ```
 /// ... but not shared between threads:
 /// ```compile_fail
-/// # use {{ module }}::Consumer;
+/// # use {{ module_path }}::Consumer;
 /// fn assert_sync<X: Sync>() {}
-/// assert_sync::<Consumer<u8{{ if_N("8") }}>();
+/// assert_sync::<Consumer<u8{{ if_N(", 8") }}>>();
 /// ```
 // SAFETY: After moving a consumer to another thread, there is still only a single thread
 // that can access the consumer side of the queue.
@@ -100,7 +104,7 @@ impl<T{{ N_param }}> Consumer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// # Examples
     ///
     /// ```
-    /// use {{ module }}::{PopError, RingBuffer};
+    /// use {{ module_path }}::{PopError, RingBuffer};
     ///
 {{ doctest_create_ring_buffer(1) }}
     ///
@@ -112,8 +116,8 @@ impl<T{{ N_param }}> Consumer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// To obtain an [`Option<T>`](Option), use [`.ok()`](Result::ok) on the result.
     ///
     /// ```
-    /// # use {{ module }}::RingBuffer;
-{{ doctest_create_ring_buffer(1, prefix="# ") }}
+    /// # use {{ module_path }}::RingBuffer;
+{{ doctest_create_ring_buffer(1, prefix="    /// #") }}
     /// assert_eq!(p.push(20), Ok(()));
     /// assert_eq!(c.pop().ok(), Some(20));
     /// ```
@@ -140,7 +144,7 @@ impl<T{{ N_param }}> Consumer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// # Examples
     ///
     /// ```
-    /// use {{ module }}::{PeekError, RingBuffer};
+    /// use {{ module_path }}::{PeekError, RingBuffer};
     ///
 {{ doctest_create_ring_buffer(1) }}
     ///
@@ -183,7 +187,7 @@ impl<T{{ N_param }}> Consumer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// # Examples
     ///
     /// ```
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
 {{ doctest_create_ring_buffer(1024) }}
     ///
@@ -343,7 +347,7 @@ impl<T{{ N_param }}> Consumer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// # Examples
     ///
     /// ```
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
 {{ doctest_create_ring_buffer(1) }}
     ///
@@ -356,8 +360,8 @@ impl<T{{ N_param }}> Consumer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// might not be empty for long:
     ///
     /// ```
-    /// # use {{ module }}::RingBuffer;
-{{ doctest_create_ring_buffer(1, prefix="# ") }}
+    /// # use {{ module_path }}::RingBuffer;
+{{ doctest_create_ring_buffer(1, prefix="    /// #") }}
     /// # assert_eq!(p.push(0.0), Ok(()));
     /// if c.is_empty() {
     ///     // The buffer might be empty, but it might as well not be
@@ -368,8 +372,8 @@ impl<T{{ N_param }}> Consumer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// However, if it's not empty, another thread cannot change that:
     ///
     /// ```
-    /// # use {{ module }}::RingBuffer;
-{{ doctest_create_ring_buffer(1, prefix="# ") }}
+    /// # use {{ module_path }}::RingBuffer;
+{{ doctest_create_ring_buffer(1, prefix="    /// #") }}
     /// # assert_eq!(p.push(0.0), Ok(()));
     /// if !c.is_empty() {
     ///     // At least one slot is guaranteed to be available for reading.
@@ -398,7 +402,7 @@ impl<T{{ N_param }}> Consumer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// # Examples
     ///
     /// ```
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
 {{ doctest_create_ring_buffer(7) }}
     /// assert!(!c.is_abandoned());
@@ -413,8 +417,8 @@ impl<T{{ N_param }}> Consumer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// the consumer might become abandoned at any time:
     ///
     /// ```
-    /// # use {{ module }}::RingBuffer;
-{{ doctest_create_ring_buffer(1, prefix="# ") }}
+    /// # use {{ module_path }}::RingBuffer;
+{{ doctest_create_ring_buffer(1, prefix="    /// #") }}
     /// # assert_eq!(p.push(10), Ok(()));
     /// if !c.is_abandoned() {
     ///     // Right now, the producer might still be alive, but it might as well not be
@@ -425,8 +429,8 @@ impl<T{{ N_param }}> Consumer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// However, if it already is abandoned, it will stay that way:
     ///
     /// ```
-    /// # use {{ module }}::RingBuffer;
-{{ doctest_create_ring_buffer(1, prefix="# ") }}
+    /// # use {{ module_path }}::RingBuffer;
+{{ doctest_create_ring_buffer(1, prefix="    /// #") }}
     /// # assert_eq!(p.push(10), Ok(()));
     /// if c.is_abandoned() {
     ///     // The producer does definitely not exist anymore.
@@ -551,7 +555,7 @@ impl<T{{ N_param }}> Consumer<{{ arc_tick_blank }}T{{ N_arg }}> {
     ///
     /// # Examples
     ///
-    /// See the documentation of the [`chunks`](chunks#examples) module.
+    /// See the documentation of the [`chunks`](super::chunks#examples) module.
 {% if bip %}
     pub fn read_chunk(
         &mut self,

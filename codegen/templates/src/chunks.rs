@@ -40,9 +40,9 @@
 //! `p` and `c` would of course live on different threads:
 //!
 //! ```
-//! use {{ module }}::RingBuffer;
+//! use {{ module_path }}::RingBuffer;
 //!
-{# TODO: {{ doctest_create_ring_buffer(4) }} #}
+{{ doctest_create_ring_buffer(4, prefix="//!") }}
 //!
 //! if let Ok(chunk) = p.write_chunk_uninit(4) {
 //!     chunk.fill_from_iter([10, 11, 12]);
@@ -137,7 +137,7 @@
 //! The iterator API can be used to move items from one ring buffer to another:
 //!
 //! ```
-//! use {{ module }}::{Consumer, Producer};
+//! use {{ module_path }}::{Consumer, Producer};
 //!
 //! // TODO: make this work for "array" variants:
 //! //fn move_items<T>(src: &mut Consumer<T>, dst: &mut Producer<T>) -> usize {
@@ -165,7 +165,7 @@
 //! ```
 //! use rtrb::{Producer, CopyToUninit as _};
 //! // TODO:
-//! // use {{ module }}::{Producer, CopyToUninit as _};
+//! // use {{ module_path }}::{Producer, CopyToUninit as _};
 //!
 //! fn push_entire_slice<'a, T>(queue: &mut Producer<T>, slice: &'a [T]) -> Result<(), &'a [T]>
 //! where
@@ -190,7 +190,7 @@
 //! ```
 //! use rtrb::{Producer, CopyToUninit as _, ChunkError::TooFewSlots};
 //! // TODO:
-//! // use {{ module }}::{Producer, CopyToUninit as _, ChunkError::TooFewSlots};
+//! // use {{ module_path }}::{Producer, CopyToUninit as _, ChunkError::TooFewSlots};
 //!
 //! fn push_partial_slice<T>(queue: &mut Producer<T>, slice: &[T]) -> usize
 //! where
@@ -218,7 +218,7 @@
 //! ```
 //! use rtrb::{Producer, ChunkError::TooFewSlots};
 //! // TODO:
-//! // use {{ module }}::{Producer, ChunkError::TooFewSlots};
+//! // use {{ module_path }}::{Producer, ChunkError::TooFewSlots};
 //!
 //! fn push_from_iter<T, I>(queue: &mut Producer<T>, iter: I) -> usize
 //! where
@@ -244,7 +244,7 @@ use crate::atomic::*;
 use super::{Consumer, Producer};
 // Only used in documentation:
 #[allow(unused_imports)]
-use super::CopyToUninit;
+use super::{CopyToUninit, RingBuffer};
 
 /// Structure for writing into multiple (uninitialized) slots in one go.
 ///
@@ -388,19 +388,19 @@ impl<'a, T{{ N_param }}> ReadChunk<'a, T{{ N_arg }}> {
 
 /// It (as well as [`WriteChunk`]) can be moved ...
 /// ```
-/// use {{ module }}::chunks::{WriteChunk, WriteChunkUninit};
+/// use {{ module_path }}::chunks::{WriteChunk, WriteChunkUninit};
 /// fn assert_send<X: Send>() {}
 /// assert_send::<WriteChunkUninit<u8{{ if_N(", 8") }}>>();
 /// assert_send::<WriteChunk<u8{{ if_N(", 8") }}>>();
 /// ```
 /// ... but not shared between threads:
 /// ```compile_fail
-/// # use {{ module }}::chunks::WriteChunkUninit;
+/// # use {{ module_path }}::chunks::WriteChunkUninit;
 /// fn assert_sync<X: Sync>() {}
 /// assert_sync::<WriteChunkUninit<u8{{ if_N(", 8") }}>>();
 /// ```
 /// ```compile_fail
-/// # use {{ module }}::chunks::WriteChunk;
+/// # use {{ module_path }}::chunks::WriteChunk;
 /// # fn assert_sync<X: Sync>() {}
 /// assert_sync::<WriteChunk<u8{{ if_N(", 8") }}>>();
 /// ```
@@ -410,13 +410,13 @@ unsafe impl<T: Send{{ N_param }}> Send for WriteChunkUninit<'_, T{{ N_arg }}> {}
 
 /// It (and any wrapper structs) can be moved ...
 /// ```
-/// use {{ module }}::chunks::ReadChunk;
+/// use {{ module_path }}::chunks::ReadChunk;
 /// fn assert_send<X: Send>() {}
 /// assert_send::<ReadChunk<u8{{ if_N(", 8") }}>>();
 /// ```
 /// ... but not shared between threads:
 /// ```compile_fail
-/// # use {{ module }}::chunks::ReadChunk;
+/// # use {{ module_path }}::chunks::ReadChunk;
 /// fn assert_sync<X: Sync>() {}
 /// assert_sync::<ReadChunk<u8{{ if_N(", 8") }}>>();
 /// ```
@@ -502,7 +502,7 @@ impl<T{{ N_param }}> WriteChunkUninit<'_, T{{ N_arg }}> {
     /// is made available for reading:
     ///
     /// ```
-    /// use {{ module }}::{PopError, RingBuffer};
+    /// use {{ module_path }}::{PopError, RingBuffer};
     ///
 {{ doctest_create_ring_buffer(4) }}
     /// if let Ok(chunk) = p.write_chunk_uninit(3) {
@@ -521,7 +521,7 @@ impl<T{{ N_param }}> WriteChunkUninit<'_, T{{ N_arg }}> {
     /// `&mut` (or [`Iterator::by_ref()`]) can be used.
     ///
     /// ```
-    /// use {{ module }}::{PopError, RingBuffer};
+    /// use {{ module_path }}::{PopError, RingBuffer};
     ///
 {{ doctest_create_ring_buffer(4) }}
     /// let mut it = vec![10, 20, 30].into_iter();
@@ -844,7 +844,7 @@ impl<T{{ N_param }}> ReadChunk<'_, T{{ N_arg }}> {
     /// (which is only relevant if `T` implements [`Drop`]).
     ///
     /// ```
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
     /// // Static variable to count all drop() invocations
     /// static mut DROP_COUNT: i32 = 0;
@@ -856,7 +856,7 @@ impl<T{{ N_param }}> ReadChunk<'_, T{{ N_arg }}> {
     ///
     /// // Scope to limit lifetime of ring buffer
     /// {
-{{ doctest_create_ring_buffer(4, prefix="    ") }}
+{{ doctest_create_ring_buffer(4, prefix="    ///    ") }}
     ///
     ///     assert!(p.push(Thing(1)).is_ok());
     ///     assert!(p.push(Thing(2)).is_ok());

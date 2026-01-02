@@ -7,6 +7,10 @@ use super::{PopError, PeekError, RingBuffer, ChunkError, chunks::ReadChunk};
 use crate::IS_ABANDONED;
 use super::arc_ring_buffer::ArcRingBuffer;
 
+// Only used in documentation:
+#[allow(unused_imports)]
+use super::Producer;
+
 /// The consumer side of a [`RingBuffer`].
 ///
 /// A `Consumer` can be moved between threads,
@@ -48,13 +52,13 @@ pub struct Consumer<T> {
 /// ```
 /// use rtrb::bip_arc::Consumer;
 /// fn assert_send<X: Send>() {}
-/// assert_send::<Consumer<u8>();
+/// assert_send::<Consumer<u8>>();
 /// ```
 /// ... but not shared between threads:
 /// ```compile_fail
 /// # use rtrb::bip_arc::Consumer;
 /// fn assert_sync<X: Sync>() {}
-/// assert_sync::<Consumer<u8>();
+/// assert_sync::<Consumer<u8>>();
 /// ```
 // SAFETY: After moving a consumer to another thread, there is still only a single thread
 // that can access the consumer side of the queue.
@@ -79,7 +83,6 @@ impl<T> Consumer<T> {
     /// use rtrb::bip_arc::{PopError, RingBuffer};
     ///
     /// let (mut p, mut c) = RingBuffer::new(1);
-
     ///
     /// assert_eq!(p.push(10), Ok(()));
     /// assert_eq!(c.pop(), Ok(10));
@@ -91,7 +94,6 @@ impl<T> Consumer<T> {
     /// ```
     /// # use rtrb::bip_arc::RingBuffer;
     /// # let (mut p, mut c) = RingBuffer::new(1);
-
     /// assert_eq!(p.push(20), Ok(()));
     /// assert_eq!(c.pop().ok(), Some(20));
     /// ```
@@ -121,7 +123,6 @@ impl<T> Consumer<T> {
     /// use rtrb::bip_arc::{PeekError, RingBuffer};
     ///
     /// let (mut p, mut c) = RingBuffer::new(1);
-
     ///
     /// assert_eq!(c.peek(), Err(PeekError::Empty));
     /// assert_eq!(p.push(10), Ok(()));
@@ -158,7 +159,6 @@ impl<T> Consumer<T> {
     /// use rtrb::bip_arc::RingBuffer;
     ///
     /// let (mut p, mut c) = RingBuffer::new(1024);
-
     ///
     /// assert_eq!(c.slots(), 0);
     /// assert_eq!(p.push(0.0), Ok(()));
@@ -308,7 +308,6 @@ impl<T> Consumer<T> {
     /// use rtrb::bip_arc::RingBuffer;
     ///
     /// let (mut p, mut c) = RingBuffer::new(1);
-
     ///
     /// assert!(c.is_empty());
     /// assert_eq!(p.push(0.0), Ok(()));
@@ -321,7 +320,6 @@ impl<T> Consumer<T> {
     /// ```
     /// # use rtrb::bip_arc::RingBuffer;
     /// # let (mut p, mut c) = RingBuffer::new(1);
-
     /// # assert_eq!(p.push(0.0), Ok(()));
     /// if c.is_empty() {
     ///     // The buffer might be empty, but it might as well not be
@@ -334,7 +332,6 @@ impl<T> Consumer<T> {
     /// ```
     /// # use rtrb::bip_arc::RingBuffer;
     /// # let (mut p, mut c) = RingBuffer::new(1);
-
     /// # assert_eq!(p.push(0.0), Ok(()));
     /// if !c.is_empty() {
     ///     // At least one slot is guaranteed to be available for reading.
@@ -365,7 +362,6 @@ impl<T> Consumer<T> {
     /// use rtrb::bip_arc::RingBuffer;
     ///
     /// let (mut p, mut c) = RingBuffer::new(7);
-
     /// assert!(!c.is_abandoned());
     /// assert_eq!(p.push(10), Ok(()));
     /// drop(p);
@@ -380,7 +376,6 @@ impl<T> Consumer<T> {
     /// ```
     /// # use rtrb::bip_arc::RingBuffer;
     /// # let (mut p, mut c) = RingBuffer::new(1);
-
     /// # assert_eq!(p.push(10), Ok(()));
     /// if !c.is_abandoned() {
     ///     // Right now, the producer might still be alive, but it might as well not be
@@ -393,7 +388,6 @@ impl<T> Consumer<T> {
     /// ```
     /// # use rtrb::bip_arc::RingBuffer;
     /// # let (mut p, mut c) = RingBuffer::new(1);
-
     /// # assert_eq!(p.push(10), Ok(()));
     /// if c.is_abandoned() {
     ///     // The producer does definitely not exist anymore.
@@ -479,7 +473,7 @@ impl<T> Consumer<T> {
     ///
     /// # Examples
     ///
-    /// See the documentation of the [`chunks`](chunks#examples) module.
+    /// See the documentation of the [`chunks`](super::chunks#examples) module.
     pub fn read_chunk(
         &mut self,
         n: usize,

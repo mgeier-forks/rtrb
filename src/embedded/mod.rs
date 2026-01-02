@@ -4,6 +4,44 @@
 //!
 //! no cache padding, no dynamic allocation
 //! power-of-two optimizations might be done automatically by the compiler? TODO: verify
+//!
+//! # Usage
+//!
+//! A [`RingBuffer`] consists of two parts:
+//! a [`Producer`] for writing into the ring buffer and
+//! a [`Consumer`] for reading from the ring buffer.
+//!
+//! TODO: more usage instructions
+//!
+//! # Examples
+//!
+//! Moving single elements into and out of a queue with
+//! [`Producer::push()`] and [`Consumer::pop()`], respectively:
+//!
+//! ```
+//! use rtrb::embedded::{RingBuffer, PushError, PopError};
+//!
+//! let rb = RingBuffer::<_, 2>::new();
+//! let mut p = rb.producer().unwrap();
+//! let mut c = rb.consumer().unwrap();
+//!
+//! assert_eq!(p.push(10), Ok(()));
+//! assert_eq!(p.push(20), Ok(()));
+//! assert_eq!(p.push(30), Err(PushError::Full(30)));
+//!
+//! std::thread::scope(|s| {
+//!     s.spawn(move || {
+//!         assert_eq!(c.pop(), Ok(10));
+//!         assert_eq!(c.pop(), Ok(20));
+//!         assert_eq!(c.pop(), Err(PopError::Empty));
+//!     });
+//! });
+//! ```
+//!
+//! See the documentation of the [`chunks#examples`] module
+//! for examples that write multiple items at once with
+//! [`Producer::write_chunk_uninit()`] and [`Producer::write_chunk()`]
+//! and read multiple items with [`Consumer::read_chunk()`].
 
 mod ring_buffer;
 pub use ring_buffer::RingBuffer;
@@ -13,6 +51,10 @@ mod consumer;
 pub use consumer::Consumer;
 
 pub mod chunks;
+
+// Only used in documentation:
+#[allow(unused_imports)]
+use chunks::WriteChunkUninit;
 
 /// Error type for [`Consumer::peek()`].
 #[doc(inline)]

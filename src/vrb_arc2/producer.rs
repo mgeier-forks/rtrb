@@ -7,6 +7,10 @@ use super::{PushError, RingBuffer, ChunkError, chunks::{WriteChunk, WriteChunkUn
 use crate::IS_ABANDONED;
 use super::arc_ring_buffer::ArcRingBuffer;
 
+// Only used in documentation:
+#[allow(unused_imports)]
+use super::Consumer;
+
 /// The producer side of a [`RingBuffer`].
 ///
 /// A `Producer` can be moved between threads,
@@ -101,7 +105,6 @@ impl<T> Producer<T> {
     /// use rtrb::vrb_arc2::RingBuffer;
     ///
     /// let (mut p, mut c) = RingBuffer::new(4096);
-
     /// assert_eq!(p.push(0.5f32), Ok(()));
     ///
     /// assert_eq!(p.slots(), 4095);
@@ -134,7 +137,6 @@ impl<T> Producer<T> {
     /// use rtrb::vrb_arc2::RingBuffer;
     ///
     /// let (mut p, mut c) = RingBuffer::new(4096);
-
     ///
     /// assert_eq!(p.push(-0.7), Ok(()));
     /// assert_eq!(p.slots(), 4095);
@@ -160,7 +162,6 @@ impl<T> Producer<T> {
     /// use rtrb::vrb_arc2::RingBuffer;
     ///
     /// let (mut p, mut c) = RingBuffer::new(7);
-
     /// assert!(!p.is_abandoned());
     /// assert_eq!(p.push(10), Ok(()));
     /// drop(c);
@@ -176,7 +177,6 @@ impl<T> Producer<T> {
     /// ```
     /// # use rtrb::vrb_arc2::RingBuffer;
     /// # let (mut p, mut c) = RingBuffer::new(1);
-
     /// # assert_eq!(p.push(10), Ok(()));
     /// if !p.is_abandoned() {
     ///     // Right now, the consumer might still be alive, but it might as well not be
@@ -189,7 +189,6 @@ impl<T> Producer<T> {
     /// ```
     /// # use rtrb::vrb_arc2::RingBuffer;
     /// # let (mut p, mut c) = RingBuffer::new(1);
-
     /// # assert_eq!(p.push(10), Ok(()));
     /// if p.is_abandoned() {
     ///     // The consumer does definitely not exist anymore.

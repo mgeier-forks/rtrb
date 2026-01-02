@@ -15,7 +15,7 @@ use super::{Consumer, Producer};
 /// Elements can be written with a [`Producer`] and read with a [`Consumer`],
 /// both of which can be obtained with [`RingBuffer::new()`].
 ///
-/// *See also the [module-level documentation](rtrb::arc).*
+/// *See also the [module-level documentation](crate::arc).*
 #[derive(Debug)]
 pub struct RingBuffer<T> {
     pub(super) head: CachePadded<AtomicUsize>,

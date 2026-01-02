@@ -13,6 +13,14 @@
 //! <https://fgiesen.wordpress.com/2012/07/21/the-magic-ring-buffer/>
 //!
 //! ... `capacity` will be rounded up to page size ... (TODO: add this in constructor docs?)
+//!
+//! # Usage
+//!
+//! A [`RingBuffer`] consists of two parts:
+//! a [`Producer`] for writing into the ring buffer and
+//! a [`Consumer`] for reading from the ring buffer.
+//!
+//! TODO: more usage instructions
 
 mod ring_buffer;
 pub use ring_buffer::RingBuffer;
@@ -23,6 +31,10 @@ pub use consumer::Consumer;
 mod arc_ring_buffer;
 
 pub mod chunks;
+
+// Only used in documentation:
+#[allow(unused_imports)]
+use chunks::WriteChunkUninit;
 
 /// Error type for [`Consumer::peek()`].
 #[doc(inline)]

@@ -26,6 +26,7 @@
 //! ```
 //! use rtrb::bip_arc2::RingBuffer;
 //!
+//! let (mut p, mut c) = RingBuffer::new(4);
 //!
 //! if let Ok(chunk) = p.write_chunk_uninit(4) {
 //!     chunk.fill_from_iter([10, 11, 12]);
@@ -185,7 +186,7 @@ use crate::atomic::*;
 use super::{Consumer, Producer};
 // Only used in documentation:
 #[allow(unused_imports)]
-use super::CopyToUninit;
+use super::{CopyToUninit, RingBuffer};
 
 /// Structure for writing into multiple (uninitialized) slots in one go.
 ///
@@ -358,7 +359,6 @@ impl<T> WriteChunkUninit<'_, T> {
     /// use rtrb::bip_arc2::{PopError, RingBuffer};
     ///
     /// let (mut p, mut c) = RingBuffer::new(4);
-
     /// if let Ok(chunk) = p.write_chunk_uninit(3) {
     ///     assert_eq!(chunk.fill_from_iter([10, 20]), 2);
     /// } else {
@@ -378,7 +378,6 @@ impl<T> WriteChunkUninit<'_, T> {
     /// use rtrb::bip_arc2::{PopError, RingBuffer};
     ///
     /// let (mut p, mut c) = RingBuffer::new(4);
-
     /// let mut it = vec![10, 20, 30].into_iter();
     /// if let Ok(chunk) = p.write_chunk_uninit(2) {
     ///     assert_eq!(chunk.fill_from_iter(&mut it), 2);
@@ -590,7 +589,6 @@ impl<T> ReadChunk<'_, T> {
     /// // Scope to limit lifetime of ring buffer
     /// {
     ///     let (mut p, mut c) = RingBuffer::new(4);
-
     ///
     ///     assert!(p.push(Thing(1)).is_ok());
     ///     assert!(p.push(Thing(2)).is_ok());

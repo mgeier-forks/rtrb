@@ -36,7 +36,7 @@ use super::{Consumer, Producer};
 /// which can be obtained with ... TODO
 {% endif %}
 ///
-/// *See also the [module-level documentation]({{ module }}).*
+/// *See also the [module-level documentation](crate::{{ module_name }}).*
 {% if storage == "array" %}
 #[derive(Debug)]
 pub struct RingBuffer<T, const N: usize> {
@@ -65,7 +65,7 @@ impl<T, const N: usize> RingBuffer<T, N> {
             head: {{ CachePadded_new("AtomicUsize::new(0)") }},
             tail: {{ CachePadded_new("AtomicUsize::new(0)") }},
             {% if bip %}
-            skip: {{ CachePadded_new("AtomicUsize::new(0)") }},
+            skip: {{ CachePadded_new("AtomicUsize::new(N)") }},
             {% endif %}
             flags: AtomicU8::new(0),
             slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
@@ -123,7 +123,7 @@ impl<T> RingBuffer<T> {
             head: {{ CachePadded_new("AtomicUsize::new(0)") }},
             tail: {{ CachePadded_new("AtomicUsize::new(0)") }},
             {% if bip %}
-            skip: {{ CachePadded_new("AtomicUsize::new(0)") }},
+            skip: {{ CachePadded_new("AtomicUsize::new(capacity)") }},
             {% endif %}
             flags: AtomicU8::new(0),
             data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
@@ -162,6 +162,7 @@ compile_error!("vrb implies contiguous");
 compile_error!("vrb must use powers of two");
   {% endif %}
 // TODO: reuse from storage_vec, disabling "skip"?
+#[derive(Debug)]
 pub struct RingBuffer<T> {
     pub(super) head: {{ CachePadded("AtomicUsize") }},
     pub(super) tail: {{ CachePadded("AtomicUsize") }},
@@ -327,7 +328,7 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     /// # Examples
     ///
     /// ```
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
 {% if N %}{% if arc %}
     /// let (p, c) = RingBuffer::<f32, 128>::new();
@@ -348,7 +349,7 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     ///
 {% if N %}{% if arc %}
     /// ```
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
     /// let (mut p, c) = RingBuffer::<_, 128>::new();
     /// assert_eq!(p.push(0.0f32), Ok(()));
@@ -362,7 +363,7 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     }
 {% else %}
     /// ```
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
     /// let rb = RingBuffer::<_, 128>::new();
     /// let mut p = rb.producer().unwrap();
@@ -376,7 +377,7 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     }
 {% endif %}{% else %}{% if arc %}
     /// ```
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
     /// let (mut p, c) = RingBuffer::new(100);
     /// assert_eq!(p.push(0.0f32), Ok(()));
@@ -388,7 +389,7 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     }
 {% else %}
     /// ```
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
     /// let rb = RingBuffer::new(100);
     /// let mut p = rb.producer().unwrap();
@@ -408,7 +409,7 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     /// Only one producer and one consumer can exist at once,
     /// but once a producer has been dropped, a new one can be created:
     /// ```
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
 {{ doctest_create_ring_buffer(64) }}
     /// assert!(rb.producer().is_none());
@@ -445,7 +446,7 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     /// Only one producer and one consumer can exist at once,
     /// but once a consumer has been dropped, a new one can be created:
     /// ```
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
 {{ doctest_create_ring_buffer(64) }}
     /// assert!(rb.consumer().is_none());

@@ -14,6 +14,10 @@ use super::arc_ring_buffer::ArcRingBuffer;
 use crate::{HAS_CONSUMER, HAS_PRODUCER};
 {% endif %}
 
+// Only used in documentation:
+#[allow(unused_imports)]
+use super::Consumer;
+
 /// The producer side of a [`RingBuffer`].
 ///
 /// A `Producer` can be moved between threads,
@@ -69,13 +73,13 @@ impl<T{{ N_param }}> Drop for Producer<'_, T{{ N_arg }}> {
 
 /// It can be moved ...
 /// ```
-/// use {{ module }}::Producer;
+/// use {{ module_path }}::Producer;
 /// fn assert_send<X: Send>() {}
 /// assert_send::<Producer<u8{{ if_N(", 8") }}>>();
 /// ```
 /// ... but not shared between threads:
 /// ```compile_fail
-/// # use {{ module }}::Producer;
+/// # use {{ module_path }}::Producer;
 /// fn assert_sync<X: Sync>() {}
 /// assert_sync::<Producer<u8{{ if_N(", 8") }}>>();
 /// ```
@@ -100,7 +104,7 @@ impl<T{{ N_param }}> Producer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// # Examples
     ///
     /// ```
-    /// use {{ module }}::{PushError, RingBuffer};
+    /// use {{ module_path }}::{PushError, RingBuffer};
     ///
 {{ doctest_create_ring_buffer(1) }}
     ///
@@ -145,7 +149,7 @@ impl<T{{ N_param }}> Producer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// # Examples
     ///
     /// ```
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
 {{ doctest_create_ring_buffer(4096) }}
     /// assert_eq!(p.push(0.5f32), Ok(()));
@@ -269,7 +273,7 @@ impl<T{{ N_param }}> Producer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// # Examples
     ///
     /// ```
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
 {{ doctest_create_ring_buffer(1) }}
     ///
@@ -282,8 +286,8 @@ impl<T{{ N_param }}> Producer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// might not be full for long:
     ///
     /// ```
-    /// # use {{ module }}::RingBuffer;
-{{ doctest_create_ring_buffer(1, prefix="# ") }}
+    /// # use {{ module_path }}::RingBuffer;
+{{ doctest_create_ring_buffer(1, prefix="    /// #") }}
     /// # assert_eq!(p.push(10), Ok(()));
     /// if p.is_full() {
     ///     // The buffer might be full, but it might as well not be
@@ -294,8 +298,8 @@ impl<T{{ N_param }}> Producer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// However, if it's not full, another thread cannot change that:
     ///
     /// ```
-    /// # use {{ module }}::RingBuffer;
-{{ doctest_create_ring_buffer(1, prefix="# ") }}
+    /// # use {{ module_path }}::RingBuffer;
+{{ doctest_create_ring_buffer(1, prefix="    /// #") }}
     /// # assert_eq!(p.push(10), Ok(()));
     /// if !p.is_full() {
     ///     // At least one slot is guaranteed to be available for writing.
@@ -309,7 +313,7 @@ impl<T{{ N_param }}> Producer<{{ arc_tick_blank }}T{{ N_arg }}> {
     ///
     /// ```
     /// use std::io::{Read, Write};
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
 {{ doctest_create_ring_buffer(8) }}
     /// assert_eq!(p.write(&[1, 2, 3, 4, 5]).unwrap(), 5);
@@ -343,7 +347,7 @@ impl<T{{ N_param }}> Producer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// # Examples
     ///
     /// ```
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
 {{ doctest_create_ring_buffer(4096) }}
     ///
@@ -369,7 +373,7 @@ impl<T{{ N_param }}> Producer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// # Examples
     ///
     /// ```
-    /// use {{ module }}::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
 {{ doctest_create_ring_buffer(7) }}
     /// assert!(!p.is_abandoned());
@@ -385,8 +389,8 @@ impl<T{{ N_param }}> Producer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// the producer might become abandoned at any time:
     ///
     /// ```
-    /// # use {{ module }}::RingBuffer;
-{{ doctest_create_ring_buffer(1, prefix="# ") }}
+    /// # use {{ module_path }}::RingBuffer;
+{{ doctest_create_ring_buffer(1, prefix="    /// #") }}
     /// # assert_eq!(p.push(10), Ok(()));
     /// if !p.is_abandoned() {
     ///     // Right now, the consumer might still be alive, but it might as well not be
@@ -397,8 +401,8 @@ impl<T{{ N_param }}> Producer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// However, if it already is abandoned, it will stay that way:
     ///
     /// ```
-    /// # use {{ module }}::RingBuffer;
-{{ doctest_create_ring_buffer(1, prefix="# ") }}
+    /// # use {{ module_path }}::RingBuffer;
+{{ doctest_create_ring_buffer(1, prefix="    /// #") }}
     /// # assert_eq!(p.push(10), Ok(()));
     /// if p.is_abandoned() {
     ///     // The consumer does definitely not exist anymore.

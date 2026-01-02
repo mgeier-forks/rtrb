@@ -1,6 +1,7 @@
 {% if bip is undefined %}{% set bip = false %}{% endif %}
 {% if bip and contiguous is undefined %}{% set contiguous = true %}{% endif %}
 {% if contiguous is undefined %}{% set contiguous = false %}{% endif %}
+{% set module_path %}rtrb::{{ module_name }}{% endset %}
 {% if N is undefined %}
   {% if storage == "array" %}
     {% set N = true %}
@@ -36,18 +37,18 @@
 {% if N %}{{ arg }}{% else %}{% endif %}
 {% endmacro %}
 {##}
-{% macro doctest_create_ring_buffer(capacity, prefix="") %}
+{% macro doctest_create_ring_buffer(capacity, prefix="    ///") %}
 {% if N %}{% if arc %}
-    /// {{ prefix }}let (mut p, mut c) = RingBuffer::<_, {{ capacity }}>::new();
-{% else %}
-    /// {{ prefix }}let rb = RingBuffer::<_, {{ capacity }}>::new();
-    /// {{ prefix }}let mut p = rb.producer().unwrap();
-    /// {{ prefix }}let mut c = rb.consumer().unwrap();
-{% endif %}{% else %}{% if arc %}
-    /// {{ prefix }}let (mut p, mut c) = RingBuffer::new({{ capacity }});
-{% else %}
-    /// {{ prefix }}let rb = RingBuffer::new({{ capacity }});
-    /// {{ prefix }}let mut p = rb.producer().unwrap();
-    /// {{ prefix }}let mut c = rb.consumer().unwrap();
-{% endif %}{% endif %}
-{% endmacro %}
+{{ prefix }} let (mut p, mut c) = RingBuffer::<_, {{ capacity }}>::new();
+{%- else %}
+{{ prefix }} let rb = RingBuffer::<_, {{ capacity }}>::new();
+{{ prefix }} let mut p = rb.producer().unwrap();
+{{ prefix }} let mut c = rb.consumer().unwrap();
+{%- endif %}{% else %}{% if arc %}
+{{ prefix }} let (mut p, mut c) = RingBuffer::new({{ capacity }});
+{%- else %}
+{{ prefix }} let rb = RingBuffer::new({{ capacity }});
+{{ prefix }} let mut p = rb.producer().unwrap();
+{{ prefix }} let mut c = rb.consumer().unwrap();
+{%- endif %}{% endif %}
+{%- endmacro %}

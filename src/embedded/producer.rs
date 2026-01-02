@@ -6,6 +6,10 @@ use crate::atomic::*;
 use super::{PushError, RingBuffer, ChunkError, chunks::{WriteChunk, WriteChunkUninit}};
 use crate::{HAS_CONSUMER, HAS_PRODUCER};
 
+// Only used in documentation:
+#[allow(unused_imports)]
+use super::Consumer;
+
 /// The producer side of a [`RingBuffer`].
 ///
 /// A `Producer` can be moved between threads,
@@ -70,7 +74,6 @@ impl<T, const N: usize> Producer<'_, T, N> {
     /// let rb = RingBuffer::<_, 1>::new();
     /// let mut p = rb.producer().unwrap();
     /// let mut c = rb.consumer().unwrap();
-
     ///
     /// assert_eq!(p.push(10), Ok(()));
     /// assert_eq!(p.push(20), Err(PushError::Full(20)));
@@ -107,7 +110,6 @@ impl<T, const N: usize> Producer<'_, T, N> {
     /// let rb = RingBuffer::<_, 4096>::new();
     /// let mut p = rb.producer().unwrap();
     /// let mut c = rb.consumer().unwrap();
-
     /// assert_eq!(p.push(0.5f32), Ok(()));
     ///
     /// assert_eq!(p.slots(), 4095);
@@ -132,7 +134,6 @@ impl<T, const N: usize> Producer<'_, T, N> {
     /// let rb = RingBuffer::<_, 1>::new();
     /// let mut p = rb.producer().unwrap();
     /// let mut c = rb.consumer().unwrap();
-
     ///
     /// assert!(!p.is_full());
     /// assert_eq!(p.push(10), Ok(()));
@@ -147,7 +148,6 @@ impl<T, const N: usize> Producer<'_, T, N> {
     /// # let rb = RingBuffer::<_, 1>::new();
     /// # let mut p = rb.producer().unwrap();
     /// # let mut c = rb.consumer().unwrap();
-
     /// # assert_eq!(p.push(10), Ok(()));
     /// if p.is_full() {
     ///     // The buffer might be full, but it might as well not be
@@ -162,7 +162,6 @@ impl<T, const N: usize> Producer<'_, T, N> {
     /// # let rb = RingBuffer::<_, 1>::new();
     /// # let mut p = rb.producer().unwrap();
     /// # let mut c = rb.consumer().unwrap();
-
     /// # assert_eq!(p.push(10), Ok(()));
     /// if !p.is_full() {
     ///     // At least one slot is guaranteed to be available for writing.
@@ -187,7 +186,6 @@ impl<T, const N: usize> Producer<'_, T, N> {
     /// let rb = RingBuffer::<_, 4096>::new();
     /// let mut p = rb.producer().unwrap();
     /// let mut c = rb.consumer().unwrap();
-
     ///
     /// assert_eq!(p.push(-0.7), Ok(()));
     /// assert_eq!(p.slots(), 4095);

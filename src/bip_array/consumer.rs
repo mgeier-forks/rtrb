@@ -6,6 +6,10 @@ use crate::atomic::*;
 use super::{PopError, PeekError, RingBuffer, ChunkError, chunks::ReadChunk};
 use crate::{HAS_CONSUMER, HAS_PRODUCER};
 
+// Only used in documentation:
+#[allow(unused_imports)]
+use super::Producer;
+
 /// The consumer side of a [`RingBuffer`].
 ///
 /// A `Consumer` can be moved between threads,
@@ -36,13 +40,13 @@ impl<T, const N: usize> Drop for Consumer<'_, T, N> {
 /// ```
 /// use rtrb::bip_array::Consumer;
 /// fn assert_send<X: Send>() {}
-/// assert_send::<Consumer<u88>();
+/// assert_send::<Consumer<u8, 8>>();
 /// ```
 /// ... but not shared between threads:
 /// ```compile_fail
 /// # use rtrb::bip_array::Consumer;
 /// fn assert_sync<X: Sync>() {}
-/// assert_sync::<Consumer<u88>();
+/// assert_sync::<Consumer<u8, 8>>();
 /// ```
 // SAFETY: After moving a consumer to another thread, there is still only a single thread
 // that can access the consumer side of the queue.
@@ -69,7 +73,6 @@ impl<T, const N: usize> Consumer<'_, T, N> {
     /// let rb = RingBuffer::<_, 1>::new();
     /// let mut p = rb.producer().unwrap();
     /// let mut c = rb.consumer().unwrap();
-
     ///
     /// assert_eq!(p.push(10), Ok(()));
     /// assert_eq!(c.pop(), Ok(10));
@@ -83,7 +86,6 @@ impl<T, const N: usize> Consumer<'_, T, N> {
     /// # let rb = RingBuffer::<_, 1>::new();
     /// # let mut p = rb.producer().unwrap();
     /// # let mut c = rb.consumer().unwrap();
-
     /// assert_eq!(p.push(20), Ok(()));
     /// assert_eq!(c.pop().ok(), Some(20));
     /// ```
@@ -115,7 +117,6 @@ impl<T, const N: usize> Consumer<'_, T, N> {
     /// let rb = RingBuffer::<_, 1>::new();
     /// let mut p = rb.producer().unwrap();
     /// let mut c = rb.consumer().unwrap();
-
     ///
     /// assert_eq!(c.peek(), Err(PeekError::Empty));
     /// assert_eq!(p.push(10), Ok(()));
@@ -154,7 +155,6 @@ impl<T, const N: usize> Consumer<'_, T, N> {
     /// let rb = RingBuffer::<_, 1024>::new();
     /// let mut p = rb.producer().unwrap();
     /// let mut c = rb.consumer().unwrap();
-
     ///
     /// assert_eq!(c.slots(), 0);
     /// assert_eq!(p.push(0.0), Ok(()));
@@ -306,7 +306,6 @@ impl<T, const N: usize> Consumer<'_, T, N> {
     /// let rb = RingBuffer::<_, 1>::new();
     /// let mut p = rb.producer().unwrap();
     /// let mut c = rb.consumer().unwrap();
-
     ///
     /// assert!(c.is_empty());
     /// assert_eq!(p.push(0.0), Ok(()));
@@ -321,7 +320,6 @@ impl<T, const N: usize> Consumer<'_, T, N> {
     /// # let rb = RingBuffer::<_, 1>::new();
     /// # let mut p = rb.producer().unwrap();
     /// # let mut c = rb.consumer().unwrap();
-
     /// # assert_eq!(p.push(0.0), Ok(()));
     /// if c.is_empty() {
     ///     // The buffer might be empty, but it might as well not be
@@ -336,7 +334,6 @@ impl<T, const N: usize> Consumer<'_, T, N> {
     /// # let rb = RingBuffer::<_, 1>::new();
     /// # let mut p = rb.producer().unwrap();
     /// # let mut c = rb.consumer().unwrap();
-
     /// # assert_eq!(p.push(0.0), Ok(()));
     /// if !c.is_empty() {
     ///     // At least one slot is guaranteed to be available for reading.
@@ -439,7 +436,7 @@ impl<T, const N: usize> Consumer<'_, T, N> {
     ///
     /// # Examples
     ///
-    /// See the documentation of the [`chunks`](chunks#examples) module.
+    /// See the documentation of the [`chunks`](super::chunks#examples) module.
     pub fn read_chunk(
         &mut self,
         n: usize,

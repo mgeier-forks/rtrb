@@ -15,7 +15,7 @@ use super::{Consumer, Producer};
 /// Elements can be written with a [`Producer`] and read with a [`Consumer`],
 /// both of which can be obtained with [`RingBuffer::new()`].
 ///
-/// *See also the [module-level documentation](rtrb::bip_arc2).*
+/// *See also the [module-level documentation](crate::bip_arc2).*
 #[derive(Debug)]
 pub struct RingBuffer<T> {
     pub(super) head: CachePadded<AtomicUsize>,
@@ -37,7 +37,7 @@ impl<T> RingBuffer<T> {
         Self {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
-            skip: CachePadded::new(AtomicUsize::new(0)),
+            skip: CachePadded::new(AtomicUsize::new(capacity)),
             flags: AtomicU8::new(0),
             data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
             capacity,

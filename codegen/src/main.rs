@@ -5,7 +5,7 @@ use std::{
 };
 
 use glob::glob;
-use minijinja::{Environment, Value, context, path_loader, value::merge_maps};
+use minijinja::{Environment, Value, context, path_loader};
 
 fn main() {
     let args = std::env::args();
@@ -105,7 +105,7 @@ fn render(dir: &Path, name: &Path, contexts: &[(String, Value)]) {
     assert!(["src", "tests"].contains(&subdir));
     let rest = PathBuf::from_iter(iter);
     for (name, ctx) in contexts {
-        let ctx = merge_maps([context! { module => format!("rtrb::{name}") }, ctx.clone()]);
+        let ctx = context! { module_name => format!("{name}"), ..ctx.clone() };
         let rendered = tmpl.render(ctx).unwrap();
         if rendered.trim().is_empty() {
             continue;

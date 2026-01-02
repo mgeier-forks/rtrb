@@ -16,7 +16,7 @@ use super::{Consumer, Producer};
 /// Elements can be written with a [`Producer`] and read with a [`Consumer`],
 /// which can be obtained with ... TODO
 ///
-/// *See also the [module-level documentation](rtrb::bip_array).*
+/// *See also the [module-level documentation](crate::bip_array).*
 #[derive(Debug)]
 pub struct RingBuffer<T, const N: usize> {
     pub(super) head: CachePadded<AtomicUsize>,
@@ -41,7 +41,7 @@ impl<T, const N: usize> RingBuffer<T, N> {
         Self {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
-            skip: CachePadded::new(AtomicUsize::new(0)),
+            skip: CachePadded::new(AtomicUsize::new(N)),
             flags: AtomicU8::new(0),
             slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
         }
@@ -133,7 +133,6 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// let rb = RingBuffer::<_, 64>::new();
     /// let mut p = rb.producer().unwrap();
     /// let mut c = rb.consumer().unwrap();
-
     /// assert!(rb.producer().is_none());
     /// assert_eq!(p.push(10), Ok(()));
     /// drop(p);
@@ -173,7 +172,6 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// let rb = RingBuffer::<_, 64>::new();
     /// let mut p = rb.producer().unwrap();
     /// let mut c = rb.consumer().unwrap();
-
     /// assert!(rb.consumer().is_none());
     /// assert_eq!(p.push(10), Ok(()));
     /// assert_eq!(p.push(20), Ok(()));

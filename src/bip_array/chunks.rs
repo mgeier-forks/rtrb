@@ -26,6 +26,9 @@
 //! ```
 //! use rtrb::bip_array::RingBuffer;
 //!
+//! let rb = RingBuffer::<_, 4>::new();
+//! let mut p = rb.producer().unwrap();
+//! let mut c = rb.consumer().unwrap();
 //!
 //! if let Ok(chunk) = p.write_chunk_uninit(4) {
 //!     chunk.fill_from_iter([10, 11, 12]);
@@ -185,7 +188,7 @@ use crate::atomic::*;
 use super::{Consumer, Producer};
 // Only used in documentation:
 #[allow(unused_imports)]
-use super::CopyToUninit;
+use super::{CopyToUninit, RingBuffer};
 
 /// Structure for writing into multiple (uninitialized) slots in one go.
 ///
@@ -360,7 +363,6 @@ impl<T, const N: usize> WriteChunkUninit<'_, T, N> {
     /// let rb = RingBuffer::<_, 4>::new();
     /// let mut p = rb.producer().unwrap();
     /// let mut c = rb.consumer().unwrap();
-
     /// if let Ok(chunk) = p.write_chunk_uninit(3) {
     ///     assert_eq!(chunk.fill_from_iter([10, 20]), 2);
     /// } else {
@@ -382,7 +384,6 @@ impl<T, const N: usize> WriteChunkUninit<'_, T, N> {
     /// let rb = RingBuffer::<_, 4>::new();
     /// let mut p = rb.producer().unwrap();
     /// let mut c = rb.consumer().unwrap();
-
     /// let mut it = vec![10, 20, 30].into_iter();
     /// if let Ok(chunk) = p.write_chunk_uninit(2) {
     ///     assert_eq!(chunk.fill_from_iter(&mut it), 2);
@@ -596,7 +597,6 @@ impl<T, const N: usize> ReadChunk<'_, T, N> {
     ///     let rb = RingBuffer::<_, 4>::new();
     ///     let mut p = rb.producer().unwrap();
     ///     let mut c = rb.consumer().unwrap();
-
     ///
     ///     assert!(p.push(Thing(1)).is_ok());
     ///     assert!(p.push(Thing(2)).is_ok());
