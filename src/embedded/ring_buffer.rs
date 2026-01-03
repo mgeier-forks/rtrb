@@ -5,8 +5,8 @@ use core::cell::Cell;
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 
-use crate::atomic::*;
 use super::{HAS_CONSUMER, HAS_PRODUCER};
+use crate::atomic::*;
 
 use super::{Consumer, Producer};
 

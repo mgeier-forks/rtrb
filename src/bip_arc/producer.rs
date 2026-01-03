@@ -3,10 +3,13 @@
 
 use core::cell::Cell;
 
-use crate::atomic::*;
-use super::{PushError, RingBuffer, ChunkError, chunks::{WriteChunk, WriteChunkUninit}};
 use super::arc_ring_buffer::ArcRingBuffer;
 use super::IS_ABANDONED;
+use super::{
+    chunks::{WriteChunk, WriteChunkUninit},
+    ChunkError, PushError, RingBuffer,
+};
+use crate::atomic::*;
 
 // Only used in documentation:
 #[allow(unused_imports)]
@@ -62,10 +65,7 @@ pub struct Producer<T> {
 /// ```
 // SAFETY: After moving a producer to another thread, there is still only a single thread
 // that can access the producer side of the queue.
-unsafe impl<T: Send> Send for Producer<T>
-where
-    RingBuffer<T>: Sync
-{}
+unsafe impl<T: Send> Send for Producer<T> where RingBuffer<T>: Sync {}
 
 impl<T> Producer<T> {
     /// Attempts to push an element into the queue.
@@ -424,10 +424,7 @@ impl<T> Producer<T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn write_chunk(
-        &mut self,
-        n: usize,
-    ) -> Result<WriteChunk<'_, T>, ChunkError>
+    pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T>, ChunkError>
     where
         T: Default,
     {
@@ -466,10 +463,7 @@ impl<T> Producer<T> {
     ///
     /// For a safe alternative that provides
     /// a mutable slice    /// of [`Default`]-initialized slots, see [`Producer::write_chunk()`].
-    pub fn write_chunk_uninit(
-        &mut self,
-        n: usize,
-    ) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
+    pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
         let b = &self.buffer;
         let (mut slots, refreshed, try_at_beginning) = self.slots_contiguous_helper();
         if slots >= n {

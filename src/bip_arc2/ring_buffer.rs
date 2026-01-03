@@ -4,10 +4,10 @@
 use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
+use super::arc_ring_buffer::ArcRingBuffer;
 use crate::atomic::*;
 // Padded indices to avoid false sharing.
 use crate::CachePadded;
-use super::arc_ring_buffer::ArcRingBuffer;
 
 use super::{Consumer, Producer};
 

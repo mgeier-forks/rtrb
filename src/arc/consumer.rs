@@ -3,10 +3,10 @@
 
 use core::cell::Cell;
 
-use crate::atomic::*;
-use super::{PopError, PeekError, RingBuffer, ChunkError, chunks::ReadChunk};
 use super::arc_ring_buffer::ArcRingBuffer;
 use super::IS_ABANDONED;
+use super::{chunks::ReadChunk, ChunkError, PeekError, PopError, RingBuffer};
+use crate::atomic::*;
 
 // Only used in documentation:
 #[allow(unused_imports)]
@@ -63,10 +63,7 @@ pub struct Consumer<T> {
 /// ```
 // SAFETY: After moving a consumer to another thread, there is still only a single thread
 // that can access the consumer side of the queue.
-unsafe impl<T: Send> Send for Consumer<T>
-where
-    RingBuffer<T>: Sync
-{}
+unsafe impl<T: Send> Send for Consumer<T> where RingBuffer<T>: Sync {}
 
 impl<T> Consumer<T> {
     /// Attempts to pop the next element from the queue.
@@ -171,7 +168,6 @@ impl<T> Consumer<T> {
         b.distance(self.cached_head.get(), tail)
     }
 
-
     /// Returns `true` if there are currently no slots available for reading.
     ///
     /// An empty ring buffer might cease to be empty at any time
@@ -272,7 +268,6 @@ impl<T> Consumer<T> {
         self.buffer.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
     }
 
-
     /// Get the `head` position for reading the next slot, if available.
     ///
     /// This is a strict subset of the functionality implemented in `read_chunk()`.
@@ -321,10 +316,7 @@ impl<T> Consumer<T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](super::chunks#examples) module.
-    pub fn read_chunk(
-        &mut self,
-        n: usize,
-    ) -> Result<ReadChunk<'_, T>, ChunkError> {
+    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
         let b = &self.buffer;

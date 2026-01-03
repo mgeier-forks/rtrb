@@ -182,9 +182,9 @@
 //! }
 //! ```
 
-use core::mem::MaybeUninit;
-use crate::atomic::*;
 use super::{Consumer, Producer};
+use crate::atomic::*;
+use core::mem::MaybeUninit;
 // Only used in documentation:
 #[allow(unused_imports)]
 use super::{CopyToUninit, RingBuffer};
@@ -715,7 +715,6 @@ impl<T> Iterator for ReadChunkIntoIter<'_, T> {
 impl<T> ExactSizeIterator for ReadChunkIntoIter<'_, T> {}
 
 impl<T> core::iter::FusedIterator for ReadChunkIntoIter<'_, T> {}
-
 
 #[cfg(feature = "std")]
 impl std::io::Write for Producer<u8> {

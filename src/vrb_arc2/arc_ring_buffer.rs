@@ -4,9 +4,9 @@
 use alloc::boxed::Box;
 use core::{cell::Cell, ptr::NonNull};
 
-use crate::atomic::*;
-use super::{Consumer, Producer, RingBuffer};
 use super::IS_ABANDONED;
+use super::{Consumer, Producer, RingBuffer};
+use crate::atomic::*;
 
 // Non-public helper type.
 #[derive(Debug, PartialEq, Eq)]

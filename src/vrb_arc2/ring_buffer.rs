@@ -2,10 +2,10 @@
 // using the configuration file `codegen/configs/vrb_arc2.toml`.
 
 
+use super::arc_ring_buffer::ArcRingBuffer;
 use crate::atomic::*;
 // Padded indices to avoid false sharing.
 use crate::CachePadded;
-use super::arc_ring_buffer::ArcRingBuffer;
 
 use super::{Consumer, Producer};
 

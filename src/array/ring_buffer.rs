@@ -5,10 +5,10 @@ use core::cell::Cell;
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 
+use super::{HAS_CONSUMER, HAS_PRODUCER};
 use crate::atomic::*;
 // Padded indices to avoid false sharing.
 use crate::CachePadded;
-use super::{HAS_CONSUMER, HAS_PRODUCER};
 
 use super::{Consumer, Producer};
 

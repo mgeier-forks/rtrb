@@ -14,15 +14,15 @@ use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 {% endif %}
 
-use crate::atomic::*;
-{% if padded %}
-// Padded indices to avoid false sharing.
-use crate::CachePadded;
-{% endif %}
 {% if arc %}
 use super::arc_ring_buffer::ArcRingBuffer;
 {% else %}
 use super::{HAS_CONSUMER, HAS_PRODUCER};
+{% endif %}
+use crate::atomic::*;
+{% if padded %}
+// Padded indices to avoid false sharing.
+use crate::CachePadded;
 {% endif %}
 
 use super::{Consumer, Producer};
