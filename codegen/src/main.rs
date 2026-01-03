@@ -98,6 +98,7 @@ fn render(dir: &Path, name: &Path, contexts: &[(String, Value)]) {
     env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
     env.set_trim_blocks(true);
     env.set_lstrip_blocks(true);
+    env.set_keep_trailing_newline(true);
     env.set_loader(path_loader(dir.join("codegen/templates")));
     let tmpl = env.get_template(name.to_str().unwrap()).unwrap();
     let mut iter = name.iter().map(OsStr::to_str).map(Option::unwrap);
