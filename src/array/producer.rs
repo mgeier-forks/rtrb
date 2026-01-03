@@ -295,6 +295,7 @@ impl<T, const N: usize> Producer<'_, T, N> {
     ///
     /// For a safe alternative that provides
     /// mutable slices    /// of [`Default`]-initialized slots, see [`Producer::write_chunk()`].
+    #[rustfmt::skip]
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T, N>, ChunkError> {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();

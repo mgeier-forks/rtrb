@@ -534,6 +534,8 @@ impl<T{{ N_param }}> Producer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// For a safe alternative that provides
     /// {% if contiguous %}a mutable slice{% else %}mutable slices{% endif %}
     /// of [`Default`]-initialized slots, see [`Producer::write_chunk()`].
+{# The signature doesn't fit in one line when `N` is used, so we don't auto-format. #}
+    #[rustfmt::skip]
 {% if bip %}
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T{{ N_arg }}>, ChunkError> {
         let b = &self.buffer;
