@@ -5,7 +5,7 @@ use std::{
 };
 
 use glob::glob;
-use minijinja::{Environment, Value, context, path_loader};
+use minijinja::{context, path_loader, Environment, Value};
 
 fn main() {
     let args = std::env::args();
@@ -47,7 +47,7 @@ fn main() {
         let ctx = toml::from_str(&contents).unwrap();
         contexts.push((config_name, ctx));
     }
-    for entry in glob(template_dir.join("**/*.rs").to_str().unwrap()).unwrap() {
+    for entry in glob(template_dir.join("**/*.rs.jinja").to_str().unwrap()).unwrap() {
         let path = entry.unwrap();
         let path = path.strip_prefix(&template_dir).unwrap();
         render(&parent_dir, path, &contexts);
@@ -83,7 +83,7 @@ fn main() {
             // Duplicate paths are removed, order doesn't matter.
             for path in HashSet::<PathBuf>::from_iter(rx.read_chunk(rx.slots()).unwrap()) {
                 let path = path.strip_prefix(&template_dir).unwrap();
-                if path.extension().and_then(OsStr::to_str) != Some("rs") {
+                if !path.as_os_str().to_str().unwrap().ends_with(".rs.jinja") {
                     continue;
                 }
                 render(&parent_dir, path, &contexts);
@@ -103,7 +103,9 @@ fn render(dir: &Path, name: &Path, contexts: &[(String, Value)]) {
     let mut iter = name.iter().map(OsStr::to_str).map(Option::unwrap);
     let subdir = iter.next().unwrap();
     assert!(["src", "tests"].contains(&subdir));
-    let rest = PathBuf::from_iter(iter);
+    let mut rest = PathBuf::from_iter(iter);
+    assert_eq!(rest.extension().unwrap(), "jinja");
+    rest.set_extension("");
     for (name, ctx) in contexts {
         let ctx = context! { module_name => format!("{name}"), ..ctx.clone() };
         let rendered = tmpl.render(ctx).unwrap();

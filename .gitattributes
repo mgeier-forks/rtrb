@@ -1,3 +1,4 @@
+*.rs.jinja linguist-language=Rust
 /src/arc/** linguist-generated
 /src/arc2/** linguist-generated
 /src/array/** linguist-generated
