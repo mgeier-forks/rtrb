@@ -65,6 +65,8 @@
 //! [`Producer::write_chunk_uninit()`] and [`Producer::write_chunk()`]
 //! and read multiple items with [`Consumer::read_chunk()`].
 
+const IS_ABANDONED: u8 = 0b10000000;
+
 mod ring_buffer;
 pub use ring_buffer::RingBuffer;
 mod producer;

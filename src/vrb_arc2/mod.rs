@@ -22,6 +22,8 @@
 //!
 //! TODO: more usage instructions
 
+const IS_ABANDONED: u8 = 0b10000000;
+
 mod ring_buffer;
 pub use ring_buffer::RingBuffer;
 mod producer;

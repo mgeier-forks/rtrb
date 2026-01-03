@@ -7,7 +7,7 @@ use core::mem::MaybeUninit;
 use crate::atomic::*;
 // Padded indices to avoid false sharing.
 use crate::CachePadded;
-use crate::{HAS_CONSUMER, HAS_PRODUCER};
+use super::{HAS_CONSUMER, HAS_PRODUCER};
 
 use super::{Consumer, Producer};
 

@@ -5,7 +5,7 @@ use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 
 use crate::atomic::*;
-use crate::{HAS_CONSUMER, HAS_PRODUCER};
+use super::{HAS_CONSUMER, HAS_PRODUCER};
 
 use super::{Consumer, Producer};
 

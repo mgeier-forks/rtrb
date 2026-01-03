@@ -54,6 +54,10 @@ codegen-units = 1
 [lib]
 bench = false # Don't disturb criterion command line parsing
 
+[[example]]
+name = "quick"
+required-features = ["alloc"]
+
 [[bench]]
 name = "single_thread_single_byte"
 harness = false

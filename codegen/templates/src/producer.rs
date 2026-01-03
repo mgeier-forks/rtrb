@@ -8,10 +8,10 @@ use core::cell::Cell;
 use crate::atomic::*;
 use super::{PushError, RingBuffer, ChunkError, chunks::{WriteChunk, WriteChunkUninit}};
 {% if arc %}
-use crate::IS_ABANDONED;
 use super::arc_ring_buffer::ArcRingBuffer;
+use super::IS_ABANDONED;
 {% else %}
-use crate::{HAS_CONSUMER, HAS_PRODUCER};
+use super::{HAS_CONSUMER, HAS_PRODUCER};
 {% endif %}
 
 // Only used in documentation:

@@ -4,7 +4,7 @@ use core::cell::Cell;
 
 use crate::atomic::*;
 use super::{PushError, RingBuffer, ChunkError, chunks::{WriteChunk, WriteChunkUninit}};
-use crate::{HAS_CONSUMER, HAS_PRODUCER};
+use super::{HAS_CONSUMER, HAS_PRODUCER};
 
 // Only used in documentation:
 #[allow(unused_imports)]

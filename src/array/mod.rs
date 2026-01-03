@@ -40,6 +40,9 @@
 //! [`Producer::write_chunk_uninit()`] and [`Producer::write_chunk()`]
 //! and read multiple items with [`Consumer::read_chunk()`].
 
+const HAS_PRODUCER: u8 = 0b10000000;
+const HAS_CONSUMER: u8 = 0b01000000;
+
 mod ring_buffer;
 pub use ring_buffer::RingBuffer;
 mod producer;

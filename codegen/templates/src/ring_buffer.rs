@@ -22,7 +22,7 @@ use crate::CachePadded;
 {% if arc %}
 use super::arc_ring_buffer::ArcRingBuffer;
 {% else %}
-use crate::{HAS_CONSUMER, HAS_PRODUCER};
+use super::{HAS_CONSUMER, HAS_PRODUCER};
 {% endif %}
 
 use super::{Consumer, Producer};

@@ -4,8 +4,8 @@ use core::cell::Cell;
 
 use crate::atomic::*;
 use super::{PushError, RingBuffer, ChunkError, chunks::{WriteChunk, WriteChunkUninit}};
-use crate::IS_ABANDONED;
 use super::arc_ring_buffer::ArcRingBuffer;
+use super::IS_ABANDONED;
 
 // Only used in documentation:
 #[allow(unused_imports)]

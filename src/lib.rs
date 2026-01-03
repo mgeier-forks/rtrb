@@ -215,11 +215,6 @@ pub mod vrb_arc2;
 
 // TODO: boxed, from_ptr, new_at_ptr (+ same for bip)
 
-const HAS_PRODUCER: u8 = 0b10000000;
-const HAS_CONSUMER: u8 = 0b01000000;
-// NB: This overlaps with HAS_PRODUCER, they are never used at the same time.
-const IS_ABANDONED: u8 = 0b10000000;
-
 // For backwards compatibility. May be deprecated and removed in the future.
 #[cfg(feature = "alloc")]
 #[doc(hidden)]
