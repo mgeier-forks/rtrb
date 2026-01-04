@@ -38,31 +38,30 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
 
     let (mut p, mut c) = RingBuffer::<u8>::new(CHUNK_SIZE + 1);
 
-    add_function(&mut group, "2-slice-read", |data| {
-        let mut result = [0; CHUNK_SIZE];
-        let _ = p.write(data).unwrap();
-        let chunk = c.read_chunk(data.len()).unwrap();
-        let (first, second) = chunk.as_slices();
-        let mid = first.len();
-        result[..mid].copy_from_slice(first);
-        result[mid..].copy_from_slice(second);
-        chunk.commit_all();
-        result
-    });
+    add_function(
+        &mut group,
+        "1-write_chunk_uninit+slice-read_chunk+slice",
+        |data| {
+            let mut result = [0; CHUNK_SIZE];
+            let mut chunk = p.write_chunk_uninit(data.len()).unwrap();
+            let (first, second) = chunk.as_mut_slices();
+            let mid = first.len();
+            data[..mid].copy_to_uninit(first);
+            data[mid..].copy_to_uninit(second);
+            unsafe {
+                chunk.commit_all();
+            }
+            let chunk = c.read_chunk(data.len()).unwrap();
+            let (first, second) = chunk.as_slices();
+            let mid = first.len();
+            result[..mid].copy_from_slice(first);
+            result[mid..].copy_from_slice(second);
+            chunk.commit_all();
+            result
+        },
+    );
 
-    add_function(&mut group, "2-slice-write", |data| {
-        let mut result = [0; CHUNK_SIZE];
-        let mut chunk = p.write_chunk(data.len()).unwrap();
-        let (first, second) = chunk.as_mut_slices();
-        let mid = first.len();
-        first.copy_from_slice(&data[..mid]);
-        second.copy_from_slice(&data[mid..]);
-        chunk.commit_all();
-        let _ = c.read(&mut result).unwrap();
-        result
-    });
-
-    add_function(&mut group, "2-slice-write-uninit", |data| {
+    add_function(&mut group, "2-write_chunk_uninit+slice-read", |data| {
         let mut result = [0; CHUNK_SIZE];
         let mut chunk = p.write_chunk_uninit(data.len()).unwrap();
         let (first, second) = chunk.as_mut_slices();
@@ -76,17 +75,62 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         result
     });
 
-    add_function(&mut group, "3-iterate-read", |data| {
+    add_function(&mut group, "3-write_chunk+slice-read_chunk+slice", |data| {
         let mut result = [0; CHUNK_SIZE];
-        let _ = p.write(data).unwrap();
+        let mut chunk = p.write_chunk(data.len()).unwrap();
+        let (first, second) = chunk.as_mut_slices();
+        let mid = first.len();
+        first.copy_from_slice(&data[..mid]);
+        second.copy_from_slice(&data[mid..]);
+        chunk.commit_all();
         let chunk = c.read_chunk(data.len()).unwrap();
-        for (dst, src) in result.iter_mut().zip(chunk) {
-            *dst = src;
-        }
+        let (first, second) = chunk.as_slices();
+        let mid = first.len();
+        result[..mid].copy_from_slice(first);
+        result[mid..].copy_from_slice(second);
+        chunk.commit_all();
         result
     });
 
-    add_function(&mut group, "3-iterate-write", |data| {
+    add_function(&mut group, "4-write_chunk+slice-read", |data| {
+        let mut result = [0; CHUNK_SIZE];
+        let mut chunk = p.write_chunk(data.len()).unwrap();
+        let (first, second) = chunk.as_mut_slices();
+        let mid = first.len();
+        first.copy_from_slice(&data[..mid]);
+        second.copy_from_slice(&data[mid..]);
+        chunk.commit_all();
+        let _ = c.read(&mut result).unwrap();
+        result
+    });
+
+    add_function(&mut group, "5-write-read_chunk+slice", |data| {
+        let mut result = [0; CHUNK_SIZE];
+        let _ = p.write(data).unwrap();
+        let chunk = c.read_chunk(data.len()).unwrap();
+        let (first, second) = chunk.as_slices();
+        let mid = first.len();
+        result[..mid].copy_from_slice(first);
+        result[mid..].copy_from_slice(second);
+        chunk.commit_all();
+        result
+    });
+
+    add_function(&mut group, "6-write-read", |data| {
+        let mut result = [0; CHUNK_SIZE];
+        let _ = p.write(data).unwrap();
+        let _ = c.read(&mut result).unwrap();
+        result
+    });
+
+    add_function(&mut group, "7-push_slice-pop_slice", |data| {
+        let mut result = [0; CHUNK_SIZE];
+        let _ = p.push_slice(data);
+        let _ = c.pop_slice(&mut result);
+        result
+    });
+
+    add_function(&mut group, "8-write_chunk_uninit+iter-read", |data| {
         let mut result = [0; CHUNK_SIZE];
         let chunk = p.write_chunk_uninit(data.len()).unwrap();
         chunk.fill_from_iter(&mut data.iter().copied());
@@ -94,10 +138,13 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         result
     });
 
-    add_function(&mut group, "4-write-read", |data| {
+    add_function(&mut group, "9-write-read_chunk+iter", |data| {
         let mut result = [0; CHUNK_SIZE];
         let _ = p.write(data).unwrap();
-        let _ = c.read(&mut result).unwrap();
+        let chunk = c.read_chunk(data.len()).unwrap();
+        for (dst, src) in result.iter_mut().zip(chunk) {
+            *dst = src;
+        }
         result
     });
 
