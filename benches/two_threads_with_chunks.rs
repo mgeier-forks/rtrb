@@ -189,4 +189,29 @@ create_two_threads_with_chunks_benchmark!(
     |p, s| p.push_slice(s).1,
     |c, s| c.pop_slice(s).0,
     ::
+    "push_slice2-pop_slice",
+    rtrb::RingBuffer::new,
+    |p, s| p.push_slice2(s).1,
+    |c, s| c.pop_slice(s).0,
+    ::
+    "push_slice3-pop_slice",
+    rtrb::RingBuffer::new,
+    |p, s| p.push_slice3(s).1,
+    |c, s| c.pop_slice(s).0,
+    ::
+    "push_slice_using_entire-pop_slice",
+    rtrb::RingBuffer::new,
+    |p, s| p.push_slice_using_entire(s).1,
+    |c, s| c.pop_slice(s).0,
+    ::
+    "push_slice_using_entire2-pop_slice",
+    rtrb::RingBuffer::new,
+    |p, s| p.push_slice_using_entire2(s).1,
+    |c, s| c.pop_slice(s).0,
+    ::
+    "push_slice_using_entire3-pop_slice",
+    rtrb::RingBuffer::new,
+    |p, s| p.push_slice_using_entire3(s).1,
+    |c, s| c.pop_slice(s).0,
+    ::
 );

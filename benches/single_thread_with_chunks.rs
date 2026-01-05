@@ -130,6 +130,41 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         result
     });
 
+    add_function(&mut group, "7-push_slice2-pop_slice", |data| {
+        let mut result = [0; CHUNK_SIZE];
+        let _ = p.push_slice2(data);
+        let _ = c.pop_slice(&mut result);
+        result
+    });
+
+    add_function(&mut group, "7-push_slice3-pop_slice", |data| {
+        let mut result = [0; CHUNK_SIZE];
+        let _ = p.push_slice3(data);
+        let _ = c.pop_slice(&mut result);
+        result
+    });
+
+    add_function(&mut group, "7-push_slice_using_entire-pop_slice", |data| {
+        let mut result = [0; CHUNK_SIZE];
+        let _ = p.push_slice_using_entire(data);
+        let _ = c.pop_slice(&mut result);
+        result
+    });
+
+    add_function(&mut group, "7-push_slice_using_entire2-pop_slice", |data| {
+        let mut result = [0; CHUNK_SIZE];
+        let _ = p.push_slice_using_entire2(data);
+        let _ = c.pop_slice(&mut result);
+        result
+    });
+
+    add_function(&mut group, "7-push_slice_using_entire3-pop_slice", |data| {
+        let mut result = [0; CHUNK_SIZE];
+        let _ = p.push_slice_using_entire3(data);
+        let _ = c.pop_slice(&mut result);
+        result
+    });
+
     add_function(&mut group, "8-write_chunk_uninit+iter-read", |data| {
         let mut result = [0; CHUNK_SIZE];
         let chunk = p.write_chunk_uninit(data.len()).unwrap();
