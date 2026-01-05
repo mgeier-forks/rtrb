@@ -891,6 +891,34 @@ impl<T: Copy> CopyToUninit<T> for [T] {
     }
 }
 
+/// Something
+pub trait CopyToUninitUnchecked<T: Copy> {
+    /// Copies contents to a possibly uninitialized slice.
+    unsafe fn copy_to_uninit_unchecked<'a>(&self, dst: &'a mut [MaybeUninit<T>]) -> &'a mut [T];
+}
+
+impl<T: Copy> CopyToUninitUnchecked<T> for [T] {
+    /// Copies contents to a possibly uninitialized slice.
+    ///
+    /// # Safety
+    ///
+    /// ...
+    unsafe fn copy_to_uninit_unchecked<'a>(&self, dst: &'a mut [MaybeUninit<T>]) -> &'a mut [T] {
+        assert_eq!(
+            self.len(),
+            dst.len(),
+            "source slice length does not match destination slice length"
+        );
+        let dst_ptr = dst.as_mut_ptr().cast();
+        // SAFETY: The user has to make sure that the slices have equal length and
+        // the mutable reference makes sure that there is no overlap.
+        unsafe {
+            self.as_ptr().copy_to_nonoverlapping(dst_ptr, self.len());
+            core::slice::from_raw_parts_mut(dst_ptr, self.len())
+        }
+    }
+}
+
 /// Error type for [`Consumer::pop()`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PopError {

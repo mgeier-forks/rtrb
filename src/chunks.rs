@@ -147,7 +147,7 @@ use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::sync::atomic::Ordering;
 
-use crate::{Consumer, CopyToUninit, Producer};
+use crate::{Consumer, CopyToUninit, CopyToUninitUnchecked, Producer};
 
 // This is used in the documentation.
 #[allow(unused_imports)]
@@ -283,14 +283,19 @@ impl<T: Copy> Producer<T> {
         let mut chunk = match self.write_chunk_uninit(slice.len()) {
             Ok(chunk) => chunk,
             Err(TooFewSlots(0)) => return (&[], slice),
-            Err(TooFewSlots(n)) => self.write_chunk_uninit(n).unwrap(),
+            Err(TooFewSlots(n)) => unsafe { self.write_chunk_uninit(n).unwrap_unchecked() },
         };
         let end = chunk.len();
         let (first, second) = chunk.as_mut_slices();
         let mid = first.len();
         // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
-        slice[..mid].copy_to_uninit(first);
-        slice[mid..end].copy_to_uninit(second);
+        // SAFETY: ...
+        unsafe {
+            slice.get_unchecked(..mid).copy_to_uninit_unchecked(first);
+            slice
+                .get_unchecked(mid..end)
+                .copy_to_uninit_unchecked(second);
+        }
         // SAFETY: All slots have been initialized
         unsafe { chunk.commit_all() };
         slice.split_at(end)
@@ -308,12 +313,15 @@ impl<T: Copy> Producer<T> {
             //slice.split_at(slots)
             slice.split_at_checked(slots).unwrap_or((slice, &[]))
         };
-        let mut chunk = self.write_chunk_uninit(pushed.len()).unwrap();
+        let mut chunk = unsafe { self.write_chunk_uninit(pushed.len()).unwrap_unchecked() };
         let (first, second) = chunk.as_mut_slices();
         let mid = first.len();
         // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
-        pushed[..mid].copy_to_uninit(first);
-        pushed[mid..].copy_to_uninit(second);
+        // SAFETY: ...
+        unsafe {
+            pushed.get_unchecked(..mid).copy_to_uninit_unchecked(first);
+            pushed.get_unchecked(mid..).copy_to_uninit_unchecked(second);
+        }
         // SAFETY: All slots have been initialized
         unsafe { chunk.commit_all() };
         (pushed, remainder)
@@ -330,12 +338,15 @@ impl<T: Copy> Producer<T> {
             let slots = self.slots();
             slice.split_at_checked(slots).unwrap_or((slice, &[]))
         };
-        let mut chunk = self.write_chunk_uninit(pushed.len()).unwrap();
+        let mut chunk = unsafe { self.write_chunk_uninit(pushed.len()).unwrap_unchecked() };
         let (first, second) = chunk.as_mut_slices();
         let mid = first.len();
         // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
-        pushed[..mid].copy_to_uninit(first);
-        pushed[mid..].copy_to_uninit(second);
+        // SAFETY: ...
+        unsafe {
+            pushed.get_unchecked(..mid).copy_to_uninit_unchecked(first);
+            pushed.get_unchecked(mid..).copy_to_uninit_unchecked(second);
+        }
         // SAFETY: All slots have been initialized
         unsafe { chunk.commit_all() };
         (pushed, remainder)
@@ -349,8 +360,11 @@ impl<T: Copy> Producer<T> {
         let (first, second) = chunk.as_mut_slices();
         let mid = first.len();
         // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
-        slice[..mid].copy_to_uninit(first);
-        slice[mid..].copy_to_uninit(second);
+        // SAFETY: ...
+        unsafe {
+            slice.get_unchecked(..mid).copy_to_uninit_unchecked(first);
+            slice.get_unchecked(mid..).copy_to_uninit_unchecked(second);
+        }
         // SAFETY: All slots have been initialized
         unsafe { chunk.commit_all() };
         Ok(())
@@ -392,7 +406,9 @@ impl<T: Copy> Producer<T> {
             //unsafe { slice.split_at_unchecked(self.slots()) }
             slice.split_at_checked(self.slots()).unwrap_or((slice, &[]))
         };
-        self.push_entire_slice(pushed).unwrap();
+        unsafe {
+            self.push_entire_slice(pushed).unwrap_unchecked();
+        }
         (pushed, remainder)
     }
 
@@ -401,7 +417,9 @@ impl<T: Copy> Producer<T> {
     /// 1 cache miss.
     pub fn push_slice_using_entire2<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
         let (pushed, remainder) = slice.split_at_checked(self.slots()).unwrap_or((slice, &[]));
-        self.push_entire_slice(pushed).unwrap();
+        unsafe {
+            self.push_entire_slice(pushed).unwrap_unchecked();
+        }
         (pushed, remainder)
     }
 
@@ -414,7 +432,9 @@ impl<T: Copy> Producer<T> {
         } else {
             (slice, &[] as &[T])
         };
-        self.push_entire_slice(pushed).unwrap();
+        unsafe {
+            self.push_entire_slice(pushed).unwrap_unchecked();
+        }
         (pushed, remainder)
     }
 }
