@@ -276,6 +276,8 @@ impl<T: Copy> Producer<T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
+    ///
+    /// 0 or 1 cache misses.
     pub fn push_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
         use ChunkError::TooFewSlots;
         let mut chunk = match self.write_chunk_uninit(slice.len()) {
@@ -292,6 +294,128 @@ impl<T: Copy> Producer<T> {
         // SAFETY: All slots have been initialized
         unsafe { chunk.commit_all() };
         slice.split_at(end)
+    }
+
+    /// ...
+    ///
+    /// 0, 1 or 2 cache misses.
+    pub fn push_slice2<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
+        let (pushed, remainder) = if self.has_slots(slice.len()) {
+            (slice, &[] as &[T])
+        } else {
+            let slots = self.slots();
+            //unsafe { slice.split_at_unchecked(slots) }
+            //slice.split_at(slots)
+            slice.split_at_checked(slots).unwrap_or((slice, &[]))
+        };
+        let mut chunk = self.write_chunk_uninit(pushed.len()).unwrap();
+        let (first, second) = chunk.as_mut_slices();
+        let mid = first.len();
+        // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
+        pushed[..mid].copy_to_uninit(first);
+        pushed[mid..].copy_to_uninit(second);
+        // SAFETY: All slots have been initialized
+        unsafe { chunk.commit_all() };
+        (pushed, remainder)
+    }
+
+    /// TODO
+    ///
+    /// 0 or 1 cache misses.
+    pub fn push_slice3<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
+        let cached = self.cached_slots();
+        let (pushed, remainder) = if slice.len() <= cached {
+            (slice, &[] as &[T])
+        } else {
+            let slots = self.slots();
+            slice.split_at_checked(slots).unwrap_or((slice, &[]))
+        };
+        let mut chunk = self.write_chunk_uninit(pushed.len()).unwrap();
+        let (first, second) = chunk.as_mut_slices();
+        let mid = first.len();
+        // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
+        pushed[..mid].copy_to_uninit(first);
+        pushed[mid..].copy_to_uninit(second);
+        // SAFETY: All slots have been initialized
+        unsafe { chunk.commit_all() };
+        (pushed, remainder)
+    }
+
+    /// TODO
+    ///
+    /// 0 or 1 cache misses.
+    pub fn push_entire_slice(&mut self, slice: &[T]) -> Result<(), ChunkError> {
+        let mut chunk = self.write_chunk_uninit(slice.len())?;
+        let (first, second) = chunk.as_mut_slices();
+        let mid = first.len();
+        // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
+        slice[..mid].copy_to_uninit(first);
+        slice[mid..].copy_to_uninit(second);
+        // SAFETY: All slots have been initialized
+        unsafe { chunk.commit_all() };
+        Ok(())
+    }
+
+    /// ...
+    ///
+    /// 0 or 1 cache misses.
+    pub fn push_entire_slice_using_partial(&mut self, slice: &[T]) -> Result<(), ChunkError> {
+        if !self.has_slots(slice.len()) {
+            // TODO: we don't know the number of slots, just an upper bound!
+            return Err(ChunkError::TooFewSlots(0));
+        }
+        self.push_slice(slice);
+        Ok(())
+    }
+
+    /// ...
+    ///
+    /// 0 or 1 cache misses.
+    pub fn push_entire_slice_using_partial2(&mut self, slice: &[T]) -> Result<(), ChunkError> {
+        if self.cached_slots() < slice.len() {
+            let slots = self.slots();
+            if slots < slice.len() {
+                return Err(ChunkError::TooFewSlots(slots));
+            }
+        }
+        self.push_slice(slice);
+        Ok(())
+    }
+
+    /// ...
+    ///
+    /// 0, 1 or 2 cache misses.
+    pub fn push_slice_using_entire<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
+        let (pushed, remainder) = if self.has_slots(slice.len()) {
+            (slice, &[] as &[T])
+        } else {
+            //unsafe { slice.split_at_unchecked(self.slots()) }
+            slice.split_at_checked(self.slots()).unwrap_or((slice, &[]))
+        };
+        self.push_entire_slice(pushed).unwrap();
+        (pushed, remainder)
+    }
+
+    /// ...
+    ///
+    /// 1 cache miss.
+    pub fn push_slice_using_entire2<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
+        let (pushed, remainder) = slice.split_at_checked(self.slots()).unwrap_or((slice, &[]));
+        self.push_entire_slice(pushed).unwrap();
+        (pushed, remainder)
+    }
+
+    /// ...
+    ///
+    /// 0 or 1 cache misses.
+    pub fn push_slice_using_entire3<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
+        let (pushed, remainder) = if self.cached_slots() < slice.len() {
+            slice.split_at_checked(self.slots()).unwrap_or((slice, &[]))
+        } else {
+            (slice, &[] as &[T])
+        };
+        self.push_entire_slice(pushed).unwrap();
+        (pushed, remainder)
     }
 }
 

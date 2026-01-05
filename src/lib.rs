@@ -362,6 +362,11 @@ impl<T> Producer<T> {
         self.buffer.capacity - self.buffer.distance(head, self.cached_tail.get())
     }
 
+    /// TODO: cached slots
+    pub fn cached_slots(&self) -> usize {
+        self.buffer.capacity - self.buffer.distance(self.cached_head.get(), self.cached_tail.get())
+    }
+
     /// Returns `true` if there are currently no slots available for writing.
     ///
     /// A full ring buffer might cease to be full at any time
