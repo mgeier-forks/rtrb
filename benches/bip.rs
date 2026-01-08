@@ -40,6 +40,9 @@ $(
 $(
     group_large.bench_function($id, |b| {
         b.iter_custom(|iters| {
+            if iters < 2 {
+                return std::time::Duration::ZERO;
+            }
             let (create, write_chunk, read_chunk) = help_with_type_inference($create, $write_chunk, $read_chunk);
             let iters = usize::try_from(iters).unwrap();
             // Queue is so long that there is no contention between threads.
