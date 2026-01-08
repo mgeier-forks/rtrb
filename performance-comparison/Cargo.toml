@@ -6,7 +6,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-bbq2 = { version = "0.4.2", features = ['std'] }
+bbqueue = { version = "0.6", features = ['std'] }
 concurrent-queue = "2.3"
 crossbeam-queue = "0.3"
 crossbeam-queue-pr338 = { git = "https://github.com/mgeier/crossbeam", branch = "spsc", package = "crossbeam-queue" }

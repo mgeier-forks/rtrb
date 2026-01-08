@@ -14,10 +14,10 @@ create_bip_benchmark! {
         chunk.commit_all();
     }).is_ok(),
     ::
-    "bbq2",
+    "bbqueue",
     |capacity| {
-        use bbq2::traits::storage::BoxedSlice;
-        use bbq2::nicknames::GogiGui;
+        use bbqueue::traits::storage::BoxedSlice;
+        use bbqueue::nicknames::GogiGui;
         let rb = GogiGui::new_with_storage(BoxedSlice::new(capacity));
         let p = rb.stream_producer();
         let c = rb.stream_consumer();
