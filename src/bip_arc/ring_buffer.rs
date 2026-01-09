@@ -70,9 +70,15 @@ impl<T> Drop for RingBuffer<T> {
 /// A `RingBuffer` can be shared between threads.
 ///
 /// `T` does not need to be `Sync`, because we never share it across threads.
+/// For example, [`std::cell::Cell`] is `Send` but not `Sync`:
+///
+/// ```
+/// fn assert_sync<X: Sync>() {}
+/// assert_sync::<rtrb::bip_arc::RingBuffer<std::cell::Cell<u8>>>();
+/// ```
 // SAFETY: RingBuffer is only mutated (using *interior mutablility*)
 // via Producer/Consumer (which are !Sync), all other access can be shared.
-unsafe impl<T: Send> Sync for RingBuffer<T> {}
+unsafe impl<T> Sync for RingBuffer<T> {}
 
 // NB: `Send` might be implemented by different storage backends,
 // but it is not necessary for correct behavior of the RingBuffer.
