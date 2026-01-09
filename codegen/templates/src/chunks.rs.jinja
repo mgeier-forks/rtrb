@@ -644,18 +644,18 @@ impl<T{{ N_param }}> WriteChunkUninit<'_, T{{ N_arg }}> {
             // This means we have skipped some slots and have to
             // set `skip` and fast-forward `tail`.
 
-            // NB: It is safe to store `skip` before `tail`, because the consumer
-            // will potentially only read between `head` and (the old) `tail`,
-            // without looking at `skip`.
-            // Storing `tail` before `skip` would be problematic, however, because
+            // NB: Storing `skip` needs no synchronization, as long as it
+            // "happens before" `tail` is stored.
+            // Storing `tail` before `skip` would be problematic, because
             // the consumer would see new data at the beginning of the buffer,
             // but wouldn't know that the end has to be skipped.
-            b.skip.store(collapsed_tail, Ordering::Release);
+            b.skip.store(collapsed_tail, Ordering::Relaxed);
             tail = b.increment(tail, b.capacity() - collapsed_tail + n);
             debug_assert_eq!(b.collapse_position(tail), n);
         } else {
             tail = b.increment(tail, n);
         }
+        // Using `Release` here makes sure that storing `skip` "happens before".
         b.tail.store(tail, Ordering::Release);
         self.producer.cached_tail.set(tail);
         n

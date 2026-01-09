@@ -40,8 +40,6 @@ pub struct Consumer<T> {
     /// A copy of `buffer.head` for quick access.
     ///
     /// This value is always in sync with `buffer.head`.
-    /// For Bip Buffers, there is an exception: if `cached_head == buffer.skip`,
-    /// `buffer.head` may have been reset by the producer.
     pub(super) cached_head: Cell<usize>,
     /// A copy of `buffer.tail` for quick access.
     ///
@@ -273,7 +271,6 @@ impl<T> Consumer<T> {
     ///
     /// This is a strict subset of the functionality implemented in `read_chunk()`.
     /// For performance, this special case is implemented separately.
-    // TODO: check if using slots_contiguous_helper() is reasonably performant for bip
     fn next_head(&self) -> Option<usize> {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();

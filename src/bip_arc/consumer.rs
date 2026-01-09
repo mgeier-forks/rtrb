@@ -40,8 +40,6 @@ pub struct Consumer<T> {
     /// A copy of `buffer.head` for quick access.
     ///
     /// This value is always in sync with `buffer.head`.
-    /// For Bip Buffers, there is an exception: if `cached_head == buffer.skip`,
-    /// `buffer.head` may have been reset by the producer.
     pub(super) cached_head: Cell<usize>,
     /// A copy of `buffer.tail` for quick access.
     ///
@@ -163,88 +161,76 @@ impl<T> Consumer<T> {
     /// assert_eq!(p.push(0.0), Ok(()));
     /// assert_eq!(c.slots(), 1);
     /// ```
-    // TODO: code reuse with other "slots" variations? benchmark using slots_contiguous()
     pub fn slots(&self) -> usize {
-        let b = &self.buffer;
-        let mut head = self.cached_head.get();
-        let tail = b.tail.load(Ordering::Acquire);
-        self.cached_tail.set(tail);
-        if head == tail {
-            return 0;
-        }
-        let collapsed_head = b.collapse_position(head);
-        let collapsed_tail = b.collapse_position(tail);
-        if collapsed_head < collapsed_tail {
-            collapsed_tail - collapsed_head
-        } else {
-            let skip = b.skip.load(Ordering::Acquire);
-            // TODO: code reuse with slots_contiguous..()?
-            let slots_at_end = skip - collapsed_head;
-            if slots_at_end != 0 {
-                return collapsed_tail + slots_at_end;
-            }
-            // There are no more slots at the end of the buffer,
-            // let's clear `skip` and wrap around!
-            // TODO: the following is always true?
-            if skip != b.capacity() {
-                // NB: `skip` is stored before `head`.
-                b.skip.store(b.capacity(), Ordering::Release);
-            }
-            head = b.increment(head, b.capacity() - collapsed_head);
-            b.head.store(head, Ordering::Release);
-            self.cached_head.set(head);
-            debug_assert_eq!(b.collapse_position(head), 0);
-            collapsed_tail
-        }
+        let (one, two) = self.slots_contiguous();
+        one + two
     }
 
     /// Returns size of first contiguous chunk and
-    /// `true` if `tail` has already been refreshed and
+    /// the refreshed `tail` (if it has already been refreshed) and
     /// `true` if there may be another chunk at the beginning of the buffer.
-    // TODO: inline?
-    fn slots_contiguous_helper(&self) -> (usize, bool, bool) {
+    #[inline]
+    fn slots_contiguous_helper(&self) -> (usize, Option<usize>, bool) {
         let b = &self.buffer;
         let mut head = self.cached_head.get();
         let mut collapsed_head = b.collapse_position(head);
         let mut tail = self.cached_tail.get();
         let mut collapsed_tail = b.collapse_position(tail);
 
+        macro_rules! reset_skip {
+            () => {
+                // `skip` is never read in the producer thread, only written. Storing it before
+                // `head` makes sure that we don't overwrite the producer's value prematurely.
+                b.skip.store(b.capacity(), Ordering::Relaxed);
+                head = b.increment(head, b.capacity() - collapsed_head);
+                // Using `Release` here makes sure that storing `skip` "happens before".
+                b.head.store(head, Ordering::Release);
+                self.cached_head.set(head);
+                collapsed_head = b.collapse_position(head);
+                debug_assert_eq!(collapsed_head, 0);
+            };
+        }
+
+        macro_rules! refresh_tail {
+            () => {
+                tail = b.tail.load(Ordering::Acquire);
+                self.cached_tail.set(tail);
+                collapsed_tail = b.collapse_position(tail);
+            };
+        }
+
         let mut is_empty = head == tail;
         if !is_empty && collapsed_tail <= collapsed_head {
             // NB: `skip` is only relevant if (collapsed) `tail < head`
             //     (or if the buffer is full).
-            let slots = b.skip.load(Ordering::Acquire) - collapsed_head;
+
+            // `tail` has been refreshed since it last wrapped (even if `cached_tail` is outdated),
+            // therefore `skip` needs no synchronization.
+            let slots = b.skip.load(Ordering::Relaxed) - collapsed_head;
             if slots > 0 {
-                return (slots, false, true);
+                (slots, None, true)
+            } else {
+                reset_skip!();
+                // `tail` will not wrap around, but it might reveal a few more slots.
+                refresh_tail!();
+                (collapsed_tail, Some(tail), false)
             }
-            b.skip.store(b.capacity(), Ordering::Release);
-            head = b.increment(head, b.capacity() - collapsed_head);
-            // NB: `skip` is stored before `head`.
-            b.head.store(head, Ordering::Release);
-            self.cached_head.set(head);
-            collapsed_head = b.collapse_position(head);
-            debug_assert_eq!(collapsed_head, 0);
-        }
-        // We have to refresh `tail` (which may wrap around).
-        tail = b.tail.load(Ordering::Acquire);
-        self.cached_tail.set(tail);
-        collapsed_tail = b.collapse_position(tail);
-        is_empty = head == tail;
-        if !is_empty && collapsed_tail <= collapsed_head {
-            let slots = b.skip.load(Ordering::Acquire) - collapsed_head;
-            if slots > 0 {
-                return (slots, true, true);
-            }
-            b.skip.store(b.capacity(), Ordering::Release);
-            head = b.increment(head, b.capacity() - collapsed_head);
-            // NB: `skip` is stored before `head`.
-            b.head.store(head, Ordering::Release);
-            self.cached_head.set(head);
-            collapsed_head = b.collapse_position(head);
-            debug_assert_eq!(collapsed_head, 0);
-            (collapsed_tail, true, false)
         } else {
-            (collapsed_tail - collapsed_head, true, false)
+            // `tail` might wrap around.
+            refresh_tail!();
+            is_empty = head == tail;
+            if !is_empty && collapsed_tail <= collapsed_head {
+                // Loading `skip` "happens after" loading `tail`.
+                let slots = b.skip.load(Ordering::Relaxed) - collapsed_head;
+                if slots > 0 {
+                    (slots, Some(tail), true)
+                } else {
+                    reset_skip!();
+                    (collapsed_tail, Some(tail), false)
+                }
+            } else {
+                (collapsed_tail - collapsed_head, Some(tail), false)
+            }
         }
     }
 
@@ -271,20 +257,17 @@ impl<T> Consumer<T> {
     /// [`Producer::write_chunk()`] or [`Producer::write_chunk_uninit()`],
     /// but at most up to the [`capacity()`](Consumer::capacity)).
     pub fn slots_contiguous(&self) -> (usize, usize) {
-        let (slots, refreshed, try_at_beginning) = self.slots_contiguous_helper();
-        // TODO: use Some(tail) instead of refreshed?
+        let (slots, refreshed_tail, try_at_beginning) = self.slots_contiguous_helper();
         if !try_at_beginning {
             return (slots, 0);
         }
         let b = &self.buffer;
-        let tail;
-        if refreshed {
-            tail = self.cached_tail.get();
-        } else {
-            tail = b.tail.load(Ordering::Acquire);
+        let refreshed_tail = refreshed_tail.unwrap_or_else(|| {
+            let tail = b.tail.load(Ordering::Acquire);
             self.cached_tail.set(tail);
-        }
-        (slots, b.collapse_position(tail))
+            tail
+        });
+        (slots, b.collapse_position(refreshed_tail))
     }
 
     /// Returns the number of slots of the next contiguous segment available for reading with
@@ -397,54 +380,13 @@ impl<T> Consumer<T> {
     }
 
     /// Get the `head` position for reading the next slot, if available.
-    ///
-    /// This is a strict subset of the functionality implemented in `read_chunk()`.
-    /// For performance, this special case is implemented separately.
-    // TODO: check if using slots_contiguous_helper() is reasonably performant for bip
     fn next_head(&self) -> Option<usize> {
-        // NB: cached_head is always up-to-date, no need for atomic load here.
-        let mut head = self.cached_head.get();
-        let mut tail = self.cached_tail.get();
-        let b = &self.buffer;
-
-        // Check if the queue is *possibly* empty.
-        if head == tail {
-            // Refresh the tail ...
-            tail = b.tail.load(Ordering::Acquire);
-            self.cached_tail.set(tail);
-            // ... and check if it's *really* empty.
-            if head == tail {
-                // `tail` didn't change, queue is empty.
-                return None;
-            } else if b.collapse_position(head) < b.collapse_position(tail) {
-                // `tail` did change, but it didn't wrap around.
-                return Some(head);
-            }
-        } else if b.collapse_position(head) < b.collapse_position(tail) {
-            // The tail might have wrapped around in the meantime.
-            tail = b.tail.load(Ordering::Acquire);
-            self.cached_tail.set(tail);
+        let (slots, _, _) = self.slots_contiguous_helper();
+        if slots == 0 {
+            None
         } else {
-            // The tail cannot overtake the head, no need to refresh at this point.
+            Some(self.cached_head.get())
         }
-        debug_assert_ne!(head, tail);
-        if b.collapse_position(tail) < b.collapse_position(head) {
-            // NB: `skip` is only relevant if `tail < head` (both collapsed).
-            let skip = b.skip.load(Ordering::Acquire);
-            if b.collapse_position(head) == skip {
-                // Nothing to read at the end of the buffer, wrap `head` and clear `skip`.
-                // NB: `skip` is stored before `head`.
-                b.skip.store(b.capacity(), Ordering::Release);
-                head = b.increment(head, b.capacity() - skip);
-                b.head.store(head, Ordering::Release);
-                self.cached_head.set(head);
-
-                // NB: The producer only sets `skip` if it writes at least one slot
-                // at the beginning of the buffer.  Therefore, we know that the
-                // wrapped-around `head` is valid for reading (at least) one slot.
-            }
-        }
-        Some(head)
     }
 
     /// Prepares a chunk of `n` slots for reading.
@@ -476,7 +418,6 @@ impl<T> Consumer<T> {
         let b = &self.buffer;
         let (slots, _, _) = self.slots_contiguous_helper();
         if slots >= n {
-            // TODO: use refreshed_head.or_else(self.cached_head.get)
             let offset = b.collapse_position(self.cached_head.get());
             // SAFETY: `offset` has been set to a valid position.
             Ok(unsafe { ReadChunk::new(self, n, offset) })

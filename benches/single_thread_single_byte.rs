@@ -8,8 +8,6 @@ use std::hint::black_box;
 use criterion::{criterion_group, criterion_main};
 use criterion::{AxisScale, PlotConfiguration};
 
-use rtrb::RingBuffer;
-
 fn add_function<F, M>(group: &mut criterion::BenchmarkGroup<M>, id: impl Into<String>, mut f: F)
 where
     F: FnMut(u8) -> u8,
@@ -35,9 +33,14 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         v.pop().unwrap()
     });
 
-    let (mut p, mut c) = RingBuffer::<u8>::new(1);
-
+    let (mut p, mut c) = rtrb::arc::RingBuffer::<u8>::new(1);
     add_function(&mut group, "1-push-pop", |i| {
+        p.push(i).unwrap();
+        c.pop().unwrap()
+    });
+
+    let (mut p, mut c) = rtrb::bip_arc::RingBuffer::<u8>::new(1);
+    add_function(&mut group, "2-bip-push-pop", |i| {
         p.push(i).unwrap();
         c.pop().unwrap()
     });

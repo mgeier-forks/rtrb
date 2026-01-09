@@ -236,7 +236,6 @@ impl<T, const N: usize> Consumer<'_, T, N> {
     ///
     /// This is a strict subset of the functionality implemented in `read_chunk()`.
     /// For performance, this special case is implemented separately.
-    // TODO: check if using slots_contiguous_helper() is reasonably performant for bip
     fn next_head(&self) -> Option<usize> {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
