@@ -13,9 +13,11 @@
 {% if N %}
   {% set N_param = ", const N: usize" %}
   {% set N_arg = ", N" %}
+  {% set N_self = "self.0" %}
 {% else %}
   {% set N_param = "" %}
   {% set N_arg = "" %}
+  {% set N_self = "self" %}
 {% endif %}
 {% if arc %}
   {% set arc_tick_a = "" %}
@@ -31,10 +33,6 @@
 {##}
 {% macro CachePadded_new(arg) %}
 {% if padded %}CachePadded::new({{ arg }}){% else %}{{ arg }}{% endif %}
-{% endmacro %}
-{##}
-{% macro if_N(arg) %}
-{% if N %}{{ arg }}{% else %}{% endif %}
 {% endmacro %}
 {##}
 {% macro doctest_create_ring_buffer(capacity, prefix="    ///") %}

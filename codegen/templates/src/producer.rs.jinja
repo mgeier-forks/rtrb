@@ -10,9 +10,12 @@ use core::cell::Cell;
 use super::arc_ring_buffer::ArcRingBuffer;
 use super::IS_ABANDONED;
 {% endif %}
+{% if N %}
+use super::ring_buffer::RingBufferUnsized;
+{% endif %}
 use super::{
     chunks::{WriteChunk, WriteChunkUninit},
-    ChunkError, PushError, RingBuffer,
+    ChunkError, PushError{% if not N %}, RingBuffer{% endif %},
 };
 {% if not arc %}
 use super::{HAS_CONSUMER, HAS_PRODUCER};
@@ -21,7 +24,11 @@ use crate::atomic::*;
 
 // Only used in documentation:
 #[allow(unused_imports)]
+{% if N %}
+use super::{Consumer, RingBuffer};
+{% else %}
 use super::Consumer;
+{% endif %}
 
 /// The producer side of a [`RingBuffer`].
 ///
@@ -47,8 +54,8 @@ use super::Consumer;
 /// all items remaining in the ring buffer will be dropped and the allocated memory
 /// will be deallocated.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Producer<T{{ N_param }}> {
-    pub(super) buffer: ArcRingBuffer<T{{ N_arg }}>,
+pub struct Producer<T> {
+    pub(super) buffer: ArcRingBuffer<T>,
     /// A copy of `buffer.head` for quick access.
     ///
     /// This value can be stale and sometimes needs to be resynchronized
@@ -63,13 +70,13 @@ pub struct Producer<T{{ N_param }}> {
 ///
 /// A `Producer` can only be created with [`RingBuffer::producer()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct Producer<'a, T{{ N_param }}> {
-    pub(super) buffer: &'a RingBuffer<T{{ N_arg }}>,
+pub struct Producer<'a, T> {
+    pub(super) buffer: &'a RingBuffer{% if N %}Unsized{% endif %}<T>,
     pub(super) cached_head: Cell<usize>,
     pub(super) cached_tail: Cell<usize>,
 }
 
-impl<T{{ N_param }}> Drop for Producer<'_, T{{ N_arg }}> {
+impl<T> Drop for Producer<'_, T> {
     fn drop(&mut self) {
         let _ = self.buffer.flags.fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
     }
@@ -80,19 +87,19 @@ impl<T{{ N_param }}> Drop for Producer<'_, T{{ N_arg }}> {
 /// ```
 /// use {{ module_path }}::Producer;
 /// fn assert_send<X: Send>() {}
-/// assert_send::<Producer<u8{{ if_N(", 8") }}>>();
+/// assert_send::<Producer<u8>>();
 /// ```
 /// ... but not shared between threads:
 /// ```compile_fail
 /// # use {{ module_path }}::Producer;
 /// fn assert_sync<X: Sync>() {}
-/// assert_sync::<Producer<u8{{ if_N(", 8") }}>>();
+/// assert_sync::<Producer<u8>>();
 /// ```
 // SAFETY: After moving a producer to another thread, there is still only a single thread
 // that can access the producer side of the queue.
-unsafe impl<T: Send{{ N_param }}> Send for Producer<{{ arc_tick_blank }}T{{ N_arg }}> where RingBuffer<T{{ N_arg }}>: Sync {}
+unsafe impl<T: Send> Send for Producer<{{ arc_tick_blank }}T> where RingBuffer{% if N %}Unsized{% endif %}<T>: Sync {}
 
-impl<T{{ N_param }}> Producer<{{ arc_tick_blank }}T{{ N_arg }}> {
+impl<T> Producer<{{ arc_tick_blank }}T> {
     /// Attempts to push an element into the queue.
     ///
     /// The element is *moved* into the ring buffer and its slot
@@ -476,7 +483,7 @@ impl<T{{ N_param }}> Producer<{{ arc_tick_blank }}T{{ N_arg }}> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T{{ N_arg }}>, ChunkError>
+    pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T>, ChunkError>
     where
         T: Default,
     {
@@ -531,7 +538,7 @@ impl<T{{ N_param }}> Producer<{{ arc_tick_blank }}T{{ N_arg }}> {
 {# The signature doesn't fit in one line when `N` is used, so we don't auto-format. #}
     #[rustfmt::skip]
 {% if bip %}
-    pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T{{ N_arg }}>, ChunkError> {
+    pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
         let b = &self.buffer;
         let (mut slots, refreshed_head, try_at_beginning) = self.slots_contiguous_helper();
         if slots >= n {
@@ -559,7 +566,7 @@ impl<T{{ N_param }}> Producer<{{ arc_tick_blank }}T{{ N_arg }}> {
         Err(ChunkError::TooFewSlots(slots))
     }
 {% else %}
-    pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T{{ N_arg }}>, ChunkError> {
+    pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
         let b = &self.buffer;

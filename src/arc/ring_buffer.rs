@@ -116,6 +116,11 @@ impl<T> RingBuffer<T> {
         ArcRingBuffer::new(Self::construct(capacity))
     }
 
+    const fn update_capacity(capacity: usize) -> usize {
+        // No need to update, we are not relying on power-of-two sizes.
+        capacity
+    }
+
     /// Drop all elements that are still in the buffer.
     ///
     /// After this, head and tail indices are invalid.
@@ -137,11 +142,6 @@ impl<T> RingBuffer<T> {
             unsafe { self.slot_ptr(head).drop_in_place() };
             head = self.increment1(head);
         }
-    }
-
-    const fn update_capacity(capacity: usize) -> usize {
-        // No need to update, we are not relying on power-of-two sizes.
-        capacity
     }
 
     pub(super) fn collapse_position(&self, pos: usize) -> usize {

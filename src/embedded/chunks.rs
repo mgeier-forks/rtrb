@@ -196,16 +196,16 @@ use super::{CopyToUninit, RingBuffer};
 ///
 /// This is returned from [`Producer::write_chunk_uninit()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct WriteChunkUninit<'a, T, const N: usize> {
+pub struct WriteChunkUninit<'a, T> {
     first_ptr: *mut T,
     first_len: usize,
     second_ptr: *mut T,
     second_len: usize,
-    producer: &'a Producer<'a, T, N>,
+    producer: &'a Producer<'a, T>,
 }
 
-impl<'a, T, const N: usize> WriteChunkUninit<'a, T, N> {
-    pub(super) unsafe fn new(producer: &'a Producer<T, N>, n: usize, offset: usize) -> Self {
+impl<'a, T> WriteChunkUninit<'a, T> {
+    pub(super) unsafe fn new(producer: &'a Producer<T>, n: usize, offset: usize) -> Self {
         let first_len = n.min(producer.buffer.capacity() - offset);
         Self {
             // SAFETY: Caller must guarantee that `offset` is valid.
@@ -218,9 +218,9 @@ impl<'a, T, const N: usize> WriteChunkUninit<'a, T, N> {
     }
 }
 
-impl<'a, T: Default, const N: usize> From<WriteChunkUninit<'a, T, N>> for WriteChunk<'a, T, N> {
+impl<'a, T: Default> From<WriteChunkUninit<'a, T>> for WriteChunk<'a, T> {
     /// Fills all slots with the [`Default`] value.
-    fn from(chunk: WriteChunkUninit<'a, T, N>) -> Self {
+    fn from(chunk: WriteChunkUninit<'a, T>) -> Self {
         for i in 0..chunk.first_len {
             // SAFETY: i is in a valid range.
             unsafe { chunk.first_ptr.add(i).write(Default::default()) };
@@ -241,9 +241,9 @@ impl<'a, T: Default, const N: usize> From<WriteChunkUninit<'a, T, N>> for WriteC
 /// which also allows moving items from an iterator into the ring buffer
 /// by means of [`WriteChunkUninit::fill_from_iter()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct WriteChunk<'a, T, const N: usize>(Option<WriteChunkUninit<'a, T, N>>);
+pub struct WriteChunk<'a, T>(Option<WriteChunkUninit<'a, T>>);
 
-impl<T, const N: usize> Drop for WriteChunk<'_, T, N> {
+impl<T> Drop for WriteChunk<'_, T> {
     fn drop(&mut self) {
         // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
         if let Some(mut chunk) = self.0.take() {
@@ -258,16 +258,16 @@ impl<T, const N: usize> Drop for WriteChunk<'_, T, N> {
 ///
 /// This is returned from [`Consumer::read_chunk()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct ReadChunk<'a, T, const N: usize> {
+pub struct ReadChunk<'a, T> {
     first_ptr: *mut T,
     first_len: usize,
     second_ptr: *mut T,
     second_len: usize,
-    consumer: &'a Consumer<'a, T, N>,
+    consumer: &'a Consumer<'a, T>,
 }
 
-impl<'a, T, const N: usize> ReadChunk<'a, T, N> {
-    pub(super) unsafe fn new(consumer: &'a Consumer<T, N>, n: usize, offset: usize) -> Self {
+impl<'a, T> ReadChunk<'a, T> {
+    pub(super) unsafe fn new(consumer: &'a Consumer<T>, n: usize, offset: usize) -> Self {
         let b = &consumer.buffer;
         let first_len = n.min(b.capacity() - offset);
         Self {
@@ -285,41 +285,41 @@ impl<'a, T, const N: usize> ReadChunk<'a, T, N> {
 /// ```
 /// use rtrb::embedded::chunks::{WriteChunk, WriteChunkUninit};
 /// fn assert_send<X: Send>() {}
-/// assert_send::<WriteChunkUninit<u8, 8>>();
-/// assert_send::<WriteChunk<u8, 8>>();
+/// assert_send::<WriteChunkUninit<u8>>();
+/// assert_send::<WriteChunk<u8>>();
 /// ```
 /// ... but not shared between threads:
 /// ```compile_fail
 /// # use rtrb::embedded::chunks::WriteChunkUninit;
 /// fn assert_sync<X: Sync>() {}
-/// assert_sync::<WriteChunkUninit<u8, 8>>();
+/// assert_sync::<WriteChunkUninit<u8>>();
 /// ```
 /// ```compile_fail
 /// # use rtrb::embedded::chunks::WriteChunk;
 /// # fn assert_sync<X: Sync>() {}
-/// assert_sync::<WriteChunk<u8, 8>>();
+/// assert_sync::<WriteChunk<u8>>();
 /// ```
 // SAFETY: WriteChunkUninit only exists while a unique reference to the producer is held.
 // It is therefore safe to move it to another thread.
-unsafe impl<T: Send, const N: usize> Send for WriteChunkUninit<'_, T, N> {}
+unsafe impl<T: Send> Send for WriteChunkUninit<'_, T> {}
 
 /// It (and any wrapper structs) can be moved ...
 /// ```
 /// use rtrb::embedded::chunks::ReadChunk;
 /// fn assert_send<X: Send>() {}
-/// assert_send::<ReadChunk<u8, 8>>();
+/// assert_send::<ReadChunk<u8>>();
 /// ```
 /// ... but not shared between threads:
 /// ```compile_fail
 /// # use rtrb::embedded::chunks::ReadChunk;
 /// fn assert_sync<X: Sync>() {}
-/// assert_sync::<ReadChunk<u8, 8>>();
+/// assert_sync::<ReadChunk<u8>>();
 /// ```
 // SAFETY: ReadChunk only exists while a unique reference to the consumer is held.
 // It is therefore safe to move it to another thread.
-unsafe impl<T: Send, const N: usize> Send for ReadChunk<'_, T, N> {}
+unsafe impl<T: Send> Send for ReadChunk<'_, T> {}
 
-impl<T, const N: usize> WriteChunkUninit<'_, T, N> {
+impl<T> WriteChunkUninit<'_, T> {
     /// Returns two slices for writing to the requested slots.
     ///
     /// The first slice can only be empty if `0` slots have been requested.
@@ -481,7 +481,7 @@ impl<T, const N: usize> WriteChunkUninit<'_, T, N> {
     }
 }
 
-impl<T, const N: usize> WriteChunk<'_, T, N> {
+impl<T> WriteChunk<'_, T> {
     /// Returns two slices for writing to the requested slots.
     ///
     /// All slots are initially filled with their [`Default`] value.
@@ -551,7 +551,7 @@ impl<T, const N: usize> WriteChunk<'_, T, N> {
     }
 }
 
-impl<T, const N: usize> ReadChunk<'_, T, N> {
+impl<T> ReadChunk<'_, T> {
     /// Returns two slices for reading from the requested slots.
     ///
     /// The first slice can only be empty if `0` slots have been requested.
@@ -690,9 +690,9 @@ impl<T, const N: usize> ReadChunk<'_, T, N> {
     }
 }
 
-impl<'a, T, const N: usize> IntoIterator for ReadChunk<'a, T, N> {
+impl<'a, T> IntoIterator for ReadChunk<'a, T> {
     type Item = T;
-    type IntoIter = ReadChunkIntoIter<'a, T, N>;
+    type IntoIter = ReadChunkIntoIter<'a, T>;
 
     /// Turns a [`ReadChunk`] into an iterator.
     ///
@@ -714,13 +714,13 @@ impl<'a, T, const N: usize> IntoIterator for ReadChunk<'a, T, N> {
 /// When this `struct` is dropped, the iterated slots are made available for writing again.
 /// Non-iterated items remain in the ring buffer.
 #[derive(Debug, PartialEq, Eq)]
-pub struct ReadChunkIntoIter<'a, T, const N: usize> {
-    chunk: ReadChunk<'a, T, N>,
+pub struct ReadChunkIntoIter<'a, T> {
+    chunk: ReadChunk<'a, T>,
     iterated: usize,
 }
 
 // TODO: take "skip" into account?
-impl<T, const N: usize> Drop for ReadChunkIntoIter<'_, T, N> {
+impl<T> Drop for ReadChunkIntoIter<'_, T> {
     /// Makes all iterated slots available for writing again.
     ///
     /// All iterated items have been moved out of the buffer and
@@ -735,7 +735,7 @@ impl<T, const N: usize> Drop for ReadChunkIntoIter<'_, T, N> {
     }
 }
 
-impl<T, const N: usize> Iterator for ReadChunkIntoIter<'_, T, N> {
+impl<T> Iterator for ReadChunkIntoIter<'_, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -763,12 +763,12 @@ impl<T, const N: usize> Iterator for ReadChunkIntoIter<'_, T, N> {
     }
 }
 
-impl<T, const N: usize> ExactSizeIterator for ReadChunkIntoIter<'_, T, N> {}
+impl<T> ExactSizeIterator for ReadChunkIntoIter<'_, T> {}
 
-impl<T, const N: usize> core::iter::FusedIterator for ReadChunkIntoIter<'_, T, N> {}
+impl<T> core::iter::FusedIterator for ReadChunkIntoIter<'_, T> {}
 
 #[cfg(feature = "std")]
-impl<const N: usize> std::io::Write for Producer<'_, u8, N> {
+impl std::io::Write for Producer<'_, u8> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         use super::ChunkError::TooFewSlots;
@@ -796,7 +796,7 @@ impl<const N: usize> std::io::Write for Producer<'_, u8, N> {
 }
 
 #[cfg(feature = "std")]
-impl<const N: usize> std::io::Read for Consumer<'_, u8, N> {
+impl std::io::Read for Consumer<'_, u8> {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         use super::ChunkError::TooFewSlots;

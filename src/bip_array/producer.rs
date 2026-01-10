@@ -4,16 +4,17 @@
 
 use core::cell::Cell;
 
+use super::ring_buffer::RingBufferUnsized;
 use super::{
     chunks::{WriteChunk, WriteChunkUninit},
-    ChunkError, PushError, RingBuffer,
+    ChunkError, PushError,
 };
 use super::{HAS_CONSUMER, HAS_PRODUCER};
 use crate::atomic::*;
 
 // Only used in documentation:
 #[allow(unused_imports)]
-use super::Consumer;
+use super::{Consumer, RingBuffer};
 
 /// The producer side of a [`RingBuffer`].
 ///
@@ -30,13 +31,13 @@ use super::Consumer;
 ///
 /// A `Producer` can only be created with [`RingBuffer::producer()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct Producer<'a, T, const N: usize> {
-    pub(super) buffer: &'a RingBuffer<T, N>,
+pub struct Producer<'a, T> {
+    pub(super) buffer: &'a RingBufferUnsized<T>,
     pub(super) cached_head: Cell<usize>,
     pub(super) cached_tail: Cell<usize>,
 }
 
-impl<T, const N: usize> Drop for Producer<'_, T, N> {
+impl<T> Drop for Producer<'_, T> {
     fn drop(&mut self) {
         let _ = self.buffer.flags.fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
     }
@@ -46,19 +47,19 @@ impl<T, const N: usize> Drop for Producer<'_, T, N> {
 /// ```
 /// use rtrb::bip_array::Producer;
 /// fn assert_send<X: Send>() {}
-/// assert_send::<Producer<u8, 8>>();
+/// assert_send::<Producer<u8>>();
 /// ```
 /// ... but not shared between threads:
 /// ```compile_fail
 /// # use rtrb::bip_array::Producer;
 /// fn assert_sync<X: Sync>() {}
-/// assert_sync::<Producer<u8, 8>>();
+/// assert_sync::<Producer<u8>>();
 /// ```
 // SAFETY: After moving a producer to another thread, there is still only a single thread
 // that can access the producer side of the queue.
-unsafe impl<T: Send, const N: usize> Send for Producer<'_, T, N> where RingBuffer<T, N>: Sync {}
+unsafe impl<T: Send> Send for Producer<'_, T> where RingBufferUnsized<T>: Sync {}
 
-impl<T, const N: usize> Producer<'_, T, N> {
+impl<T> Producer<'_, T> {
     /// Attempts to push an element into the queue.
     ///
     /// The element is *moved* into the ring buffer and its slot
@@ -382,7 +383,7 @@ impl<T, const N: usize> Producer<'_, T, N> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T, N>, ChunkError>
+    pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T>, ChunkError>
     where
         T: Default,
     {
@@ -422,7 +423,7 @@ impl<T, const N: usize> Producer<'_, T, N> {
     /// For a safe alternative that provides
     /// a mutable slice    /// of [`Default`]-initialized slots, see [`Producer::write_chunk()`].
     #[rustfmt::skip]
-    pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T, N>, ChunkError> {
+    pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
         let b = &self.buffer;
         let (mut slots, refreshed_head, try_at_beginning) = self.slots_contiguous_helper();
         if slots >= n {

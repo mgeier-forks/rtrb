@@ -14,14 +14,14 @@ use crate::atomic::*;
 
 // Non-public helper type.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct ArcRingBuffer<T{{ N_param }}> {
-    ptr: NonNull<RingBuffer<T{{ N_arg }}>>,
+pub(crate) struct ArcRingBuffer<T> {
+    ptr: NonNull<RingBuffer<T>>,
 }
 
 // SAFETY: If RingBuffer is Send, ArcRingBuffer is as well.
-unsafe impl<T{{ N_param }}> Send for ArcRingBuffer<T{{ N_arg }}> where RingBuffer<T{{ N_arg }}>: Send {}
+unsafe impl<T> Send for ArcRingBuffer<T> where RingBuffer<T>: Send {}
 
-impl<T{{ N_param }}> ArcRingBuffer<T{{ N_arg }}> {
+impl<T> ArcRingBuffer<T> {
     // NB: this takes ownership of the RingBuffer, making sure that only one
     //     Producer and Consumer are ever created.
     #[allow(clippy::new_ret_no_self)]
@@ -46,7 +46,7 @@ impl<T{{ N_param }}> ArcRingBuffer<T{{ N_arg }}> {
     }
 }
 
-impl<T{{ N_param }}> Drop for ArcRingBuffer<T{{ N_arg }}> {
+impl<T> Drop for ArcRingBuffer<T> {
     fn drop(&mut self) {
         // SAFETY: must point to initialized Storage.
         let flags: &AtomicU8 = unsafe { &self.ptr.as_ref().flags };
@@ -80,7 +80,7 @@ impl<T{{ N_param }}> Drop for ArcRingBuffer<T{{ N_arg }}> {
 
 /// Non-inlined part of `ArcRingBuffer::drop()`.
 #[inline(never)]
-unsafe fn drop_slow<T{{ N_param }}>(ptr: NonNull<RingBuffer<T{{ N_arg }}>>) {
+unsafe fn drop_slow<T>(ptr: NonNull<RingBuffer<T>>) {
     // SAFETY: This is allowed because the storage has been allocated with `Box::new()`.
     unsafe {
         // Turn the pointer back into a `Box` and immediately drop it,
@@ -89,8 +89,8 @@ unsafe fn drop_slow<T{{ N_param }}>(ptr: NonNull<RingBuffer<T{{ N_arg }}>>) {
     }
 }
 
-impl<T{{ N_param }}> core::ops::Deref for ArcRingBuffer<T{{ N_arg }}> {
-    type Target = RingBuffer<T{{ N_arg }}>;
+impl<T> core::ops::Deref for ArcRingBuffer<T> {
+    type Target = RingBuffer<T>;
 
     fn deref(&self) -> &Self::Target {
         // SAFETY: There are never any mutable references.
