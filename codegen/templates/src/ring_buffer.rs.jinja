@@ -146,7 +146,9 @@ impl<T> RingBuffer<T> {
     fn construct(capacity: usize) -> NonNull<Self> {
         let ptr = Self::instantiate(capacity);
         {% if bip %}
-        ptr.as_mut().skip = ptr.as_ref().capacity();
+        // SAFETY: Ring buffer is initialized and no mutable reference exists.
+        let rb = unsafe { ptr.as_ref() };
+        rb.skip.store(rb.capacity(), Ordering::Relaxed);
         {% endif %}
         ptr
     }
@@ -156,7 +158,7 @@ impl<T> RingBuffer<T> {
     }
 
     pub(super) fn data_ptr(&self) -> *mut T {
-        self.slots.get()
+        self.slots.get().cast()
     }
 }
 

@@ -19,19 +19,9 @@ pub(crate) struct ArcRingBuffer<T> {
 unsafe impl<T> Send for ArcRingBuffer<T> where RingBuffer<T>: Send {}
 
 impl<T> ArcRingBuffer<T> {
-    // NB: this takes ownership of the RingBuffer, making sure that only one
-    //     Producer and Consumer are ever created.
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new(rb: RingBuffer<T>) -> (Producer<T>, Consumer<T>) {
-        let ptr = Box::leak(Box::new(rb));
-        // SAFETY: Pointer from `Box` is always non-null.
-        let ptr = unsafe { NonNull::new_unchecked(ptr) };
-        // SAFETY: Memory has been allocated with `Box`.
-        unsafe { ArcRingBuffer::from_ptr(ptr) }
-    }
-
     pub unsafe fn from_ptr(ptr: NonNull<RingBuffer<T>>) -> (Producer<T>, Consumer<T>) {
-        let rb = ptr.as_ref();
+        // SAFETY: The ring buffer is initialized and no mutable references exist.
+        let rb = unsafe { ptr.as_ref() };
         debug_assert_eq!(rb.flags.load(Ordering::Relaxed) & IS_ABANDONED, 0);
         let head = rb.head.load(Ordering::Relaxed);
         let tail = rb.tail.load(Ordering::Relaxed);

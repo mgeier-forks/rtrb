@@ -40,7 +40,7 @@ macro_rules! ring_buffer_instantiation {
             [
                 $(
                     $(#[$field_attr:meta])*
-                    $pub:vis $field_name:ident: $field_type:ty,
+                    pub(super) $field_name:ident: $field_type:ty,
                 )*
             ]
 
@@ -53,7 +53,7 @@ macro_rules! ring_buffer_instantiation {
         pub struct RingBuffer<T> {
             $(
                 $(#[$field_attr])*
-                $pub $field_name: $field_type,
+                pub(super) $field_name: $field_type,
             )*
 
             $(#[$last_field_attr])*
@@ -68,8 +68,8 @@ macro_rules! ring_buffer_instantiation {
                 use alloc::alloc::Layout;
                 // Start with an empty layout ...
                 let layout = Layout::new::<()>();
-                // ... and add all fields from RingBuffer, which must have #[repr(C)]
-                // (which we added above)!
+                // ... and add all fields from RingBuffer,
+                // which must have #[repr(C)] (which we added above)!
                 $(
                     // We abuse $field_name as variable name for the field offset:
                     let (layout, $field_name) = layout
@@ -89,7 +89,7 @@ macro_rules! ring_buffer_instantiation {
                     }
                     $(
                         &raw mut (*ptr).$field_name.write(Default::default());
-                        //addr_of_mut!((*ptr).$field_name).write(Default::default());
+                        //core::ptr::addr_of_mut!((*ptr).$field_name).write(Default::default());
                     )*
                     // Create a (fat) pointer to a slice ...
                     let ptr: *mut [T] = core::ptr::slice_from_raw_parts_mut(ptr.cast(), capacity);

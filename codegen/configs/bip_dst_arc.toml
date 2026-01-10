@@ -1,0 +1,9 @@
+arc = true
+bip = true
+padded = true
+pow2 = false
+storage = "dst"
+
+module_docstring = """
+//! TODO: bip dst docs
+"""
