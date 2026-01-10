@@ -1041,7 +1041,7 @@ impl<T{{ N_param }}> ExactSizeIterator for ReadChunkIntoIter<'_, T{{ N_arg }}> {
 impl<T{{ N_param }}> core::iter::FusedIterator for ReadChunkIntoIter<'_, T{{ N_arg }}> {}
 
 #[cfg(feature = "std")]
-impl{{ if_N("<const N: usize>") }} std::io::Write for Producer<{{ arc_tick_blank }}u8{{ N_arg }}> {
+impl std::io::Write for Producer<{{ arc_tick_blank }}u8> {
 {% if contiguous %}
     #[inline]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
