@@ -30,8 +30,7 @@ use super::Consumer;
 /// [`slots()`](Producer::slots).
 ///
 /// A `Producer` can only be created with [`RingBuffer::producer()`].
-//#[derive(Debug, PartialEq, Eq)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Producer<'a, T> {
     pub(super) buffer: &'a RingBufferUnsized<T>,
     pub(super) cached_head: Cell<usize>,

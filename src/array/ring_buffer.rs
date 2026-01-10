@@ -18,20 +18,6 @@ use super::{Consumer, Producer};
 /// which can be obtained with ... TODO
 ///
 /// *See also the [module-level documentation](crate::array).*
-/*
-#[derive(Debug)]
-pub struct RingBuffer<T, const N: usize> {
-    pub(super) head: CachePadded<AtomicUsize>,
-    pub(super) tail: CachePadded<AtomicUsize>,
-    pub(super) flags: AtomicU8,
-    /// The static array holding slots.
-    ///
-    /// This must be in an `UnsafeCell` because both producer and consumer
-    /// have a (non-mutable) reference to the ring buffer and they use
-    /// *interior mutability* to modify it.
-    slots: UnsafeCell<[MaybeUninit<T>; N]>,
-}
-*/
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct RingBuffer<T, const N: usize>(RingBufferInner<[MaybeUninit<T>; N]>);
@@ -212,7 +198,7 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// assert!(rb.has_consumer());
     /// assert_eq!(c.pop(), Ok(20));
     /// ```
-    pub fn consumer(&self) -> Option<Consumer<'_, T, N>> {
+    pub fn consumer(&self) -> Option<Consumer<'_, T>> {
         use core::cell::Cell;
         let old_flags = self.0.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
         if old_flags & HAS_CONSUMER == 0 {
@@ -275,9 +261,7 @@ impl<T> RingBufferUnsized<T> {
             head = self.increment1(head);
         }
     }
-}
 
-impl<T> RingBufferUnsized<T> {
     pub(super) fn collapse_position(&self, pos: usize) -> usize {
         // Wraps from the range `0 .. 2 * capacity` to `0 .. capacity`.
         debug_assert!(pos == 0 || pos < 2 * self.capacity());
