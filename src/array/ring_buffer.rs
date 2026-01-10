@@ -51,22 +51,6 @@ pub struct RingBufferInner<Container: ?Sized> {
 
 pub(crate) type RingBufferUnsized<T> = RingBufferInner<[MaybeUninit<T>]>;
 
-/*
-// TODO: separate file?
-#[derive(Debug)]
-pub struct RingBufferUnsized<T> {
-    pub(super) head: CachePadded<AtomicUsize>,
-    pub(super) tail: CachePadded<AtomicUsize>,
-    pub(super) flags: AtomicU8,
-    /// The slice holding slots.
-    ///
-    /// This must be in an `UnsafeCell` because both producer and consumer
-    /// have a (non-mutable) reference to the ring buffer and they use
-    /// *interior mutability* to modify it.
-    slots: UnsafeCell<[MaybeUninit<T>]>,
-}
-*/
-
 // SAFETY: If T can be moved between threads, RingBuffer can as well.
 unsafe impl<T: Send, const N: usize> Send for RingBuffer<T, N> {}
 
@@ -82,27 +66,28 @@ impl<T, const N: usize> RingBuffer<T, N> {
     }
 }
 
-impl<Container> RingBufferInner<Container> {
-    pub(super) fn data_ptr(&self) -> *mut T {
-        // TODO: what happens if N == 0?
-        self.slots.get().cast()
-    }
-
-    pub(super) fn capacity(&self) -> usize {
-        N
-    }
-}
-
 impl<T, const N: usize> Drop for RingBuffer<T, N> {
     fn drop(&mut self) {
+        let inner: &mut RingBufferUnsized<T> = &mut self.0;
         // SAFETY: this is called exactly once, no references to any elements exist anymore.
-        unsafe { self.drop_all_elements() };
+        unsafe { inner.drop_all_elements() };
     }
 }
 
 impl<T, const N: usize> Default for RingBuffer<T, N> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<T> RingBufferUnsized<T> {
+    pub(super) fn data_ptr(&self) -> *mut T {
+        // TODO: what happens if N == 0?
+        self.slots.get().cast()
+    }
+
+    pub(super) fn capacity(&self) -> usize {
+        self.slots.get().len()
     }
 }
 
@@ -260,9 +245,14 @@ impl<T, const N: usize> RingBuffer<T, N> {
     pub fn has_consumer(&self) -> bool {
         self.0.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
     }
+
+    const fn update_capacity(capacity: usize) -> usize {
+        // No need to update, we are not relying on power-of-two sizes.
+        capacity
+    }
 }
 
-impl<Container> RingBufferInner<Container> {
+impl<T> RingBufferUnsized<T> {
     /// Drop all elements that are still in the buffer.
     ///
     /// After this, head and tail indices are invalid.
@@ -285,12 +275,9 @@ impl<Container> RingBufferInner<Container> {
             head = self.increment1(head);
         }
     }
+}
 
-    const fn update_capacity(capacity: usize) -> usize {
-        // No need to update, we are not relying on power-of-two sizes.
-        capacity
-    }
-
+impl<T> RingBufferUnsized<T> {
     pub(super) fn collapse_position(&self, pos: usize) -> usize {
         // Wraps from the range `0 .. 2 * capacity` to `0 .. capacity`.
         debug_assert!(pos == 0 || pos < 2 * self.capacity());
