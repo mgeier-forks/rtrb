@@ -23,12 +23,18 @@ impl<T> ArcRingBuffer<T> {
     //     Producer and Consumer are ever created.
     #[allow(clippy::new_ret_no_self)]
     pub fn new(rb: RingBuffer<T>) -> (Producer<T>, Consumer<T>) {
+        let ptr = Box::leak(Box::new(rb));
+        // SAFETY: Pointer from `Box` is always non-null.
+        let ptr = unsafe { NonNull::new_unchecked(ptr) };
+        // SAFETY: Memory has been allocated with `Box`.
+        unsafe { ArcRingBuffer::from_ptr(ptr) }
+    }
+
+    pub unsafe fn from_ptr(ptr: NonNull<RingBuffer<T>>) -> (Producer<T>, Consumer<T>) {
+        let rb = ptr.as_ref();
         debug_assert_eq!(rb.flags.load(Ordering::Relaxed) & IS_ABANDONED, 0);
         let head = rb.head.load(Ordering::Relaxed);
         let tail = rb.tail.load(Ordering::Relaxed);
-        let ptr = Box::leak(Box::new(rb));
-        // SAFETY: Pointer from Box is always non-null.
-        let ptr = unsafe { NonNull::new_unchecked(ptr) };
         let p = Producer {
             buffer: Self { ptr },
             cached_head: Cell::new(head),
@@ -78,10 +84,10 @@ impl<T> Drop for ArcRingBuffer<T> {
 /// Non-inlined part of `ArcRingBuffer::drop()`.
 #[inline(never)]
 unsafe fn drop_slow<T>(ptr: NonNull<RingBuffer<T>>) {
-    // SAFETY: This is allowed because the storage has been allocated with `Box::new()`.
+    // SAFETY: The caller of `ArcRingBuffer::from_ptr()` has to guarantee that the memory
+    // has been allocated with `Box::new()` or compatible.
     unsafe {
-        // Turn the pointer back into a `Box` and immediately drop it,
-        // which deallocates the memory allocated in `ArcRingBuffer::new()`.
+        // Turn the pointer into a `Box` and immediately drop it, which deallocates the memory.
         drop(Box::from_raw(ptr.as_ptr()));
     }
 }

@@ -200,10 +200,18 @@ mod atomic {
 }
 
 #[cfg(feature = "alloc")]
+// This is only used if storage == "dst"
+#[warn(unused_imports)]
+#[macro_use]
+mod dst_instantiation;
+
+#[cfg(feature = "alloc")]
 pub mod arc;
 #[cfg(feature = "alloc")]
 pub mod arc2;
 pub mod array;
+#[cfg(feature = "alloc")]
+pub mod dst_arc;
 #[cfg(feature = "alloc")]
 pub mod bip_arc;
 #[cfg(feature = "alloc")]

@@ -11,6 +11,11 @@
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 
+{% elif storage == "dst" %}
+use core::cell::UnsafeCell;
+use core::mem::MaybeUninit;
+use core::ptr::NonNull;
+
 {% elif storage == "vec" %}
 use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
@@ -29,6 +34,9 @@ use crate::CachePadded;
 
 use super::{Consumer, Producer};
 
+{% if storage == "dst" %}
+ring_buffer_instantiation! {
+{% endif %}
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
 /// Elements can be written with a [`Producer`] and read with a [`Consumer`],
@@ -111,7 +119,55 @@ impl<T> RingBufferUnsized<T> {
     }
 }
 {% elif storage == "dst" %}
-compile_error!("TODO: dst storage");
+#[derive(Debug)]
+pub struct RingBuffer<T> {
+    pub(super) head: {{ CachePadded("AtomicUsize") }},
+    pub(super) tail: {{ CachePadded("AtomicUsize") }},
+    {% if bip %}
+    // TODO: measure whether CachePadded helps
+    pub(super) skip: {{ CachePadded("AtomicUsize") }},
+    {% endif %}
+    pub(super) flags: AtomicU8,
+    /// Storage for the ring buffer elements (dynamically sized).
+    ///
+    /// This must be in an `UnsafeCell` because both producer and consumer
+    /// have a (non-mutable) reference to the ring buffer and they use
+    /// *interior mutability* to modify it.
+    slots: UnsafeCell<[MaybeUninit<T>]>,
+}
+{# This is the end of the macro invocation: #}
+}
+
+// SAFETY: If T can be moved between threads, RingBuffer can as well.
+unsafe impl<T: Send> Send for RingBuffer<T> {}
+
+impl<T> RingBuffer<T> {
+    // Private helper function.
+    fn construct(capacity: usize) -> NonNull<Self> {
+        let ptr = Self::instantiate(capacity);
+        {% if bip %}
+        ptr.as_mut().skip = ptr.as_ref().capacity();
+        {% endif %}
+        ptr
+    }
+
+    pub(super) fn capacity(&self) -> usize {
+        self.slots.get().len()
+    }
+
+    pub(super) fn data_ptr(&self) -> *mut T {
+        self.slots.get()
+    }
+}
+
+impl<T> Drop for RingBuffer<T> {
+    /// Drops all non-empty slots.
+    fn drop(&mut self) {
+        // SAFETY: this is called exactly once, no references to any elements exist anymore.
+        unsafe { self.drop_all_elements() };
+        // The memory will be deallocated when `ArcRingBuffer` is dropped.
+    }
+}
 {% elif storage == "vec" %}
 #[derive(Debug)]
 pub struct RingBuffer<T> {
@@ -401,7 +457,13 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
         let capacity = Self::update_capacity(capacity);
+        {% if storage == "dst" %}
+        let ptr = Self::construct(capacity);
+        // SAFETY: Memory can be freed by turning the pointer into a `Box`.
+        unsafe { ArcRingBuffer::from_ptr(ptr) }
+        {% else %}
         ArcRingBuffer::new(Self::construct(capacity))
+        {% endif %}
     }
 {% else %}
     /// ```
