@@ -5,9 +5,7 @@ use std::{io::Write as _, marker::PhantomData, ptr::NonNull, time::Duration};
 use rtrb::array::{Consumer, Producer, RingBuffer};
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 
-const SIZE: usize = 16;
-
-type Buffer = RingBuffer<i32, SIZE>;
+type Buffer = RingBuffer<i32, 16>;
 
 fn cast_ptr(shmem: &Shmem) -> NonNull<Buffer> {
     assert!(shmem.len() >= std::mem::size_of::<Buffer>());
@@ -44,7 +42,7 @@ impl Owner<'_> {
         unsafe { self.ptr.as_ref() }
     }
 
-    fn producer(&self) -> Option<Producer<'_, i32, SIZE>> {
+    fn producer(&self) -> Option<Producer<'_, i32>> {
         self.buffer().producer()
     }
 }
@@ -64,7 +62,7 @@ impl Drop for Owner<'_> {
 /// # Safety
 ///
 /// `shmem` must point to correctly initialized memory.
-unsafe fn get_consumer(shmem: &Shmem) -> Option<Consumer<'_, i32, SIZE>> {
+unsafe fn get_consumer(shmem: &Shmem) -> Option<Consumer<'_, i32>> {
     let ptr = cast_ptr(shmem);
     unsafe { ptr.as_ref().consumer() }
 }
