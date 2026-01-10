@@ -47,7 +47,7 @@ use super::Producer;
 /// will be deallocated.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<T> {
-    pub(super) buffer: ArcRingBuffer{% if N %}Unsized{% endif %}<T>,
+    pub(super) buffer: ArcRingBuffer<T>,
     /// A copy of `buffer.head` for quick access.
     ///
     /// This value is always in sync with `buffer.head`.

@@ -5,6 +5,9 @@
 // using the configuration file `codegen/configs/{{ module_name }}.toml`.
 
 {% if storage == "array" %}
+  {% if arc %}
+"ERROR: array storage and arc are not compatible"
+  {% endif %}
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 
@@ -373,19 +376,7 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     /// is is only necessary if it cannot be deduced by the compiler.
     ///
 {% if N %}{% if arc %}
-    /// ```
-    /// use {{ module_path }}::RingBuffer;
-    ///
-    /// let (mut p, c) = RingBuffer::<_, 128>::new();
-    /// assert_eq!(p.push(0.0f32), Ok(()));
-    /// ```
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new() -> (Producer<T, N>, Consumer<T, N>) {
-        const {
-            assert!(Self::update_capacity(N) == N, "`N` must be a power of two");
-        }
-        ArcRingBuffer::new(Self::construct())
-    }
+{# This case is not supported. #}
 {% else %}
     /// ```
     /// use {{ module_path }}::RingBuffer;
