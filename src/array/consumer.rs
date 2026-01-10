@@ -4,8 +4,8 @@
 
 use core::cell::Cell;
 
-use super::{chunks::ReadChunk, ChunkError, PeekError, PopError};
 use super::ring_buffer::RingBufferUnsized;
+use super::{chunks::ReadChunk, ChunkError, PeekError, PopError};
 use super::{HAS_CONSUMER, HAS_PRODUCER};
 use crate::atomic::*;
 

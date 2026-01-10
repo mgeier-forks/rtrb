@@ -10,10 +10,10 @@ use core::cell::Cell;
 use super::arc_ring_buffer::ArcRingBuffer;
 use super::IS_ABANDONED;
 {% endif %}
-use super::{chunks::ReadChunk, ChunkError, PeekError, PopError{% if not N %}, RingBuffer{% endif %}};
 {% if N %}
 use super::ring_buffer::RingBufferUnsized;
 {% endif %}
+use super::{chunks::ReadChunk, ChunkError, PeekError, PopError{% if not N %}, RingBuffer{% endif %}};
 {% if not arc %}
 use super::{HAS_CONSUMER, HAS_PRODUCER};
 {% endif %}

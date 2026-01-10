@@ -4,11 +4,11 @@
 
 use core::cell::Cell;
 
+use super::ring_buffer::RingBufferUnsized;
 use super::{
     chunks::{WriteChunk, WriteChunkUninit},
     ChunkError, PushError,
 };
-use super::ring_buffer::RingBufferUnsized;
 use super::{HAS_CONSUMER, HAS_PRODUCER};
 use crate::atomic::*;
 

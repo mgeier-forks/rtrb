@@ -10,13 +10,13 @@ use core::cell::Cell;
 use super::arc_ring_buffer::ArcRingBuffer;
 use super::IS_ABANDONED;
 {% endif %}
+{% if N %}
+use super::ring_buffer::RingBufferUnsized;
+{% endif %}
 use super::{
     chunks::{WriteChunk, WriteChunkUninit},
     ChunkError, PushError{% if not N %}, RingBuffer{% endif %},
 };
-{% if N %}
-use super::ring_buffer::RingBufferUnsized;
-{% endif %}
 {% if not arc %}
 use super::{HAS_CONSUMER, HAS_PRODUCER};
 {% endif %}
