@@ -110,11 +110,11 @@
 //!
 //! static RB: RingBuffer<i32, 64> = RingBuffer::new();
 //!
-//! let mut p: Producer<'static, i32, 64> = RB.producer().unwrap();
+//! let mut p: Producer<'static, i32> = RB.producer().unwrap();
 //!
 //! // You can create producer and consumer in different threads, or you can
 //! // create them in the same thread and move them to separate threads afterwards.
-//! let mut c: Consumer<'static, i32, 64> = RB.consumer().unwrap();
+//! let mut c: Consumer<'static, i32> = RB.consumer().unwrap();
 //! ```
 //!
 //! A disadvantage ... size restrictions (stack size) ...

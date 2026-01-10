@@ -24,7 +24,11 @@ use crate::atomic::*;
 
 // Only used in documentation:
 #[allow(unused_imports)]
+{% if N %}
+use super::{Consumer, RingBuffer};
+{% else %}
 use super::Consumer;
+{% endif %}
 
 /// The producer side of a [`RingBuffer`].
 ///

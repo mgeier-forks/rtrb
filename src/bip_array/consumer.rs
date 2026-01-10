@@ -11,7 +11,7 @@ use crate::atomic::*;
 
 // Only used in documentation:
 #[allow(unused_imports)]
-use super::Producer;
+use super::{Producer, RingBuffer};
 
 /// The consumer side of a [`RingBuffer`].
 ///
