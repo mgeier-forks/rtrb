@@ -13,11 +13,11 @@
 {% if N %}
   {% set N_param = ", const N: usize" %}
   {% set N_arg = ", N" %}
-  {% set this = "self.0" %}
+  {% set N_self = "self.0" %}
 {% else %}
   {% set N_param = "" %}
   {% set N_arg = "" %}
-  {% set this = "self" %}
+  {% set N_self = "self" %}
 {% endif %}
 {% if arc %}
   {% set arc_tick_a = "" %}

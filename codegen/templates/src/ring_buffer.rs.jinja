@@ -451,12 +451,12 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     /// ```
     pub fn producer(&self) -> Option<Producer<'_, T>> {
         use core::cell::Cell;
-        let old_flags = {{ this }}.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
+        let old_flags = {{ N_self }}.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
         if old_flags & HAS_PRODUCER == 0 {
-            let head = {{ this }}.head.load(Ordering::Relaxed);
-            let tail = {{ this }}.tail.load(Ordering::Relaxed);
+            let head = {{ N_self }}.head.load(Ordering::Relaxed);
+            let tail = {{ N_self }}.tail.load(Ordering::Relaxed);
             Some(Producer {
-                buffer: &{{ this }},
+                buffer: &{{ N_self }},
                 cached_head: Cell::new(head),
                 cached_tail: Cell::new(tail),
             })
@@ -489,12 +489,12 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     /// ```
     pub fn consumer(&self) -> Option<Consumer<'_, T>> {
         use core::cell::Cell;
-        let old_flags = {{ this }}.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
+        let old_flags = {{ N_self }}.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
         if old_flags & HAS_CONSUMER == 0 {
-            let head = {{ this }}.head.load(Ordering::Relaxed);
-            let tail = {{ this }}.tail.load(Ordering::Relaxed);
+            let head = {{ N_self }}.head.load(Ordering::Relaxed);
+            let tail = {{ N_self }}.tail.load(Ordering::Relaxed);
             Some(Consumer {
-                buffer: &{{ this }},
+                buffer: &{{ N_self }},
                 cached_head: Cell::new(head),
                 cached_tail: Cell::new(tail),
             })
@@ -509,7 +509,7 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     ///
     /// See also [`Consumer::has_producer()`].
     pub fn has_producer(&self) -> bool {
-        {{ this }}.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
+        {{ N_self }}.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
     }
 
     /// Returns `true` if a [`Consumer`] exists for this `RingBuffer`.
@@ -518,7 +518,7 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     ///
     /// See also [`Producer::has_consumer()`].
     pub fn has_consumer(&self) -> bool {
-        {{ this }}.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
+        {{ N_self }}.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
     }
 
 {% endif %}
