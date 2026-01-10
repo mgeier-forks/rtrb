@@ -18,6 +18,7 @@ use super::{Consumer, Producer};
 /// which can be obtained with ... TODO
 ///
 /// *See also the [module-level documentation](crate::array).*
+/*
 #[derive(Debug)]
 pub struct RingBuffer<T, const N: usize> {
     pub(super) head: CachePadded<AtomicUsize>,
@@ -30,6 +31,41 @@ pub struct RingBuffer<T, const N: usize> {
     /// *interior mutability* to modify it.
     slots: UnsafeCell<[MaybeUninit<T>; N]>,
 }
+*/
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct RingBuffer<T, const N: usize>(RingBufferInner<[MaybeUninit<T>; N]>);
+
+#[derive(Debug)]
+pub struct RingBufferInner<Container: ?Sized> {
+    pub(super) head: CachePadded<AtomicUsize>,
+    pub(super) tail: CachePadded<AtomicUsize>,
+    pub(super) flags: AtomicU8,
+    /// The possibly unsized container holding slots.
+    ///
+    /// This must be in an `UnsafeCell` because both producer and consumer
+    /// have a (non-mutable) reference to the ring buffer and they use
+    /// *interior mutability* to modify it.
+    slots: UnsafeCell<Container>,
+}
+
+pub(crate) type RingBufferUnsized<T> = RingBufferInner<[MaybeUninit<T>]>;
+
+/*
+// TODO: separate file?
+#[derive(Debug)]
+pub struct RingBufferUnsized<T> {
+    pub(super) head: CachePadded<AtomicUsize>,
+    pub(super) tail: CachePadded<AtomicUsize>,
+    pub(super) flags: AtomicU8,
+    /// The slice holding slots.
+    ///
+    /// This must be in an `UnsafeCell` because both producer and consumer
+    /// have a (non-mutable) reference to the ring buffer and they use
+    /// *interior mutability* to modify it.
+    slots: UnsafeCell<[MaybeUninit<T>]>,
+}
+*/
 
 // SAFETY: If T can be moved between threads, RingBuffer can as well.
 unsafe impl<T: Send, const N: usize> Send for RingBuffer<T, N> {}
@@ -37,14 +73,16 @@ unsafe impl<T: Send, const N: usize> Send for RingBuffer<T, N> {}
 impl<T, const N: usize> RingBuffer<T, N> {
     // Private helper function.
     const fn construct() -> Self {
-        Self {
+        RingBuffer(RingBufferInner {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
             flags: AtomicU8::new(0),
             slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
-        }
+        })
     }
+}
 
+impl<Container> RingBufferInner<Container> {
     pub(super) fn data_ptr(&self) -> *mut T {
         // TODO: what happens if N == 0?
         self.slots.get().cast()
@@ -149,14 +187,14 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// assert_eq!(c.pop(), Ok(10));
     /// assert_eq!(c.pop(), Ok(20));
     /// ```
-    pub fn producer(&self) -> Option<Producer<'_, T, N>> {
+    pub fn producer(&self) -> Option<Producer<'_, T>> {
         use core::cell::Cell;
-        let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
+        let old_flags = self.0.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
         if old_flags & HAS_PRODUCER == 0 {
-            let head = self.head.load(Ordering::Relaxed);
-            let tail = self.tail.load(Ordering::Relaxed);
+            let head = self.0.head.load(Ordering::Relaxed);
+            let tail = self.0.tail.load(Ordering::Relaxed);
             Some(Producer {
-                buffer: self,
+                buffer: &self.0,
                 cached_head: Cell::new(head),
                 cached_tail: Cell::new(tail),
             })
@@ -191,10 +229,10 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// ```
     pub fn consumer(&self) -> Option<Consumer<'_, T, N>> {
         use core::cell::Cell;
-        let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
+        let old_flags = self.0.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
         if old_flags & HAS_CONSUMER == 0 {
-            let head = self.head.load(Ordering::Relaxed);
-            let tail = self.tail.load(Ordering::Relaxed);
+            let head = self.0.head.load(Ordering::Relaxed);
+            let tail = self.0.tail.load(Ordering::Relaxed);
             Some(Consumer {
                 buffer: self,
                 cached_head: Cell::new(head),
@@ -211,7 +249,7 @@ impl<T, const N: usize> RingBuffer<T, N> {
     ///
     /// See also [`Consumer::has_producer()`].
     pub fn has_producer(&self) -> bool {
-        self.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
+        self.0.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
     }
 
     /// Returns `true` if a [`Consumer`] exists for this `RingBuffer`.
@@ -220,9 +258,11 @@ impl<T, const N: usize> RingBuffer<T, N> {
     ///
     /// See also [`Producer::has_consumer()`].
     pub fn has_consumer(&self) -> bool {
-        self.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
+        self.0.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
     }
+}
 
+impl<Container> RingBufferInner<Container> {
     /// Drop all elements that are still in the buffer.
     ///
     /// After this, head and tail indices are invalid.
