@@ -196,16 +196,16 @@ use super::{CopyToUninit, RingBuffer};
 ///
 /// This is returned from [`Producer::write_chunk_uninit()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct WriteChunkUninit<'a, T, const N: usize> {
+pub struct WriteChunkUninit<'a, T> {
     first_ptr: *mut T,
     first_len: usize,
     second_ptr: *mut T,
     second_len: usize,
-    producer: &'a Producer<'a, T, N>,
+    producer: &'a Producer<'a, T>,
 }
 
-impl<'a, T, const N: usize> WriteChunkUninit<'a, T, N> {
-    pub(super) unsafe fn new(producer: &'a Producer<T, N>, n: usize, offset: usize) -> Self {
+impl<'a, T> WriteChunkUninit<'a, T> {
+    pub(super) unsafe fn new(producer: &'a Producer<T>, n: usize, offset: usize) -> Self {
         let first_len = n.min(producer.buffer.capacity() - offset);
         Self {
             // SAFETY: Caller must guarantee that `offset` is valid.
@@ -218,9 +218,9 @@ impl<'a, T, const N: usize> WriteChunkUninit<'a, T, N> {
     }
 }
 
-impl<'a, T: Default, const N: usize> From<WriteChunkUninit<'a, T, N>> for WriteChunk<'a, T, N> {
+impl<'a, T: Default> From<WriteChunkUninit<'a, T>> for WriteChunk<'a, T> {
     /// Fills all slots with the [`Default`] value.
-    fn from(chunk: WriteChunkUninit<'a, T, N>) -> Self {
+    fn from(chunk: WriteChunkUninit<'a, T>) -> Self {
         for i in 0..chunk.first_len {
             // SAFETY: i is in a valid range.
             unsafe { chunk.first_ptr.add(i).write(Default::default()) };
@@ -241,9 +241,9 @@ impl<'a, T: Default, const N: usize> From<WriteChunkUninit<'a, T, N>> for WriteC
 /// which also allows moving items from an iterator into the ring buffer
 /// by means of [`WriteChunkUninit::fill_from_iter()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct WriteChunk<'a, T, const N: usize>(Option<WriteChunkUninit<'a, T, N>>);
+pub struct WriteChunk<'a, T>(Option<WriteChunkUninit<'a, T>>);
 
-impl<T, const N: usize> Drop for WriteChunk<'_, T, N> {
+impl<T> Drop for WriteChunk<'_, T> {
     fn drop(&mut self) {
         // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
         if let Some(mut chunk) = self.0.take() {
@@ -301,7 +301,7 @@ impl<'a, T, const N: usize> ReadChunk<'a, T, N> {
 /// ```
 // SAFETY: WriteChunkUninit only exists while a unique reference to the producer is held.
 // It is therefore safe to move it to another thread.
-unsafe impl<T: Send, const N: usize> Send for WriteChunkUninit<'_, T, N> {}
+unsafe impl<T: Send> Send for WriteChunkUninit<'_, T> {}
 
 /// It (and any wrapper structs) can be moved ...
 /// ```
@@ -319,7 +319,7 @@ unsafe impl<T: Send, const N: usize> Send for WriteChunkUninit<'_, T, N> {}
 // It is therefore safe to move it to another thread.
 unsafe impl<T: Send, const N: usize> Send for ReadChunk<'_, T, N> {}
 
-impl<T, const N: usize> WriteChunkUninit<'_, T, N> {
+impl<T> WriteChunkUninit<'_, T> {
     /// Returns two slices for writing to the requested slots.
     ///
     /// The first slice can only be empty if `0` slots have been requested.
@@ -481,7 +481,7 @@ impl<T, const N: usize> WriteChunkUninit<'_, T, N> {
     }
 }
 
-impl<T, const N: usize> WriteChunk<'_, T, N> {
+impl<T> WriteChunk<'_, T> {
     /// Returns two slices for writing to the requested slots.
     ///
     /// All slots are initially filled with their [`Default`] value.
@@ -768,7 +768,7 @@ impl<T, const N: usize> ExactSizeIterator for ReadChunkIntoIter<'_, T, N> {}
 impl<T, const N: usize> core::iter::FusedIterator for ReadChunkIntoIter<'_, T, N> {}
 
 #[cfg(feature = "std")]
-impl<const N: usize> std::io::Write for Producer<'_, u8, N> {
+impl std::io::Write for Producer<'_, u8> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         use super::ChunkError::TooFewSlots;

@@ -16,18 +16,24 @@ use super::{Consumer, Producer};
 /// which can be obtained with ... TODO
 ///
 /// *See also the [module-level documentation](crate::embedded).*
+#[derive(Debug, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct RingBuffer<T, const N: usize>(RingBufferInner<[MaybeUninit<T>; N]>);
+
 #[derive(Debug)]
-pub struct RingBuffer<T, const N: usize> {
-    pub(super) head: AtomicUsize,
-    pub(super) tail: AtomicUsize,
+pub struct RingBufferInner<Container: ?Sized> {
+    pub(super) head: CachePadded<AtomicUsize>,
+    pub(super) tail: CachePadded<AtomicUsize>,
     pub(super) flags: AtomicU8,
-    /// The static array holding slots.
+    /// The possibly unsized container holding slots.
     ///
     /// This must be in an `UnsafeCell` because both producer and consumer
     /// have a (non-mutable) reference to the ring buffer and they use
     /// *interior mutability* to modify it.
-    slots: UnsafeCell<[MaybeUninit<T>; N]>,
+    slots: UnsafeCell<Container>,
 }
+
+pub(crate) type RingBufferUnsized<T> = RingBufferInner<[MaybeUninit<T>]>;
 
 // SAFETY: If T can be moved between threads, RingBuffer can as well.
 unsafe impl<T: Send, const N: usize> Send for RingBuffer<T, N> {}
@@ -35,34 +41,37 @@ unsafe impl<T: Send, const N: usize> Send for RingBuffer<T, N> {}
 impl<T, const N: usize> RingBuffer<T, N> {
     // Private helper function.
     const fn construct() -> Self {
-        Self {
+        RingBuffer(RingBufferInner {
             head: AtomicUsize::new(0),
             tail: AtomicUsize::new(0),
             flags: AtomicU8::new(0),
             slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
-        }
-    }
-
-    pub(super) fn data_ptr(&self) -> *mut T {
-        // TODO: what happens if N == 0?
-        self.slots.get().cast()
-    }
-
-    pub(super) fn capacity(&self) -> usize {
-        N
+        })
     }
 }
 
 impl<T, const N: usize> Drop for RingBuffer<T, N> {
     fn drop(&mut self) {
+        let inner: &mut RingBufferUnsized<T> = &mut self.0;
         // SAFETY: this is called exactly once, no references to any elements exist anymore.
-        unsafe { self.drop_all_elements() };
+        unsafe { inner.drop_all_elements() };
     }
 }
 
 impl<T, const N: usize> Default for RingBuffer<T, N> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<T> RingBufferUnsized<T> {
+    pub(super) fn data_ptr(&self) -> *mut T {
+        // TODO: what happens if N == 0?
+        self.slots.get().cast()
+    }
+
+    pub(super) fn capacity(&self) -> usize {
+        self.slots.get().len()
     }
 }
 
@@ -147,14 +156,14 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// assert_eq!(c.pop(), Ok(10));
     /// assert_eq!(c.pop(), Ok(20));
     /// ```
-    pub fn producer(&self) -> Option<Producer<'_, T, N>> {
+    pub fn producer(&self) -> Option<Producer<'_, T>> {
         use core::cell::Cell;
-        let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
+        let old_flags = self.0.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
         if old_flags & HAS_PRODUCER == 0 {
-            let head = self.head.load(Ordering::Relaxed);
-            let tail = self.tail.load(Ordering::Relaxed);
+            let head = self.0.head.load(Ordering::Relaxed);
+            let tail = self.0.tail.load(Ordering::Relaxed);
             Some(Producer {
-                buffer: self,
+                buffer: &self.0,
                 cached_head: Cell::new(head),
                 cached_tail: Cell::new(tail),
             })
@@ -187,14 +196,14 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// assert!(rb.has_consumer());
     /// assert_eq!(c.pop(), Ok(20));
     /// ```
-    pub fn consumer(&self) -> Option<Consumer<'_, T, N>> {
+    pub fn consumer(&self) -> Option<Consumer<'_, T>> {
         use core::cell::Cell;
-        let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
+        let old_flags = self.0.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
         if old_flags & HAS_CONSUMER == 0 {
-            let head = self.head.load(Ordering::Relaxed);
-            let tail = self.tail.load(Ordering::Relaxed);
+            let head = self.0.head.load(Ordering::Relaxed);
+            let tail = self.0.tail.load(Ordering::Relaxed);
             Some(Consumer {
-                buffer: self,
+                buffer: &self.0,
                 cached_head: Cell::new(head),
                 cached_tail: Cell::new(tail),
             })
@@ -209,7 +218,7 @@ impl<T, const N: usize> RingBuffer<T, N> {
     ///
     /// See also [`Consumer::has_producer()`].
     pub fn has_producer(&self) -> bool {
-        self.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
+        self.0.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
     }
 
     /// Returns `true` if a [`Consumer`] exists for this `RingBuffer`.
@@ -218,9 +227,16 @@ impl<T, const N: usize> RingBuffer<T, N> {
     ///
     /// See also [`Producer::has_consumer()`].
     pub fn has_consumer(&self) -> bool {
-        self.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
+        self.0.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
     }
 
+    const fn update_capacity(capacity: usize) -> usize {
+        // No need to update, we are not relying on power-of-two sizes.
+        capacity
+    }
+}
+
+impl<T> RingBufferUnsized<T> {
     /// Drop all elements that are still in the buffer.
     ///
     /// After this, head and tail indices are invalid.
@@ -242,11 +258,6 @@ impl<T, const N: usize> RingBuffer<T, N> {
             unsafe { self.slot_ptr(head).drop_in_place() };
             head = self.increment1(head);
         }
-    }
-
-    const fn update_capacity(capacity: usize) -> usize {
-        // No need to update, we are not relying on power-of-two sizes.
-        capacity
     }
 
     pub(super) fn collapse_position(&self, pos: usize) -> usize {

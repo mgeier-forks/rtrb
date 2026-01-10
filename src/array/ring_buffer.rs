@@ -18,7 +18,7 @@ use super::{Consumer, Producer};
 /// which can be obtained with ... TODO
 ///
 /// *See also the [module-level documentation](crate::array).*
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct RingBuffer<T, const N: usize>(RingBufferInner<[MaybeUninit<T>; N]>);
 
@@ -205,7 +205,7 @@ impl<T, const N: usize> RingBuffer<T, N> {
             let head = self.0.head.load(Ordering::Relaxed);
             let tail = self.0.tail.load(Ordering::Relaxed);
             Some(Consumer {
-                buffer: self,
+                buffer: &self.0,
                 cached_head: Cell::new(head),
                 cached_tail: Cell::new(tail),
             })

@@ -232,9 +232,9 @@ impl<'a, T: Default, const N: usize> From<WriteChunkUninit<'a, T, N>> for WriteC
 /// which also allows moving items from an iterator into the ring buffer
 /// by means of [`WriteChunkUninit::fill_from_iter()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct WriteChunk<'a, T, const N: usize>(Option<WriteChunkUninit<'a, T, N>>);
+pub struct WriteChunk<'a, T>(Option<WriteChunkUninit<'a, T>>);
 
-impl<T, const N: usize> Drop for WriteChunk<'_, T, N> {
+impl<T> Drop for WriteChunk<'_, T> {
     fn drop(&mut self) {
         // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
         if let Some(mut chunk) = self.0.take() {
@@ -286,7 +286,7 @@ impl<'a, T, const N: usize> ReadChunk<'a, T, N> {
 /// ```
 // SAFETY: WriteChunkUninit only exists while a unique reference to the producer is held.
 // It is therefore safe to move it to another thread.
-unsafe impl<T: Send, const N: usize> Send for WriteChunkUninit<'_, T, N> {}
+unsafe impl<T: Send> Send for WriteChunkUninit<'_, T> {}
 
 /// It (and any wrapper structs) can be moved ...
 /// ```
@@ -304,7 +304,7 @@ unsafe impl<T: Send, const N: usize> Send for WriteChunkUninit<'_, T, N> {}
 // It is therefore safe to move it to another thread.
 unsafe impl<T: Send, const N: usize> Send for ReadChunk<'_, T, N> {}
 
-impl<T, const N: usize> WriteChunkUninit<'_, T, N> {
+impl<T> WriteChunkUninit<'_, T> {
     /// Returns a slice for writing to the requested slots.
     ///
     /// The extension trait [`CopyToUninit`] can be used
@@ -473,7 +473,7 @@ impl<T, const N: usize> WriteChunkUninit<'_, T, N> {
     }
 }
 
-impl<T, const N: usize> WriteChunk<'_, T, N> {
+impl<T> WriteChunk<'_, T> {
     /// Returns a slice for writing to the requested slots.
     ///
     /// All slots are initially filled with their [`Default`] value.
@@ -726,7 +726,7 @@ impl<T, const N: usize> ExactSizeIterator for ReadChunkIntoIter<'_, T, N> {}
 impl<T, const N: usize> core::iter::FusedIterator for ReadChunkIntoIter<'_, T, N> {}
 
 #[cfg(feature = "std")]
-impl<const N: usize> std::io::Write for Producer<'_, u8, N> {
+impl std::io::Write for Producer<'_, u8> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         use super::ChunkError::TooFewSlots;

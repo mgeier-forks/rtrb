@@ -26,8 +26,8 @@ use super::Producer;
 ///
 /// A `Consumer` can only be created with [`RingBuffer::consumer()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct Consumer<'a, T, const N: usize> {
-    pub(super) buffer: &'a RingBuffer<T, N>,
+pub struct Consumer<'a, T> {
+    pub(super) buffer: &'a RingBufferUnsized<T>,
     pub(super) cached_head: Cell<usize>,
     pub(super) cached_tail: Cell<usize>,
 }

@@ -47,13 +47,13 @@ impl<T> Drop for Producer<'_, T> {
 /// ```
 /// use rtrb::array::Producer;
 /// fn assert_send<X: Send>() {}
-/// assert_send::<Producer<u8, 8>>();
+/// assert_send::<Producer<u8>>();
 /// ```
 /// ... but not shared between threads:
 /// ```compile_fail
 /// # use rtrb::array::Producer;
 /// fn assert_sync<X: Sync>() {}
-/// assert_sync::<Producer<u8, 8>>();
+/// assert_sync::<Producer<u8>>();
 /// ```
 // SAFETY: After moving a producer to another thread, there is still only a single thread
 // that can access the producer side of the queue.
