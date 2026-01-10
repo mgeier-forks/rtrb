@@ -37,22 +37,28 @@ use super::{Consumer, Producer};
 ///
 /// *See also the [module-level documentation](crate::{{ module_name }}).*
 {% if storage == "array" %}
+#[derive(Debug, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct RingBuffer<T, const N: usize>(RingBufferInner<[MaybeUninit<T>; N]>);
+
 #[derive(Debug)]
-pub struct RingBuffer<T, const N: usize> {
-    pub(super) head: {{ CachePadded("AtomicUsize") }},
-    pub(super) tail: {{ CachePadded("AtomicUsize") }},
+pub struct RingBufferInner<Container: ?Sized> {
+    pub(super) head: CachePadded<AtomicUsize>,
+    pub(super) tail: CachePadded<AtomicUsize>,
     {% if bip %}
     // TODO: measure whether CachePadded helps
     pub(super) skip: {{ CachePadded("AtomicUsize") }},
     {% endif %}
     pub(super) flags: AtomicU8,
-    /// The static array holding slots.
+    /// The possibly unsized container holding slots.
     ///
     /// This must be in an `UnsafeCell` because both producer and consumer
     /// have a (non-mutable) reference to the ring buffer and they use
     /// *interior mutability* to modify it.
-    slots: UnsafeCell<[MaybeUninit<T>; N]>,
+    slots: UnsafeCell<Container>,
 }
+
+pub(crate) type RingBufferUnsized<T> = RingBufferInner<[MaybeUninit<T>]>;
 
 // SAFETY: If T can be moved between threads, RingBuffer can as well.
 unsafe impl<T: Send, const N: usize> Send for RingBuffer<T, N> {}
@@ -60,7 +66,7 @@ unsafe impl<T: Send, const N: usize> Send for RingBuffer<T, N> {}
 impl<T, const N: usize> RingBuffer<T, N> {
     // Private helper function.
     const fn construct() -> Self {
-        Self {
+        RingBuffer(RingBufferInner {
             head: {{ CachePadded_new("AtomicUsize::new(0)") }},
             tail: {{ CachePadded_new("AtomicUsize::new(0)") }},
             {% if bip %}
@@ -68,23 +74,15 @@ impl<T, const N: usize> RingBuffer<T, N> {
             {% endif %}
             flags: AtomicU8::new(0),
             slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
-        }
-    }
-
-    pub(super) fn data_ptr(&self) -> *mut T {
-        // TODO: what happens if N == 0?
-        self.slots.get().cast()
-    }
-
-    pub(super) fn capacity(&self) -> usize {
-        N
+        })
     }
 }
 
 impl<T, const N: usize> Drop for RingBuffer<T, N> {
     fn drop(&mut self) {
+        let inner: &mut RingBufferUnsized<T> = &mut self.0;
         // SAFETY: this is called exactly once, no references to any elements exist anymore.
-        unsafe { self.drop_all_elements() };
+        unsafe { inner.drop_all_elements() };
     }
 }
 
@@ -95,6 +93,18 @@ impl<T, const N: usize> Default for RingBuffer<T, N> {
     }
 }
 {% endif %}
+
+impl<T> RingBufferUnsized<T> {
+    pub(super) fn data_ptr(&self) -> *mut T {
+        // TODO: what happens if N == 0?
+        self.slots.get().cast()
+    }
+
+    pub(super) fn capacity(&self) -> usize {
+        self.slots.get().len()
+    }
+}
+
 {% elif storage == "dst" %}
 compile_error!("TODO: dst storage");
 {% elif storage == "vec" %}
@@ -429,14 +439,14 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     /// assert_eq!(c.pop(), Ok(10));
     /// assert_eq!(c.pop(), Ok(20));
     /// ```
-    pub fn producer(&self) -> Option<Producer<'_, T{{ N_arg }}>> {
+    pub fn producer(&self) -> Option<Producer<'_, T>> {
         use core::cell::Cell;
-        let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
+        let old_flags = {{ self }}.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
         if old_flags & HAS_PRODUCER == 0 {
-            let head = self.head.load(Ordering::Relaxed);
-            let tail = self.tail.load(Ordering::Relaxed);
+            let head = {{ self }}.head.load(Ordering::Relaxed);
+            let tail = {{ self }}.tail.load(Ordering::Relaxed);
             Some(Producer {
-                buffer: self,
+                buffer: &{{ self }},
                 cached_head: Cell::new(head),
                 cached_tail: Cell::new(tail),
             })
@@ -467,15 +477,14 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     /// assert!(rb.has_consumer());
     /// assert_eq!(c.pop(), Ok(20));
     /// ```
-    pub fn consumer(&self) -> Option<Consumer<'_, T{{ N_arg }}>> {
+    pub fn consumer(&self) -> Option<Consumer<'_, T>> {
         use core::cell::Cell;
-        let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
+        let old_flags = {{ self }}.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
         if old_flags & HAS_CONSUMER == 0 {
-            let head = self.head.load(Ordering::Relaxed);
-            let tail = self.tail.load(Ordering::Relaxed);
+            let head = {{ self }}.head.load(Ordering::Relaxed);
+            let tail = {{ self }}.tail.load(Ordering::Relaxed);
             Some(Consumer {
-                buffer: self,
-                cached_head: Cell::new(head),
+                buffer: &{{ self }}                cached_head: Cell::new(head),
                 cached_tail: Cell::new(tail),
             })
         } else {
@@ -489,7 +498,7 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     ///
     /// See also [`Consumer::has_producer()`].
     pub fn has_producer(&self) -> bool {
-        self.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
+        {{ self }}.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
     }
 
     /// Returns `true` if a [`Consumer`] exists for this `RingBuffer`.
@@ -498,8 +507,25 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     ///
     /// See also [`Producer::has_consumer()`].
     pub fn has_consumer(&self) -> bool {
-        self.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
+        {{ self }}.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
     }
+
+{% endif %}
+{% if pow2 %}
+    const fn update_capacity(capacity: usize) -> usize {
+        capacity.next_power_of_two()
+    }
+{% else %}
+    const fn update_capacity(capacity: usize) -> usize {
+        // No need to update, we are not relying on power-of-two sizes.
+        capacity
+    }
+{% endif %}
+{% if N %}
+}
+
+impl<T> RingBufferUnsized<T> {
+{% else %}
 
 {% endif %}
     /// Drop all elements that are still in the buffer.
@@ -532,17 +558,6 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
             head = self.increment1(head);
         }
     }
-
-{% if pow2 %}
-    const fn update_capacity(capacity: usize) -> usize {
-        capacity.next_power_of_two()
-    }
-{% else %}
-    const fn update_capacity(capacity: usize) -> usize {
-        // No need to update, we are not relying on power-of-two sizes.
-        capacity
-    }
-{% endif %}
 
 {% if pow2 %}
     pub(super) fn collapse_position(&self, pos: usize) -> usize {

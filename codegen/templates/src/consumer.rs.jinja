@@ -59,8 +59,8 @@ pub struct Consumer<T{{ N_param }}> {
 ///
 /// A `Consumer` can only be created with [`RingBuffer::consumer()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct Consumer<'a, T{{ N_param }}> {
-    pub(super) buffer: &'a RingBuffer<T{{ N_arg }}>,
+pub struct Consumer<'a, T> {
+    pub(super) buffer: &'a RingBuffer{{ if_N("Unsized") }}<T>,
     pub(super) cached_head: Cell<usize>,
     pub(super) cached_tail: Cell<usize>,
 }

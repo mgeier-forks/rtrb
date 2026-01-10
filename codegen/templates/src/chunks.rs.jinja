@@ -281,16 +281,16 @@ impl<'a, T: Default{{ N_param }}> From<WriteChunkUninit<'a, T{{ N_arg }}>> for W
 }
 {% else %}
 #[derive(Debug, PartialEq, Eq)]
-pub struct WriteChunkUninit<'a, T{{ N_param }}> {
+pub struct WriteChunkUninit<'a, T> {
     first_ptr: *mut T,
     first_len: usize,
     second_ptr: *mut T,
     second_len: usize,
-    producer: &'a Producer<{{ arc_tick_a }}T{{ N_arg }}>,
+    producer: &'a Producer<{{ arc_tick_a }}T>,
 }
 
-impl<'a, T{{ N_param }}> WriteChunkUninit<'a, T{{ N_arg }}> {
-    pub(super) unsafe fn new(producer: &'a Producer<T{{ N_arg }}>, n: usize, offset: usize) -> Self {
+impl<'a, T> WriteChunkUninit<'a, T> {
+    pub(super) unsafe fn new(producer: &'a Producer<T>, n: usize, offset: usize) -> Self {
         let first_len = n.min(producer.buffer.capacity() - offset);
         Self {
             // SAFETY: Caller must guarantee that `offset` is valid.
@@ -303,9 +303,9 @@ impl<'a, T{{ N_param }}> WriteChunkUninit<'a, T{{ N_arg }}> {
     }
 }
 
-impl<'a, T: Default{{ N_param }}> From<WriteChunkUninit<'a, T{{ N_arg }}>> for WriteChunk<'a, T{{ N_arg }}> {
+impl<'a, T: Default> From<WriteChunkUninit<'a, T>> for WriteChunk<'a, T> {
     /// Fills all slots with the [`Default`] value.
-    fn from(chunk: WriteChunkUninit<'a, T{{ N_arg }}>) -> Self {
+    fn from(chunk: WriteChunkUninit<'a, T>) -> Self {
         for i in 0..chunk.first_len {
             // SAFETY: i is in a valid range.
             unsafe { chunk.first_ptr.add(i).write(Default::default()) };
@@ -327,9 +327,9 @@ impl<'a, T: Default{{ N_param }}> From<WriteChunkUninit<'a, T{{ N_arg }}>> for W
 /// which also allows moving items from an iterator into the ring buffer
 /// by means of [`WriteChunkUninit::fill_from_iter()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct WriteChunk<'a, T{{ N_param }}>(Option<WriteChunkUninit<'a, T{{ N_arg }}>>);
+pub struct WriteChunk<'a, T>(Option<WriteChunkUninit<'a, T>>);
 
-impl<T{{ N_param }}> Drop for WriteChunk<'_, T{{ N_arg }}> {
+impl<T> Drop for WriteChunk<'_, T> {
     fn drop(&mut self) {
         // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
         if let Some(mut chunk) = self.0.take() {
@@ -407,7 +407,7 @@ impl<'a, T{{ N_param }}> ReadChunk<'a, T{{ N_arg }}> {
 /// ```
 // SAFETY: WriteChunkUninit only exists while a unique reference to the producer is held.
 // It is therefore safe to move it to another thread.
-unsafe impl<T: Send{{ N_param }}> Send for WriteChunkUninit<'_, T{{ N_arg }}> {}
+unsafe impl<T: Send> Send for WriteChunkUninit<'_, T> {}
 
 /// It (and any wrapper structs) can be moved ...
 /// ```
@@ -425,7 +425,7 @@ unsafe impl<T: Send{{ N_param }}> Send for WriteChunkUninit<'_, T{{ N_arg }}> {}
 // It is therefore safe to move it to another thread.
 unsafe impl<T: Send{{ N_param }}> Send for ReadChunk<'_, T{{ N_arg }}> {}
 
-impl<T{{ N_param }}> WriteChunkUninit<'_, T{{ N_arg }}> {
+impl<T> WriteChunkUninit<'_, T> {
 {% if contiguous %}
     /// Returns a slice for writing to the requested slots.
     ///
@@ -671,7 +671,7 @@ impl<T{{ N_param }}> WriteChunkUninit<'_, T{{ N_arg }}> {
 {% endif %}
 }
 
-impl<T{{ N_param }}> WriteChunk<'_, T{{ N_arg }}> {
+impl<T> WriteChunk<'_, T> {
 {% if contiguous %}
     /// Returns a slice for writing to the requested slots.
     ///
