@@ -252,14 +252,14 @@ use super::{CopyToUninit, RingBuffer};
 /// This is returned from [`Producer::write_chunk_uninit()`].
 {% if contiguous %}
 #[derive(Debug, PartialEq, Eq)]
-pub struct WriteChunkUninit<'a, T{{ N_param }}> {
+pub struct WriteChunkUninit<'a, T> {
     ptr: *mut T,
     len: usize,
-    producer: &'a Producer<{{ arc_tick_a }}T{{ N_arg }}>,
+    producer: &'a Producer<{{ arc_tick_a }}T>,
 }
 
-impl<'a, T{{ N_param }}> WriteChunkUninit<'a, T{{ N_arg }}> {
-    pub(super) unsafe fn new(producer: &'a Producer<T{{ N_arg }}>, n: usize, offset: usize) -> Self {
+impl<'a, T> WriteChunkUninit<'a, T> {
+    pub(super) unsafe fn new(producer: &'a Producer<T>, n: usize, offset: usize) -> Self {
         Self {
             // SAFETY: Caller must guarantee that `offset` is valid.
             ptr: unsafe { producer.buffer.data_ptr().add(offset) },
@@ -269,9 +269,9 @@ impl<'a, T{{ N_param }}> WriteChunkUninit<'a, T{{ N_arg }}> {
     }
 }
 
-impl<'a, T: Default{{ N_param }}> From<WriteChunkUninit<'a, T{{ N_arg }}>> for WriteChunk<'a, T{{ N_arg }}> {
+impl<'a, T: Default> From<WriteChunkUninit<'a, T>> for WriteChunk<'a, T> {
     /// Fills all slots with the [`Default`] value.
-    fn from(chunk: WriteChunkUninit<'a, T{{ N_arg }}>) -> Self {
+    fn from(chunk: WriteChunkUninit<'a, T>) -> Self {
         for i in 0..chunk.len {
             // SAFETY: i is in a valid range.
             unsafe { chunk.ptr.add(i).write(Default::default()) };
@@ -345,14 +345,14 @@ impl<T> Drop for WriteChunk<'_, T> {
 /// This is returned from [`Consumer::read_chunk()`].
 {% if contiguous %}
 #[derive(Debug, PartialEq, Eq)]
-pub struct ReadChunk<'a, T{{ N_param }}> {
+pub struct ReadChunk<'a, T> {
     ptr: *mut T,
     len: usize,
-    consumer: &'a Consumer<{{ arc_tick_a }}T{{ N_arg }}>,
+    consumer: &'a Consumer<{{ arc_tick_a }}T>,
 }
 
-impl<'a, T{{ N_param }}> ReadChunk<'a, T{{ N_arg }}> {
-    pub(super) unsafe fn new(consumer: &'a Consumer<T{{ N_arg }}>, n: usize, offset: usize) -> Self {
+impl<'a, T> ReadChunk<'a, T> {
+    pub(super) unsafe fn new(consumer: &'a Consumer<T>, n: usize, offset: usize) -> Self {
         Self {
             // SAFETY: Caller must guarantee that `offset` is valid.
             ptr: unsafe { consumer.buffer.data_ptr().add(offset) },
@@ -363,16 +363,16 @@ impl<'a, T{{ N_param }}> ReadChunk<'a, T{{ N_arg }}> {
 }
 {% else %}
 #[derive(Debug, PartialEq, Eq)]
-pub struct ReadChunk<'a, T{{ N_param }}> {
+pub struct ReadChunk<'a, T> {
     first_ptr: *mut T,
     first_len: usize,
     second_ptr: *mut T,
     second_len: usize,
-    consumer: &'a Consumer<{{ arc_tick_a }}T{{ N_arg }}>,
+    consumer: &'a Consumer<{{ arc_tick_a }}T>,
 }
 
-impl<'a, T{{ N_param }}> ReadChunk<'a, T{{ N_arg }}> {
-    pub(super) unsafe fn new(consumer: &'a Consumer<T{{ N_arg }}>, n: usize, offset: usize) -> Self {
+impl<'a, T> ReadChunk<'a, T> {
+    pub(super) unsafe fn new(consumer: &'a Consumer<T>, n: usize, offset: usize) -> Self {
         let b = &consumer.buffer;
         let first_len = n.min(b.capacity() - offset);
         Self {
@@ -391,19 +391,19 @@ impl<'a, T{{ N_param }}> ReadChunk<'a, T{{ N_arg }}> {
 /// ```
 /// use {{ module_path }}::chunks::{WriteChunk, WriteChunkUninit};
 /// fn assert_send<X: Send>() {}
-/// assert_send::<WriteChunkUninit<u8{{ if_N(", 8") }}>>();
-/// assert_send::<WriteChunk<u8{{ if_N(", 8") }}>>();
+/// assert_send::<WriteChunkUninit<u8>>();
+/// assert_send::<WriteChunk<u8>>();
 /// ```
 /// ... but not shared between threads:
 /// ```compile_fail
 /// # use {{ module_path }}::chunks::WriteChunkUninit;
 /// fn assert_sync<X: Sync>() {}
-/// assert_sync::<WriteChunkUninit<u8{{ if_N(", 8") }}>>();
+/// assert_sync::<WriteChunkUninit<u8>>();
 /// ```
 /// ```compile_fail
 /// # use {{ module_path }}::chunks::WriteChunk;
 /// # fn assert_sync<X: Sync>() {}
-/// assert_sync::<WriteChunk<u8{{ if_N(", 8") }}>>();
+/// assert_sync::<WriteChunk<u8>>();
 /// ```
 // SAFETY: WriteChunkUninit only exists while a unique reference to the producer is held.
 // It is therefore safe to move it to another thread.
@@ -413,17 +413,17 @@ unsafe impl<T: Send> Send for WriteChunkUninit<'_, T> {}
 /// ```
 /// use {{ module_path }}::chunks::ReadChunk;
 /// fn assert_send<X: Send>() {}
-/// assert_send::<ReadChunk<u8{{ if_N(", 8") }}>>();
+/// assert_send::<ReadChunk<u8>>();
 /// ```
 /// ... but not shared between threads:
 /// ```compile_fail
 /// # use {{ module_path }}::chunks::ReadChunk;
 /// fn assert_sync<X: Sync>() {}
-/// assert_sync::<ReadChunk<u8{{ if_N(", 8") }}>>();
+/// assert_sync::<ReadChunk<u8>>();
 /// ```
 // SAFETY: ReadChunk only exists while a unique reference to the consumer is held.
 // It is therefore safe to move it to another thread.
-unsafe impl<T: Send{{ N_param }}> Send for ReadChunk<'_, T{{ N_arg }}> {}
+unsafe impl<T: Send> Send for ReadChunk<'_, T> {}
 
 impl<T> WriteChunkUninit<'_, T> {
 {% if contiguous %}
@@ -757,7 +757,7 @@ impl<T> WriteChunk<'_, T> {
     }
 }
 
-impl<T{{ N_param }}> ReadChunk<'_, T{{ N_arg }}> {
+impl<T> ReadChunk<'_, T> {
 {% if contiguous %}
     /// Returns a slice for reading from the requested slots.
 {% else %}
@@ -942,9 +942,9 @@ impl<T{{ N_param }}> ReadChunk<'_, T{{ N_arg }}> {
 {% endif %}
 }
 
-impl<'a, T{{ N_param }}> IntoIterator for ReadChunk<'a, T{{ N_arg }}> {
+impl<'a, T> IntoIterator for ReadChunk<'a, T> {
     type Item = T;
-    type IntoIter = ReadChunkIntoIter<'a, T{{ N_arg }}>;
+    type IntoIter = ReadChunkIntoIter<'a, T>;
 
     /// Turns a [`ReadChunk`] into an iterator.
     ///
@@ -966,13 +966,13 @@ impl<'a, T{{ N_param }}> IntoIterator for ReadChunk<'a, T{{ N_arg }}> {
 /// When this `struct` is dropped, the iterated slots are made available for writing again.
 /// Non-iterated items remain in the ring buffer.
 #[derive(Debug, PartialEq, Eq)]
-pub struct ReadChunkIntoIter<'a, T{{ N_param }}> {
-    chunk: ReadChunk<'a, T{{ N_arg }}>,
+pub struct ReadChunkIntoIter<'a, T> {
+    chunk: ReadChunk<'a, T>,
     iterated: usize,
 }
 
 // TODO: take "skip" into account?
-impl<T{{ N_param }}> Drop for ReadChunkIntoIter<'_, T{{ N_arg }}> {
+impl<T> Drop for ReadChunkIntoIter<'_, T> {
     /// Makes all iterated slots available for writing again.
     ///
     /// All iterated items have been moved out of the buffer and
@@ -987,7 +987,7 @@ impl<T{{ N_param }}> Drop for ReadChunkIntoIter<'_, T{{ N_arg }}> {
     }
 }
 
-impl<T{{ N_param }}> Iterator for ReadChunkIntoIter<'_, T{{ N_arg }}> {
+impl<T> Iterator for ReadChunkIntoIter<'_, T> {
     type Item = T;
 
 {% if contiguous %}
@@ -1036,9 +1036,9 @@ impl<T{{ N_param }}> Iterator for ReadChunkIntoIter<'_, T{{ N_arg }}> {
 {% endif %}
 }
 
-impl<T{{ N_param }}> ExactSizeIterator for ReadChunkIntoIter<'_, T{{ N_arg }}> {}
+impl<T> ExactSizeIterator for ReadChunkIntoIter<'_, T> {}
 
-impl<T{{ N_param }}> core::iter::FusedIterator for ReadChunkIntoIter<'_, T{{ N_arg }}> {}
+impl<T> core::iter::FusedIterator for ReadChunkIntoIter<'_, T> {}
 
 #[cfg(feature = "std")]
 impl std::io::Write for Producer<{{ arc_tick_blank }}u8> {
@@ -1087,7 +1087,7 @@ impl std::io::Write for Producer<{{ arc_tick_blank }}u8> {
 }
 
 #[cfg(feature = "std")]
-impl{{ if_N("<const N: usize>") }} std::io::Read for Consumer<{{ arc_tick_blank }}u8{{ N_arg }}> {
+impl std::io::Read for Consumer<{{ arc_tick_blank }}u8> {
 {% if contiguous %}
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {

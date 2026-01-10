@@ -22,8 +22,8 @@ pub struct RingBuffer<T, const N: usize>(RingBufferInner<[MaybeUninit<T>; N]>);
 
 #[derive(Debug)]
 pub struct RingBufferInner<Container: ?Sized> {
-    pub(super) head: CachePadded<AtomicUsize>,
-    pub(super) tail: CachePadded<AtomicUsize>,
+    pub(super) head: AtomicUsize,
+    pub(super) tail: AtomicUsize,
     pub(super) flags: AtomicU8,
     /// The possibly unsized container holding slots.
     ///
@@ -91,13 +91,13 @@ unsafe impl<T, const N: usize> Sync for RingBuffer<T, N> {}
 // NB: `Send` might be implemented by different storage backends,
 // but it is not necessary for correct behavior of the RingBuffer.
 
-impl<T, const N: usize> PartialEq for RingBuffer<T, N> {
+impl<Container: ?Sized> PartialEq for RingBufferInner<Container> {
     fn eq(&self, other: &Self) -> bool {
         core::ptr::eq(self, other)
     }
 }
 
-impl<T, const N: usize> Eq for RingBuffer<T, N> {}
+impl<Container: ?Sized> Eq for RingBufferInner<Container> {}
 
 impl<T, const N: usize> RingBuffer<T, N> {
     /// Creates a ring buffer with a capacity of `N`.

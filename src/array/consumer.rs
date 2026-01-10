@@ -4,7 +4,8 @@
 
 use core::cell::Cell;
 
-use super::{chunks::ReadChunk, ChunkError, PeekError, PopError, RingBuffer};
+use super::{chunks::ReadChunk, ChunkError, PeekError, PopError};
+use super::ring_buffer::RingBufferUnsized;
 use super::{HAS_CONSUMER, HAS_PRODUCER};
 use crate::atomic::*;
 
@@ -32,7 +33,7 @@ pub struct Consumer<'a, T> {
     pub(super) cached_tail: Cell<usize>,
 }
 
-impl<T, const N: usize> Drop for Consumer<'_, T, N> {
+impl<T> Drop for Consumer<'_, T> {
     fn drop(&mut self) {
         let _ = self.buffer.flags.fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
     }
@@ -42,19 +43,19 @@ impl<T, const N: usize> Drop for Consumer<'_, T, N> {
 /// ```
 /// use rtrb::array::Consumer;
 /// fn assert_send<X: Send>() {}
-/// assert_send::<Consumer<u8, 8>>();
+/// assert_send::<Consumer<u8>>();
 /// ```
 /// ... but not shared between threads:
 /// ```compile_fail
 /// # use rtrb::array::Consumer;
 /// fn assert_sync<X: Sync>() {}
-/// assert_sync::<Consumer<u8, 8>>();
+/// assert_sync::<Consumer<u8>>();
 /// ```
 // SAFETY: After moving a consumer to another thread, there is still only a single thread
 // that can access the consumer side of the queue.
-unsafe impl<T: Send, const N: usize> Send for Consumer<'_, T, N> where RingBuffer<T, N>: Sync {}
+unsafe impl<T: Send> Send for Consumer<'_, T> where RingBufferUnsized<T>: Sync {}
 
-impl<T, const N: usize> Consumer<'_, T, N> {
+impl<T> Consumer<'_, T> {
     /// Attempts to pop the next element from the queue.
     ///
     /// The element is *moved* out of the ring buffer and its slot
@@ -279,7 +280,7 @@ impl<T, const N: usize> Consumer<'_, T, N> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](super::chunks#examples) module.
-    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T, N>, ChunkError> {
+    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
         let b = &self.buffer;

@@ -43,8 +43,8 @@ pub struct RingBuffer<T, const N: usize>(RingBufferInner<[MaybeUninit<T>; N]>);
 
 #[derive(Debug)]
 pub struct RingBufferInner<Container: ?Sized> {
-    pub(super) head: CachePadded<AtomicUsize>,
-    pub(super) tail: CachePadded<AtomicUsize>,
+    pub(super) head: {{ CachePadded("AtomicUsize") }},
+    pub(super) tail: {{ CachePadded("AtomicUsize") }},
     {% if bip %}
     // TODO: measure whether CachePadded helps
     pub(super) skip: {{ CachePadded("AtomicUsize") }},
@@ -312,13 +312,21 @@ unsafe impl<T{{ N_param }}> Sync for RingBuffer<T{{ N_arg }}> {}
 // NB: `Send` might be implemented by different storage backends,
 // but it is not necessary for correct behavior of the RingBuffer.
 
-impl<T{{ N_param }}> PartialEq for RingBuffer<T{{ N_arg }}> {
+{% if N %}
+impl<Container: ?Sized> PartialEq for RingBufferInner<Container> {
+{% else %}
+impl<T> PartialEq for RingBuffer<T> {
+{% endif %}
     fn eq(&self, other: &Self) -> bool {
         core::ptr::eq(self, other)
     }
 }
 
-impl<T{{ N_param }}> Eq for RingBuffer<T{{ N_arg }}> {}
+{% if N %}
+impl<Container: ?Sized> Eq for RingBufferInner<Container> {}
+{% else %}
+impl<T> Eq for RingBuffer<T> {}
+{% endif %}
 
 impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     /// Creates a ring buffer with{% if N %} a capacity of `N`{% else %}{% if pow2 %} at least{% endif %} the given `capacity`{% endif %}{% if arc +%}

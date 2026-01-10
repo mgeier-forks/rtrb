@@ -96,13 +96,13 @@ unsafe impl<T, const N: usize> Sync for RingBuffer<T, N> {}
 // NB: `Send` might be implemented by different storage backends,
 // but it is not necessary for correct behavior of the RingBuffer.
 
-impl<T, const N: usize> PartialEq for RingBuffer<T, N> {
+impl<Container: ?Sized> PartialEq for RingBufferInner<Container> {
     fn eq(&self, other: &Self) -> bool {
         core::ptr::eq(self, other)
     }
 }
 
-impl<T, const N: usize> Eq for RingBuffer<T, N> {}
+impl<Container: ?Sized> Eq for RingBufferInner<Container> {}
 
 impl<T, const N: usize> RingBuffer<T, N> {
     /// Creates a ring buffer with a capacity of `N`.

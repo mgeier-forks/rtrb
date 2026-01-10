@@ -12,7 +12,7 @@ use super::IS_ABANDONED;
 {% endif %}
 use super::{
     chunks::{WriteChunk, WriteChunkUninit},
-    ChunkError, PushError, RingBuffer,
+    ChunkError, PushError{% if not N %}, RingBuffer{% endif %},
 };
 {% if N %}
 use super::ring_buffer::RingBufferUnsized;
@@ -50,8 +50,8 @@ use super::Consumer;
 /// all items remaining in the ring buffer will be dropped and the allocated memory
 /// will be deallocated.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Producer<T{{ N_param }}> {
-    pub(super) buffer: ArcRingBuffer<T{{ N_arg }}>,
+pub struct Producer<T> {
+    pub(super) buffer: ArcRingBuffer<T>,
     /// A copy of `buffer.head` for quick access.
     ///
     /// This value can be stale and sometimes needs to be resynchronized
@@ -534,7 +534,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
 {# The signature doesn't fit in one line when `N` is used, so we don't auto-format. #}
     #[rustfmt::skip]
 {% if bip %}
-    pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T{{ N_arg }}>, ChunkError> {
+    pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
         let b = &self.buffer;
         let (mut slots, refreshed_head, try_at_beginning) = self.slots_contiguous_helper();
         if slots >= n {

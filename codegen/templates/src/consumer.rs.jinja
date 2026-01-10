@@ -10,7 +10,10 @@ use core::cell::Cell;
 use super::arc_ring_buffer::ArcRingBuffer;
 use super::IS_ABANDONED;
 {% endif %}
-use super::{chunks::ReadChunk, ChunkError, PeekError, PopError, RingBuffer};
+use super::{chunks::ReadChunk, ChunkError, PeekError, PopError{% if not N %}, RingBuffer{% endif %}};
+{% if N %}
+use super::ring_buffer::RingBufferUnsized;
+{% endif %}
 {% if not arc %}
 use super::{HAS_CONSUMER, HAS_PRODUCER};
 {% endif %}
@@ -43,8 +46,8 @@ use super::Producer;
 /// all items remaining in the ring buffer will be dropped and the allocated memory
 /// will be deallocated.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Consumer<T{{ N_param }}> {
-    pub(super) buffer: ArcRingBuffer<T{{ N_arg }}>,
+pub struct Consumer<T> {
+    pub(super) buffer: ArcRingBuffer{{ if_N("Unsized") }}<T>,
     /// A copy of `buffer.head` for quick access.
     ///
     /// This value is always in sync with `buffer.head`.
@@ -65,7 +68,7 @@ pub struct Consumer<'a, T> {
     pub(super) cached_tail: Cell<usize>,
 }
 
-impl<T{{ N_param }}> Drop for Consumer<'_, T{{ N_arg }}> {
+impl<T> Drop for Consumer<'_, T> {
     fn drop(&mut self) {
         let _ = self.buffer.flags.fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
     }
@@ -76,19 +79,19 @@ impl<T{{ N_param }}> Drop for Consumer<'_, T{{ N_arg }}> {
 /// ```
 /// use {{ module_path }}::Consumer;
 /// fn assert_send<X: Send>() {}
-/// assert_send::<Consumer<u8{{ if_N(", 8") }}>>();
+/// assert_send::<Consumer<u8>>();
 /// ```
 /// ... but not shared between threads:
 /// ```compile_fail
 /// # use {{ module_path }}::Consumer;
 /// fn assert_sync<X: Sync>() {}
-/// assert_sync::<Consumer<u8{{ if_N(", 8") }}>>();
+/// assert_sync::<Consumer<u8>>();
 /// ```
 // SAFETY: After moving a consumer to another thread, there is still only a single thread
 // that can access the consumer side of the queue.
-unsafe impl<T: Send{{ N_param }}> Send for Consumer<{{ arc_tick_blank }}T{{ N_arg }}> where RingBuffer<T{{ N_arg }}>: Sync {}
+unsafe impl<T: Send> Send for Consumer<{{ arc_tick_blank }}T> where RingBuffer{{ if_N("Unsized") }}<T>: Sync {}
 
-impl<T{{ N_param }}> Consumer<{{ arc_tick_blank }}T{{ N_arg }}> {
+impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// Attempts to pop the next element from the queue.
     ///
     /// The element is *moved* out of the ring buffer and its slot
@@ -500,7 +503,7 @@ impl<T{{ N_param }}> Consumer<{{ arc_tick_blank }}T{{ N_arg }}> {
     ///
     /// See the documentation of the [`chunks`](super::chunks#examples) module.
 {% if bip %}
-    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T{{ N_arg }}>, ChunkError> {
+    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
         let b = &self.buffer;
         let (slots, _, _) = self.slots_contiguous_helper();
         if slots >= n {
@@ -512,7 +515,7 @@ impl<T{{ N_param }}> Consumer<{{ arc_tick_blank }}T{{ N_arg }}> {
         }
     }
 {% else %}
-    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T{{ N_arg }}>, ChunkError> {
+    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
         let b = &self.buffer;
