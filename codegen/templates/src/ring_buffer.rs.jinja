@@ -306,7 +306,7 @@ compile_error!("Invalid storage = {{ storage }}");
 ///
 /// ```
 /// fn assert_sync<X: Sync>() {}
-/// assert_sync::<{{ module_path }}::RingBuffer<std::cell::Cell<u8>{{ if_N(", 8") }}>>();
+/// assert_sync::<{{ module_path }}::RingBuffer<std::cell::Cell<u8>{% if N %}, 8{% endif %}>>();
 /// ```
 // SAFETY: RingBuffer is only mutated (using *interior mutablility*)
 // via Producer/Consumer (which are !Sync), all other access can be shared.

@@ -67,7 +67,7 @@ pub struct Producer<T> {
 /// A `Producer` can only be created with [`RingBuffer::producer()`].
 #[derive(Debug, PartialEq, Eq)]
 pub struct Producer<'a, T> {
-    pub(super) buffer: &'a RingBuffer{{ if_N("Unsized") }}<T>,
+    pub(super) buffer: &'a RingBuffer{% if N %}Unsized{% endif %}<T>,
     pub(super) cached_head: Cell<usize>,
     pub(super) cached_tail: Cell<usize>,
 }
@@ -93,7 +93,7 @@ impl<T> Drop for Producer<'_, T> {
 /// ```
 // SAFETY: After moving a producer to another thread, there is still only a single thread
 // that can access the producer side of the queue.
-unsafe impl<T: Send> Send for Producer<{{ arc_tick_blank }}T> where RingBuffer{{ if_N("Unsized") }}<T>: Sync {}
+unsafe impl<T: Send> Send for Producer<{{ arc_tick_blank }}T> where RingBuffer{% if N %}Unsized{% endif %}<T>: Sync {}
 
 impl<T> Producer<{{ arc_tick_blank }}T> {
     /// Attempts to push an element into the queue.

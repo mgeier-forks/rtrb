@@ -47,7 +47,7 @@ use super::Producer;
 /// will be deallocated.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<T> {
-    pub(super) buffer: ArcRingBuffer{{ if_N("Unsized") }}<T>,
+    pub(super) buffer: ArcRingBuffer{% if N %}Unsized{% endif %}<T>,
     /// A copy of `buffer.head` for quick access.
     ///
     /// This value is always in sync with `buffer.head`.
@@ -63,7 +63,7 @@ pub struct Consumer<T> {
 /// A `Consumer` can only be created with [`RingBuffer::consumer()`].
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<'a, T> {
-    pub(super) buffer: &'a RingBuffer{{ if_N("Unsized") }}<T>,
+    pub(super) buffer: &'a RingBuffer{% if N %}Unsized{% endif %}<T>,
     pub(super) cached_head: Cell<usize>,
     pub(super) cached_tail: Cell<usize>,
 }
@@ -89,7 +89,7 @@ impl<T> Drop for Consumer<'_, T> {
 /// ```
 // SAFETY: After moving a consumer to another thread, there is still only a single thread
 // that can access the consumer side of the queue.
-unsafe impl<T: Send> Send for Consumer<{{ arc_tick_blank }}T> where RingBuffer{{ if_N("Unsized") }}<T>: Sync {}
+unsafe impl<T: Send> Send for Consumer<{{ arc_tick_blank }}T> where RingBuffer{% if N %}Unsized{% endif %}<T>: Sync {}
 
 impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// Attempts to pop the next element from the queue.

@@ -35,10 +35,6 @@
 {% if padded %}CachePadded::new({{ arg }}){% else %}{{ arg }}{% endif %}
 {% endmacro %}
 {##}
-{% macro if_N(arg) %}
-{% if N %}{{ arg }}{% else %}{% endif %}
-{% endmacro %}
-{##}
 {% macro doctest_create_ring_buffer(capacity, prefix="    ///") %}
 {% if N %}{% if arc %}
 {{ prefix }} let (mut p, mut c) = RingBuffer::<_, {{ capacity }}>::new();
