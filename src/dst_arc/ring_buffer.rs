@@ -38,10 +38,8 @@ pub struct RingBuffer<T> {
 unsafe impl<T: Send> Send for RingBuffer<T> {}
 
 impl<T> RingBuffer<T> {
-    // Private helper function.
     fn construct(capacity: usize) -> NonNull<Self> {
-        let ptr = Self::instantiate(capacity);
-        ptr
+        Self::instantiate(capacity)
     }
 
     pub(super) fn capacity(&self) -> usize {
@@ -68,7 +66,7 @@ impl<T> Drop for RingBuffer<T> {
 /// For example, [`std::cell::Cell`] is `Send` but not `Sync`:
 ///
 /// ```
-/// fn assert_sync<X: Sync>() {}
+/// fn assert_sync<X: Sync + ?Sized>() {}
 /// assert_sync::<rtrb::dst_arc::RingBuffer<std::cell::Cell<u8>>>();
 /// ```
 // SAFETY: RingBuffer is only mutated (using *interior mutablility*)

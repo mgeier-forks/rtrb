@@ -78,7 +78,6 @@ unsafe impl<T: Send, const N: usize> Send for RingBuffer<T, N> {}
 unsafe impl<Container: Sync + ?Sized> Sync for RingBufferInner<Container> {}
 
 impl<T, const N: usize> RingBuffer<T, N> {
-    // Private helper function.
     const fn construct() -> Self {
         RingBuffer(RingBufferInner {
             head: {{ CachePadded_new("AtomicUsize::new(0)") }},
@@ -142,15 +141,16 @@ pub struct RingBuffer<T> {
 unsafe impl<T: Send> Send for RingBuffer<T> {}
 
 impl<T> RingBuffer<T> {
-    // Private helper function.
     fn construct(capacity: usize) -> NonNull<Self> {
-        let ptr = Self::instantiate(capacity);
         {% if bip %}
+        let ptr = Self::instantiate(capacity);
         // SAFETY: Ring buffer is initialized and no mutable reference exists.
         let rb = unsafe { ptr.as_ref() };
         rb.skip.store(rb.capacity(), Ordering::Relaxed);
-        {% endif %}
         ptr
+        {% else %}
+        Self::instantiate(capacity)
+        {% endif %}
     }
 
     pub(super) fn capacity(&self) -> usize {
@@ -189,7 +189,6 @@ pub struct RingBuffer<T> {
 unsafe impl<T: Send> Send for RingBuffer<T> {}
 
 impl<T> RingBuffer<T> {
-    // Private helper function.
     fn construct(capacity: usize) -> Self {
         Self {
             head: {{ CachePadded_new("AtomicUsize::new(0)") }},
@@ -245,7 +244,6 @@ pub struct RingBuffer<T> {
 }
 
 impl<T> RingBuffer<T> {
-    // Private helper function.
     fn construct(capacity: usize) -> Self {
         use core::mem;
         const {
@@ -366,7 +364,7 @@ compile_error!("Invalid storage = {{ storage }}");
 /// For example, [`std::cell::Cell`] is `Send` but not `Sync`:
 ///
 /// ```
-/// fn assert_sync<X: Sync>() {}
+/// fn assert_sync<X: Sync{% if storage == "dst" %} + ?Sized{% endif %}>() {}
 /// assert_sync::<{{ module_path }}::RingBuffer<std::cell::Cell<u8>{% if N %}, 8{% endif %}>>();
 /// ```
 // SAFETY: RingBuffer is only mutated (using *interior mutablility*)

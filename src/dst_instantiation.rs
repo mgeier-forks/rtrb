@@ -1,17 +1,37 @@
 macro_rules! ring_buffer_instantiation {
     // Fixed-size header fields are recursively grouped into brackets,
     // only the last field (which is dynamically sized) remains outside.
+
+    // Initial match. Start a bracket
     (
         $(#[$struct_attr:meta])*
         pub struct RingBuffer<T> {
-            $(
+            $(#[$next_field_attr:meta])*
+            $vis:vis $next_field_name:ident: $next_field_type:ty,
+            $($tail:tt)+
+        }
+    ) => {
+        ring_buffer_instantiation! {
+            $(#[$struct_attr])*
+            pub struct RingBuffer<T> {
                 [
-                    $($header_field:tt)*
+                    $(#[$next_field_attr])*
+                    $vis $next_field_name: $next_field_type,
                 ]
-            )?
+                $($tail)+
+            }
+        }
+    };
+
+    (
+        $(#[$struct_attr:meta])*
+        pub struct RingBuffer<T> {
+            [
+                $($header_field:tt)*
+            ]
 
             $(#[$next_field_attr:meta])*
-            pub(super) $next_field_name:ident: $next_field_type:ty,
+            $vis:vis $next_field_name:ident: $next_field_type:ty,
 
             $($tail:tt)+
         }
@@ -20,12 +40,10 @@ macro_rules! ring_buffer_instantiation {
             $(#[$struct_attr])*
             pub struct RingBuffer<T> {
                 [
-                    $(
-                        $($header_field)*
-                    )?
+                    $($header_field)*
 
                     $(#[$next_field_attr])*
-                    pub(super) $next_field_name: $next_field_type,
+                    $vis $next_field_name: $next_field_type,
                 ]
 
                 $($tail)+
@@ -40,7 +58,7 @@ macro_rules! ring_buffer_instantiation {
             [
                 $(
                     $(#[$field_attr:meta])*
-                    pub(super) $field_name:ident: $field_type:ty,
+                    $vis:vis $field_name:ident: $field_type:ty,
                 )*
             ]
 
@@ -53,7 +71,7 @@ macro_rules! ring_buffer_instantiation {
         pub struct RingBuffer<T> {
             $(
                 $(#[$field_attr])*
-                pub(super) $field_name: $field_type,
+                $vis $field_name: $field_type,
             )*
 
             $(#[$last_field_attr])*
@@ -82,22 +100,23 @@ macro_rules! ring_buffer_instantiation {
                     .unwrap();
                 let layout = layout.pad_to_align();
 
-                unsafe {
-                    let ptr = alloc::alloc::alloc(layout);
-                    if ptr.is_null() {
-                        alloc::alloc::handle_alloc_error(layout);
-                    }
-                    $(
-                        &raw mut (*ptr).$field_name.write(Default::default());
-                        //core::ptr::addr_of_mut!((*ptr).$field_name).write(Default::default());
-                    )*
-                    // Create a (fat) pointer to a slice ...
-                    let ptr: *mut [T] = core::ptr::slice_from_raw_parts_mut(ptr.cast(), capacity);
-                    // ... and coerce it into our own dynamically sized type:
-                    let ptr = ptr as *mut Self;
-                    // Safety: Null check has been done above
-                    NonNull::new_unchecked(ptr)
+                // SAFETY: `layout` has non-zero size.
+                let ptr = unsafe { alloc::alloc::alloc(layout) };
+                if ptr.is_null() {
+                    alloc::alloc::handle_alloc_error(layout);
                 }
+                // SAFETY: Offsets and types are correct.
+                unsafe {
+                $(
+                    ptr.add($field_name).cast::<$field_type>().write(Default::default());
+                )*
+                }
+                // Create a (fat) pointer to a slice ...
+                let ptr: *mut [T] = core::ptr::slice_from_raw_parts_mut(ptr.cast(), capacity);
+                // ... and coerce it into our own dynamically sized type:
+                let ptr = ptr as *mut Self;
+                // SAFETY: Null check has been done above
+                unsafe { NonNull::new_unchecked(ptr) }
             }
         }
     };

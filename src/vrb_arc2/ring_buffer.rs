@@ -27,7 +27,6 @@ pub struct RingBuffer<T> {
 }
 
 impl<T> RingBuffer<T> {
-    // Private helper function.
     fn construct(capacity: usize) -> Self {
         use core::mem;
         const {

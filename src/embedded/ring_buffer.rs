@@ -42,7 +42,6 @@ unsafe impl<T: Send, const N: usize> Send for RingBuffer<T, N> {}
 unsafe impl<Container: Sync + ?Sized> Sync for RingBufferInner<Container> {}
 
 impl<T, const N: usize> RingBuffer<T, N> {
-    // Private helper function.
     const fn construct() -> Self {
         RingBuffer(RingBufferInner {
             head: AtomicUsize::new(0),

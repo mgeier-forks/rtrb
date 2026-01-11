@@ -209,14 +209,14 @@ pub mod arc;
 pub mod arc2;
 pub mod array;
 #[cfg(feature = "alloc")]
-pub mod dst_arc;
-#[cfg(feature = "alloc")]
 pub mod bip_arc;
 #[cfg(feature = "alloc")]
 pub mod bip_arc2;
 pub mod bip_array;
 #[cfg(feature = "alloc")]
 pub mod bip_dst_arc;
+#[cfg(feature = "alloc")]
+pub mod dst_arc;
 pub mod embedded;
 #[cfg(feature = "vrb")]
 pub mod vrb_arc2;

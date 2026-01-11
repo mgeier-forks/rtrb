@@ -34,7 +34,6 @@ pub struct RingBuffer<T> {
 unsafe impl<T: Send> Send for RingBuffer<T> {}
 
 impl<T> RingBuffer<T> {
-    // Private helper function.
     fn construct(capacity: usize) -> Self {
         Self {
             head: CachePadded::new(AtomicUsize::new(0)),
