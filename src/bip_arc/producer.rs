@@ -457,7 +457,6 @@ impl<T> Producer<T> {
     ///
     /// For a safe alternative that provides
     /// a mutable slice    /// of [`Default`]-initialized slots, see [`Producer::write_chunk()`].
-    #[rustfmt::skip]
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
         let b = &self.buffer;
         let (mut slots, refreshed_head, try_at_beginning) = self.slots_contiguous_helper();
