@@ -42,8 +42,8 @@ pub(crate) type RingBufferUnsized<T> = RingBufferInner<[MaybeUninit<T>]>;
 // SAFETY: If T can be moved between threads, RingBuffer can as well.
 unsafe impl<T: Send, const N: usize> Send for RingBuffer<T, N> {}
 
-// SAFETY: If Container can be shared, the whole struct can be shared as well.
-unsafe impl<Container: Sync + ?Sized> Sync for RingBufferInner<Container> {}
+// SAFETY: This can be shared, even if T is not Sync.
+unsafe impl<Container: ?Sized> Sync for RingBufferInner<Container> {}
 
 impl<T, const N: usize> RingBuffer<T, N> {
     const fn construct() -> Self {
