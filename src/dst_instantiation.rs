@@ -111,7 +111,9 @@ macro_rules! ring_buffer_instantiation {
                 // SAFETY: Offsets and types of fields are correct.
                 unsafe {
                 $(
-                    (&raw mut (*ptr).$field_name).write(Default::default());
+                    core::ptr::addr_of_mut!((*ptr).$field_name).write(Default::default());
+                    // With MSRV 1.82, this can be used instead:
+                    //(&raw mut (*ptr).$field_name).write(Default::default());
                 )*
                 }
                 // SAFETY: Null check has been done above
