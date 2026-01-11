@@ -16,6 +16,7 @@ omango = "0.2"
 ringbuf = "0.4"
 ringbuffer-spsc = "0.1.13"
 rtrb = { path = ".." }
+spsc-bip-buffer = "0.2"
 
 [dev-dependencies]
 criterion = "0.7"

@@ -41,4 +41,22 @@ create_bip_benchmark! {
         }
     },
     ::
+    "spsc-bip-buffer",
+    spsc_bip_buffer::bip_buffer_with_len,
+    |p, s| {
+        p.reserve(s.len()).map(|mut chunk| {
+            chunk.copy_from_slice(s);
+        }).is_some()
+    },
+    |c, s| {
+        let chunk = c.valid();
+        if chunk.len() >= s.len() {
+            s.copy_from_slice(&chunk[..s.len()]);
+            c.consume(s.len());
+            true
+        } else {
+            false
+        }
+    },
+    ::
 }
