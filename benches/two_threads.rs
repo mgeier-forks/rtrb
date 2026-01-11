@@ -175,8 +175,18 @@ create_two_threads_benchmark!(
     |q, i| q.push(i).is_ok(),
     |q| q.pop().ok(),
     ::
+    "rtrb-dst",
+    rtrb::dst_arc::RingBuffer::new,
+    |p, i| p.push(i).is_ok(),
+    |c| c.pop().ok(),
+    ::
     "rtrb-bip",
     rtrb::bip_arc::RingBuffer::new,
+    |p, i| p.push(i).is_ok(),
+    |c| c.pop().ok(),
+    ::
+    "rtrb-bip-dst",
+    rtrb::bip_dst_arc::RingBuffer::new,
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::
