@@ -89,8 +89,7 @@ macro_rules! ring_buffer_instantiation {
                 // ... and add all fields from RingBuffer,
                 // which must have #[repr(C)] (which we added above)!
                 $(
-                    // We abuse $field_name as variable name for the field offset:
-                    let (layout, $field_name) = layout
+                    let (layout, _) = layout
                         .extend(Layout::new::<$field_type>())
                         .unwrap();
                 )*
@@ -105,16 +104,16 @@ macro_rules! ring_buffer_instantiation {
                 if ptr.is_null() {
                     alloc::alloc::handle_alloc_error(layout);
                 }
-                // SAFETY: Offsets and types are correct.
-                unsafe {
-                $(
-                    ptr.add($field_name).cast::<$field_type>().write(Default::default());
-                )*
-                }
                 // Create a (fat) pointer to a slice ...
                 let ptr: *mut [T] = core::ptr::slice_from_raw_parts_mut(ptr.cast(), capacity);
                 // ... and coerce it into our own dynamically sized type:
                 let ptr = ptr as *mut Self;
+                // SAFETY: Offsets and types of fields are correct.
+                unsafe {
+                $(
+                    (&raw mut (*ptr).$field_name).write(Default::default());
+                )*
+                }
                 // SAFETY: Null check has been done above
                 unsafe { NonNull::new_unchecked(ptr) }
             }
