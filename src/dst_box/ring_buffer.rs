@@ -147,7 +147,7 @@ impl<T> RingBuffer<T> {
             let head = self.head.load(Ordering::Relaxed);
             let tail = self.tail.load(Ordering::Relaxed);
             Some(Producer {
-                buffer: &self,
+                buffer: self,
                 cached_head: Cell::new(head),
                 cached_tail: Cell::new(tail),
             })
@@ -187,7 +187,7 @@ impl<T> RingBuffer<T> {
             let head = self.head.load(Ordering::Relaxed);
             let tail = self.tail.load(Ordering::Relaxed);
             Some(Consumer {
-                buffer: &self,
+                buffer: self,
                 cached_head: Cell::new(head),
                 cached_tail: Cell::new(tail),
             })

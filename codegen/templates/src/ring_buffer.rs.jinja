@@ -514,7 +514,7 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
             let head = {{ N_self }}.head.load(Ordering::Relaxed);
             let tail = {{ N_self }}.tail.load(Ordering::Relaxed);
             Some(Producer {
-                buffer: &{{ N_self }},
+                buffer: {% if N %}&self.0{% else %}self{% endif %},
                 cached_head: Cell::new(head),
                 cached_tail: Cell::new(tail),
             })
@@ -552,7 +552,7 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
             let head = {{ N_self }}.head.load(Ordering::Relaxed);
             let tail = {{ N_self }}.tail.load(Ordering::Relaxed);
             Some(Consumer {
-                buffer: &{{ N_self }},
+                buffer: {% if N %}&self.0{% else %}self{% endif %},
                 cached_head: Cell::new(head),
                 cached_tail: Cell::new(tail),
             })
