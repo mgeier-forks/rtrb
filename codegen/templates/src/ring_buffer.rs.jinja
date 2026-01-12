@@ -34,7 +34,7 @@ use crate::CachePadded;
 use super::{Consumer, Producer};
 
 {% if storage == "dst" %}
-ring_buffer_instantiation! {
+dst_ring_buffer_instantiation! {
 {% endif %}
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///

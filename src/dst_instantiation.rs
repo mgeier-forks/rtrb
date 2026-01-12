@@ -1,64 +1,44 @@
-macro_rules! ring_buffer_instantiation {
-    // Fixed-size header fields are recursively grouped into brackets,
+macro_rules! dst_ring_buffer_instantiation {
+    // NB: The = character in =[ was added to avoid a parsing ambiguity.
+
+    // Fixed-size header fields are recursively moved into the brackets,
     // only the last field (which is dynamically sized) remains outside.
-
-    // Initial match. Start a bracket
     (
         $(#[$struct_attr:meta])*
         pub struct RingBuffer<T> {
+            $(=[
+                $($already_bracketed:tt)*
+            ])?
+
             $(#[$next_field_attr:meta])*
-            $vis:vis $next_field_name:ident: $next_field_type:ty,
-            $($tail:tt)+
+            $next_field_vis:vis $next_field_name:ident: $next_field_type:ty,
+
+            $($remaining_fields:tt)+
         }
     ) => {
-        ring_buffer_instantiation! {
+        dst_ring_buffer_instantiation! {
             $(#[$struct_attr])*
             pub struct RingBuffer<T> {
-                [
+                =[
+                    $($($already_bracketed)*)?
+
                     $(#[$next_field_attr])*
-                    $vis $next_field_name: $next_field_type,
+                    $next_field_vis $next_field_name: $next_field_type,
                 ]
-                $($tail)+
+
+                $($remaining_fields)+
             }
         }
     };
 
+    // Base case: Only one field (the dynamically-sized one) remains outside the brackets.
     (
         $(#[$struct_attr:meta])*
         pub struct RingBuffer<T> {
-            [
-                $($header_field:tt)*
-            ]
-
-            $(#[$next_field_attr:meta])*
-            $vis:vis $next_field_name:ident: $next_field_type:ty,
-
-            $($tail:tt)+
-        }
-    ) => {
-        ring_buffer_instantiation! {
-            $(#[$struct_attr])*
-            pub struct RingBuffer<T> {
-                [
-                    $($header_field)*
-
-                    $(#[$next_field_attr])*
-                    $vis $next_field_name: $next_field_type,
-                ]
-
-                $($tail)+
-            }
-        }
-    };
-
-    // Final recursion: All fixed-size fields are already within the brackets.
-    (
-        $(#[$struct_attr:meta])*
-        pub struct RingBuffer<T> {
-            [
+            =[
                 $(
                     $(#[$field_attr:meta])*
-                    $vis:vis $field_name:ident: $field_type:ty,
+                    $field_vis:vis $field_name:ident: $field_type:ty,
                 )*
             ]
 
@@ -71,7 +51,7 @@ macro_rules! ring_buffer_instantiation {
         pub struct RingBuffer<T> {
             $(
                 $(#[$field_attr])*
-                $vis $field_name: $field_type,
+                $field_vis $field_name: $field_type,
             )*
 
             $(#[$last_field_attr])*

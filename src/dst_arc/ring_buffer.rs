@@ -12,7 +12,7 @@ use crate::CachePadded;
 
 use super::{Consumer, Producer};
 
-ring_buffer_instantiation! {
+dst_ring_buffer_instantiation! {
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
 /// Elements can be written with a [`Producer`] and read with a [`Consumer`],
