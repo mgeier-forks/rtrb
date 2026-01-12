@@ -1,3 +1,5 @@
+#![cfg(feature = "alloc")]
+
 use std::io::Write as _;
 use std::time::Duration;
 
