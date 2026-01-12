@@ -34,15 +34,15 @@ pub struct RingBuffer<T> {
 unsafe impl<T: Send> Send for RingBuffer<T> {}
 
 impl<T> RingBuffer<T> {
-    fn construct(capacity: usize) -> Self {
-        Self {
+    fn construct(capacity: usize) -> Box<Self> {
+        Box::new(Self {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
             skip: CachePadded::new(AtomicUsize::new(capacity)),
             flags: AtomicU8::new(0),
             data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
             capacity,
-        }
+        })
     }
 
     pub(super) fn capacity(&self) -> usize {

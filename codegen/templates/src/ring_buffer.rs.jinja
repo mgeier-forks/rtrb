@@ -14,7 +14,6 @@ use core::mem::MaybeUninit;
 {% elif storage == "dst" %}
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
-use core::ptr::NonNull;
 
 {% elif storage == "vec" %}
 use alloc::vec::Vec;
@@ -141,13 +140,11 @@ pub struct RingBuffer<T> {
 unsafe impl<T: Send> Send for RingBuffer<T> {}
 
 impl<T> RingBuffer<T> {
-    fn construct(capacity: usize) -> NonNull<Self> {
+    fn construct(capacity: usize) -> Box<Self> {
         {% if bip %}
-        let ptr = Self::instantiate(capacity);
-        // SAFETY: Ring buffer is initialized and no mutable reference exists.
-        let rb = unsafe { ptr.as_ref() };
+        let rb = Self::instantiate(capacity);
         rb.skip.store(rb.capacity(), Ordering::Relaxed);
-        ptr
+        rb
         {% else %}
         Self::instantiate(capacity)
         {% endif %}
@@ -167,7 +164,11 @@ impl<T> Drop for RingBuffer<T> {
     fn drop(&mut self) {
         // SAFETY: this is called exactly once, no references to any elements exist anymore.
         unsafe { self.drop_all_elements() };
-        // The memory will be deallocated when `ArcRingBuffer` is dropped.
+        {% if arc %}
+        // The memory will be deallocated when the containing `ArcRingBuffer` is dropped.
+        {% else %}
+        // The memory will be deallocated if and when the containing `Box` is dropped.
+        {% endif %}
     }
 }
 {% elif storage == "vec" %}
@@ -189,8 +190,8 @@ pub struct RingBuffer<T> {
 unsafe impl<T: Send> Send for RingBuffer<T> {}
 
 impl<T> RingBuffer<T> {
-    fn construct(capacity: usize) -> Self {
-        Self {
+    fn construct(capacity: usize) -> Box<Self> {
+        Box::new(Self {
             head: {{ CachePadded_new("AtomicUsize::new(0)") }},
             tail: {{ CachePadded_new("AtomicUsize::new(0)") }},
             {% if bip %}
@@ -199,7 +200,7 @@ impl<T> RingBuffer<T> {
             flags: AtomicU8::new(0),
             data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
             capacity,
-        }
+        })
     }
 
     pub(super) fn capacity(&self) -> usize {
@@ -244,7 +245,7 @@ pub struct RingBuffer<T> {
 }
 
 impl<T> RingBuffer<T> {
-    fn construct(capacity: usize) -> Self {
+    fn construct(capacity: usize) -> Box<Self> {
         use core::mem;
         const {
             // NB: This also disallows zero-sized types,
@@ -317,13 +318,13 @@ impl<T> RingBuffer<T> {
         // Alignments larger than the page size are not supported.
         assert!(data_ptr.is_aligned());
         // TODO: reuse from storage_vec, disabling "skip"?
-        Self {
+        Box::new(Self {
             head: {{ CachePadded_new("AtomicUsize::new(0)") }},
             tail: {{ CachePadded_new("AtomicUsize::new(0)") }},
             flags: AtomicU8::new(0),
             data_ptr,
             capacity,
-        }
+        })
     }
 
     // TODO: reuse capacity() and data_ptr() from storage_vec?
@@ -457,13 +458,7 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
         let capacity = Self::update_capacity(capacity);
-        {% if storage == "dst" %}
-        let ptr = Self::construct(capacity);
-        // SAFETY: Memory can be freed by turning the pointer into a `Box`.
-        unsafe { ArcRingBuffer::from_ptr(ptr) }
-        {% else %}
         ArcRingBuffer::new(Self::construct(capacity))
-        {% endif %}
     }
 {% else %}
     /// ```
@@ -473,10 +468,20 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     /// let mut p = rb.producer().unwrap();
     /// assert_eq!(p.push(0.0f32), Ok(()));
     /// ```
-    pub fn new(capacity: usize) -> Self {
+    {# TODO: These two options are for testing. In the end, only one might be needed. #}
+    {% if storage == "dst" %}
+    pub fn new(capacity: usize) -> Box<Self> {
+        // TODO: updating capacity will happen in construct()?
         let capacity = Self::update_capacity(capacity);
         Self::construct(capacity)
     }
+    {% else %}
+    pub fn new(capacity: usize) -> Self {
+        // TODO: updating capacity will happen in construct()?
+        let capacity = Self::update_capacity(capacity);
+        Self::construct(capacity)
+    }
+    {% endif %}
 {% endif %}{% endif %}
 
 {% if not arc %}

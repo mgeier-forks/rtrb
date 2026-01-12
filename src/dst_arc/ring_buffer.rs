@@ -4,7 +4,6 @@
 
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
-use core::ptr::NonNull;
 
 use super::arc_ring_buffer::ArcRingBuffer;
 use crate::atomic::*;
@@ -38,7 +37,7 @@ pub struct RingBuffer<T> {
 unsafe impl<T: Send> Send for RingBuffer<T> {}
 
 impl<T> RingBuffer<T> {
-    fn construct(capacity: usize) -> NonNull<Self> {
+    fn construct(capacity: usize) -> Box<Self> {
         Self::instantiate(capacity)
     }
 
@@ -56,7 +55,7 @@ impl<T> Drop for RingBuffer<T> {
     fn drop(&mut self) {
         // SAFETY: this is called exactly once, no references to any elements exist anymore.
         unsafe { self.drop_all_elements() };
-        // The memory will be deallocated when `ArcRingBuffer` is dropped.
+        // The memory will be deallocated when the containing `ArcRingBuffer` is dropped.
     }
 }
 
@@ -109,9 +108,7 @@ impl<T> RingBuffer<T> {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
         let capacity = Self::update_capacity(capacity);
-        let ptr = Self::construct(capacity);
-        // SAFETY: Memory can be freed by turning the pointer into a `Box`.
-        unsafe { ArcRingBuffer::from_ptr(ptr) }
+        ArcRingBuffer::new(Self::construct(capacity))
     }
 
     const fn update_capacity(capacity: usize) -> usize {

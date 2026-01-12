@@ -217,11 +217,11 @@ pub mod bip_array;
 pub mod bip_dst_arc;
 #[cfg(feature = "alloc")]
 pub mod dst_arc;
+#[cfg(feature = "alloc")]
+pub mod dst_box;
 pub mod embedded;
 #[cfg(feature = "vrb")]
 pub mod vrb_arc2;
-
-// TODO: boxed, from_ptr, new_at_ptr (+ same for bip)
 
 // For backwards compatibility. May be deprecated and removed in the future.
 #[cfg(feature = "alloc")]

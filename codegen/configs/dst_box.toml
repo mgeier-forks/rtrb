@@ -1,0 +1,8 @@
+arc = false
+padded = true
+pow2 = false
+storage = "dst"
+
+module_docstring = """
+//! TODO: dst_box docs
+"""

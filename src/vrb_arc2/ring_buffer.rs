@@ -27,7 +27,7 @@ pub struct RingBuffer<T> {
 }
 
 impl<T> RingBuffer<T> {
-    fn construct(capacity: usize) -> Self {
+    fn construct(capacity: usize) -> Box<Self> {
         use core::mem;
         const {
             // NB: This also disallows zero-sized types,
@@ -100,13 +100,13 @@ impl<T> RingBuffer<T> {
         // Alignments larger than the page size are not supported.
         assert!(data_ptr.is_aligned());
         // TODO: reuse from storage_vec, disabling "skip"?
-        Self {
+        Box::new(Self {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
             flags: AtomicU8::new(0),
             data_ptr,
             capacity,
-        }
+        })
     }
 
     // TODO: reuse capacity() and data_ptr() from storage_vec?
