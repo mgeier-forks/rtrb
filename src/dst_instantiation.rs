@@ -106,19 +106,15 @@ macro_rules! ring_buffer_instantiation {
             /// # Safety
             ///
             /// The provided memory allocation must have the required size and alignment
-            /// (see [`RingBuffer::layout()`]) and it must exist at least as long
-            /// as the returned reference.
+            /// (see [`RingBuffer::layout()`]), it must exist at least as long
+            /// as the returned reference and have no other reference (even immutable).
             pub unsafe fn new_at<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {
                 // TODO: check for power-of-two capacity?
 
                 let ptr = Self::coerce(ptr, capacity);
-                // SAFETY: Offsets and types of fields are correct.
+                // SAFETY: Pointer is valid and no other reference exists.
                 unsafe {
-                $(
-                    core::ptr::addr_of_mut!((*ptr).$field_name).write(Default::default());
-                    // With MSRV 1.82, this can be used instead:
-                    //(&raw mut (*ptr).$field_name).write(Default::default());
-                )*
+                    Self::default_initialize(ptr);
                 }
                 // SAFETY: `ptr` is non-null and object is fully initialized.
                 unsafe { &*ptr }
@@ -135,6 +131,7 @@ macro_rules! ring_buffer_instantiation {
             ///
             /// The provided memory must have been initialized by [`RingBuffer::new_at()`]
             /// and the memory allocation must exist at least as long as the returned reference.
+            /// There are no ABI stability guarantees.
             pub unsafe fn from_raw_parts<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {
                 // TODO: check for power-of-two capacity?
 
@@ -152,6 +149,18 @@ macro_rules! ring_buffer_instantiation {
                 ptr as *mut Self
             }
 
+            // SAFETY: Pointer must be valid and no reference exists.
+            unsafe fn default_initialize(ptr: *mut Self) {
+                // SAFETY: Offsets and types of fields are correct.
+                unsafe {
+                $(
+                    core::ptr::addr_of_mut!((*ptr).$field_name).write(Default::default());
+                    // With MSRV 1.82, this can be used instead:
+                    //(&raw mut (*ptr).$field_name).write(Default::default());
+                )*
+                }
+            }
+
             /// Allocates memory and Default-initializes the fixed-size fields.
             ///
             /// The dynamically-sized part remains uninitialized.
@@ -162,12 +171,15 @@ macro_rules! ring_buffer_instantiation {
                 if ptr.is_null() {
                     alloc::alloc::handle_alloc_error(layout);
                 }
+                let ptr = Self::coerce(ptr, capacity);
                 // SAFETY: The allocation has been created according to `layout()`
-                // and it will live long enough.
-                let rb = unsafe { Self::new_at(ptr, capacity) };
+                // it will live long enough and no other reference exists.
+                unsafe {
+                    Self::default_initialize(ptr);
+                }
                 // SAFETY: The memory has been allocated in a compatible way
                 // and this is the only time we create a `Box` from it.
-                unsafe { Box::from_raw(rb as *const _ as *mut _) }
+                unsafe { Box::from_raw(ptr) }
             }
         }
     };
