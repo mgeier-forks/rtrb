@@ -21,18 +21,18 @@
 //! use rtrb::dst_box::{RingBuffer, PushError, PopError};
 //!
 //! let rb = RingBuffer::new(2);
-//! let mut p = rb.producer().unwrap();
-//! let mut c = rb.consumer().unwrap();
+//! let mut producer = rb.producer().unwrap();
+//! let mut consumer = rb.consumer().unwrap();
 //!
-//! assert_eq!(p.push(10), Ok(()));
-//! assert_eq!(p.push(20), Ok(()));
-//! assert_eq!(p.push(30), Err(PushError::Full(30)));
+//! assert_eq!(producer.push(10), Ok(()));
+//! assert_eq!(producer.push(20), Ok(()));
+//! assert_eq!(producer.push(30), Err(PushError::Full(30)));
 //!
 //! std::thread::scope(|s| {
 //!     s.spawn(move || {
-//!         assert_eq!(c.pop(), Ok(10));
-//!         assert_eq!(c.pop(), Ok(20));
-//!         assert_eq!(c.pop(), Err(PopError::Empty));
+//!         assert_eq!(consumer.pop(), Ok(10));
+//!         assert_eq!(consumer.pop(), Ok(20));
+//!         assert_eq!(consumer.pop(), Err(PopError::Empty));
 //!     });
 //! });
 //! ```

@@ -96,7 +96,7 @@ impl<T> RingBuffer<T> {
     /// ```
     /// use rtrb::bip_dst_arc::RingBuffer;
     ///
-    /// let (p, c) = RingBuffer::<f32>::new(100);
+    /// let (producer, consumer) = RingBuffer::<f32>::new(100);
     /// ```
     ///
     /// Specifying an explicit type
@@ -106,8 +106,8 @@ impl<T> RingBuffer<T> {
     /// ```
     /// use rtrb::bip_dst_arc::RingBuffer;
     ///
-    /// let (mut p, c) = RingBuffer::new(100);
-    /// assert_eq!(p.push(0.0f32), Ok(()));
+    /// let (mut producer, consumer) = RingBuffer::new(100);
+    /// assert_eq!(producer.push(0.0f32), Ok(()));
     /// ```
     #[allow(clippy::new_ret_no_self)]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {

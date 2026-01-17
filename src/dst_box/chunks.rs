@@ -23,39 +23,39 @@
 //! # Examples
 //!
 //! This example uses a single thread for simplicity, but in a real application,
-//! `p` and `c` would of course live on different threads:
+//! `producer` and `consumer` would of course live on different threads:
 //!
 //! ```
 //! use rtrb::dst_box::RingBuffer;
 //!
 //! let rb = RingBuffer::new(4);
-//! let mut p = rb.producer().unwrap();
-//! let mut c = rb.consumer().unwrap();
+//! let mut producer = rb.producer().unwrap();
+//! let mut consumer = rb.consumer().unwrap();
 //!
-//! if let Ok(chunk) = p.write_chunk_uninit(4) {
+//! if let Ok(chunk) = producer.write_chunk_uninit(4) {
 //!     chunk.fill_from_iter([10, 11, 12]);
 //!     // Note that we requested 4 slots but we've only written to 3 of them!
 //! } else {
 //!     unreachable!();
 //! }
 //!
-//! assert_eq!(p.slots(), 1);
-//! assert_eq!(c.slots(), 3);
+//! assert_eq!(producer.slots(), 1);
+//! assert_eq!(consumer.slots(), 3);
 //!
-//! if let Ok(chunk) = c.read_chunk(2) {
+//! if let Ok(chunk) = consumer.read_chunk(2) {
 //!     assert_eq!(chunk.into_iter().collect::<Vec<_>>(), [10, 11]);
 //! } else {
 //!     unreachable!();
 //! }
 //!
 //! // One element is still in the queue:
-//! assert_eq!(c.peek(), Ok(&12));
+//! assert_eq!(consumer.peek(), Ok(&12));
 //!
-//! assert_eq!(p.slots(), 3);
+//! assert_eq!(producer.slots(), 3);
 //!
 //! let data = vec![20, 21];
 //! // NB: write_chunk_uninit() could be used for possibly better performance:
-//! if let Ok(mut chunk) = p.write_chunk(2) {
+//! if let Ok(mut chunk) = producer.write_chunk(2) {
 //!     let (first, second) = chunk.as_mut_slices();
 //!     let mid = first.len();
 //!     first.copy_from_slice(&data[..mid]);
@@ -65,11 +65,11 @@
 //!     unreachable!();
 //! }
 //!
-//! assert_eq!(c.slots(), 3);
-//! assert_eq!(p.slots(), 1);
+//! assert_eq!(consumer.slots(), 3);
+//! assert_eq!(producer.slots(), 1);
 //!
 //! let mut v = Vec::<i32>::with_capacity(3);
-//! if let Ok(chunk) = c.read_chunk(3) {
+//! if let Ok(chunk) = consumer.read_chunk(3) {
 //!     let (first, second) = chunk.as_slices();
 //!     v.extend(first);
 //!     v.extend(second);
@@ -79,7 +79,7 @@
 //! }
 //!
 //! assert_eq!(v, [12, 20, 21]);
-//! assert!(c.is_empty());
+//! assert!(consumer.is_empty());
 //! ```
 //!
 //! The iterator API can be used to move items from one ring buffer to another:
@@ -386,17 +386,17 @@ impl<T> WriteChunkUninit<'_, T> {
     /// use rtrb::dst_box::{PopError, RingBuffer};
     ///
     /// let rb = RingBuffer::new(4);
-    /// let mut p = rb.producer().unwrap();
-    /// let mut c = rb.consumer().unwrap();
-    /// if let Ok(chunk) = p.write_chunk_uninit(3) {
+    /// let mut producer = rb.producer().unwrap();
+    /// let mut consumer = rb.consumer().unwrap();
+    /// if let Ok(chunk) = producer.write_chunk_uninit(3) {
     ///     assert_eq!(chunk.fill_from_iter([10, 20]), 2);
     /// } else {
     ///     unreachable!();
     /// }
-    /// assert_eq!(c.slots(), 2);
-    /// assert_eq!(c.pop(), Ok(10));
-    /// assert_eq!(c.pop(), Ok(20));
-    /// assert_eq!(c.pop(), Err(PopError::Empty));
+    /// assert_eq!(consumer.slots(), 2);
+    /// assert_eq!(consumer.pop(), Ok(10));
+    /// assert_eq!(consumer.pop(), Ok(20));
+    /// assert_eq!(consumer.pop(), Err(PopError::Empty));
     /// ```
     ///
     /// If the chunk size is too small, some items may remain in the iterator.
@@ -407,17 +407,17 @@ impl<T> WriteChunkUninit<'_, T> {
     /// use rtrb::dst_box::{PopError, RingBuffer};
     ///
     /// let rb = RingBuffer::new(4);
-    /// let mut p = rb.producer().unwrap();
-    /// let mut c = rb.consumer().unwrap();
+    /// let mut producer = rb.producer().unwrap();
+    /// let mut consumer = rb.consumer().unwrap();
     /// let mut it = vec![10, 20, 30].into_iter();
-    /// if let Ok(chunk) = p.write_chunk_uninit(2) {
+    /// if let Ok(chunk) = producer.write_chunk_uninit(2) {
     ///     assert_eq!(chunk.fill_from_iter(&mut it), 2);
     /// } else {
     ///     unreachable!();
     /// }
-    /// assert_eq!(c.pop(), Ok(10));
-    /// assert_eq!(c.pop(), Ok(20));
-    /// assert_eq!(c.pop(), Err(PopError::Empty));
+    /// assert_eq!(consumer.pop(), Ok(10));
+    /// assert_eq!(consumer.pop(), Ok(20));
+    /// assert_eq!(consumer.pop(), Err(PopError::Empty));
     /// assert_eq!(it.next(), Some(30));
     /// ```
     pub fn fill_from_iter<I>(self, iter: I) -> usize
@@ -626,12 +626,12 @@ impl<T> ReadChunk<'_, T> {
     /// // Scope to limit lifetime of ring buffer
     /// {
     ///     let rb = RingBuffer::new(4);
-    ///     let mut p = rb.producer().unwrap();
-    ///     let mut c = rb.consumer().unwrap();
+    ///     let mut producer = rb.producer().unwrap();
+    ///     let mut consumer = rb.consumer().unwrap();
     ///
-    ///     assert!(p.push(Thing(1)).is_ok());
-    ///     assert!(p.push(Thing(2)).is_ok());
-    ///     if let Ok(thing) = c.pop() {
+    ///     assert!(producer.push(Thing(1)).is_ok());
+    ///     assert!(producer.push(Thing(2)).is_ok());
+    ///     if let Ok(thing) = consumer.pop() {
     ///         // "thing" has been *moved* out of the queue but not yet dropped
     ///         assert_eq!(unsafe { DROP_COUNT }, 0);
     ///     } else {
@@ -639,9 +639,9 @@ impl<T> ReadChunk<'_, T> {
     ///     }
     ///     // First Thing has been dropped when "thing" went out of scope:
     ///     assert_eq!(unsafe { DROP_COUNT }, 1);
-    ///     assert!(p.push(Thing(3)).is_ok());
+    ///     assert!(producer.push(Thing(3)).is_ok());
     ///
-    ///     if let Ok(chunk) = c.read_chunk(2) {
+    ///     if let Ok(chunk) = consumer.read_chunk(2) {
     ///         assert_eq!(chunk.len(), 2);
     ///         assert_eq!(unsafe { DROP_COUNT }, 1);
     ///         chunk.commit(1); // Drops only one of the two Things

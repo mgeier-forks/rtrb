@@ -288,16 +288,16 @@ impl<T> WriteChunkUninit<'_, T> {
     /// ```
     /// use rtrb::vrb_arc2::{PopError, RingBuffer};
     ///
-    /// let (mut p, mut c) = RingBuffer::new(4);
-    /// if let Ok(chunk) = p.write_chunk_uninit(3) {
+    /// let (mut producer, mut consumer) = RingBuffer::new(4);
+    /// if let Ok(chunk) = producer.write_chunk_uninit(3) {
     ///     assert_eq!(chunk.fill_from_iter([10, 20]), 2);
     /// } else {
     ///     unreachable!();
     /// }
-    /// assert_eq!(c.slots(), 2);
-    /// assert_eq!(c.pop(), Ok(10));
-    /// assert_eq!(c.pop(), Ok(20));
-    /// assert_eq!(c.pop(), Err(PopError::Empty));
+    /// assert_eq!(consumer.slots(), 2);
+    /// assert_eq!(consumer.pop(), Ok(10));
+    /// assert_eq!(consumer.pop(), Ok(20));
+    /// assert_eq!(consumer.pop(), Err(PopError::Empty));
     /// ```
     ///
     /// If the chunk size is too small, some items may remain in the iterator.
@@ -307,16 +307,16 @@ impl<T> WriteChunkUninit<'_, T> {
     /// ```
     /// use rtrb::vrb_arc2::{PopError, RingBuffer};
     ///
-    /// let (mut p, mut c) = RingBuffer::new(4);
+    /// let (mut producer, mut consumer) = RingBuffer::new(4);
     /// let mut it = vec![10, 20, 30].into_iter();
-    /// if let Ok(chunk) = p.write_chunk_uninit(2) {
+    /// if let Ok(chunk) = producer.write_chunk_uninit(2) {
     ///     assert_eq!(chunk.fill_from_iter(&mut it), 2);
     /// } else {
     ///     unreachable!();
     /// }
-    /// assert_eq!(c.pop(), Ok(10));
-    /// assert_eq!(c.pop(), Ok(20));
-    /// assert_eq!(c.pop(), Err(PopError::Empty));
+    /// assert_eq!(consumer.pop(), Ok(10));
+    /// assert_eq!(consumer.pop(), Ok(20));
+    /// assert_eq!(consumer.pop(), Err(PopError::Empty));
     /// assert_eq!(it.next(), Some(30));
     /// ```
     pub fn fill_from_iter<I>(self, iter: I) -> usize
@@ -494,11 +494,11 @@ impl<T> ReadChunk<'_, T> {
     ///
     /// // Scope to limit lifetime of ring buffer
     /// {
-    ///     let (mut p, mut c) = RingBuffer::new(4);
+    ///     let (mut producer, mut consumer) = RingBuffer::new(4);
     ///
-    ///     assert!(p.push(Thing(1)).is_ok());
-    ///     assert!(p.push(Thing(2)).is_ok());
-    ///     if let Ok(thing) = c.pop() {
+    ///     assert!(producer.push(Thing(1)).is_ok());
+    ///     assert!(producer.push(Thing(2)).is_ok());
+    ///     if let Ok(thing) = consumer.pop() {
     ///         // "thing" has been *moved* out of the queue but not yet dropped
     ///         assert_eq!(unsafe { DROP_COUNT }, 0);
     ///     } else {
@@ -506,9 +506,9 @@ impl<T> ReadChunk<'_, T> {
     ///     }
     ///     // First Thing has been dropped when "thing" went out of scope:
     ///     assert_eq!(unsafe { DROP_COUNT }, 1);
-    ///     assert!(p.push(Thing(3)).is_ok());
+    ///     assert!(producer.push(Thing(3)).is_ok());
     ///
-    ///     if let Ok(chunk) = c.read_chunk(2) {
+    ///     if let Ok(chunk) = consumer.read_chunk(2) {
     ///         assert_eq!(chunk.len(), 2);
     ///         assert_eq!(unsafe { DROP_COUNT }, 1);
     ///         chunk.commit(1); // Drops only one of the two Things

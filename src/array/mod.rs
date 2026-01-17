@@ -21,18 +21,18 @@
 //! use rtrb::array::{RingBuffer, PushError, PopError};
 //!
 //! let rb = RingBuffer::<_, 2>::new();
-//! let mut p = rb.producer().unwrap();
-//! let mut c = rb.consumer().unwrap();
+//! let mut producer = rb.producer().unwrap();
+//! let mut consumer = rb.consumer().unwrap();
 //!
-//! assert_eq!(p.push(10), Ok(()));
-//! assert_eq!(p.push(20), Ok(()));
-//! assert_eq!(p.push(30), Err(PushError::Full(30)));
+//! assert_eq!(producer.push(10), Ok(()));
+//! assert_eq!(producer.push(20), Ok(()));
+//! assert_eq!(producer.push(30), Err(PushError::Full(30)));
 //!
 //! std::thread::scope(|s| {
 //!     s.spawn(move || {
-//!         assert_eq!(c.pop(), Ok(10));
-//!         assert_eq!(c.pop(), Ok(20));
-//!         assert_eq!(c.pop(), Err(PopError::Empty));
+//!         assert_eq!(consumer.pop(), Ok(10));
+//!         assert_eq!(consumer.pop(), Ok(20));
+//!         assert_eq!(consumer.pop(), Err(PopError::Empty));
 //!     });
 //! });
 //! ```
@@ -41,6 +41,30 @@
 //! for examples that write multiple items at once with
 //! [`Producer::write_chunk_uninit()`] and [`Producer::write_chunk()`]
 //! and read multiple items with [`Consumer::read_chunk()`].
+//!
+//! ## Usage with `static`
+//!
+//! A [`RingBuffer`] can be defined as a `static` item
+//! ([`RingBuffer::new()`] is a `const` function to allow this usage):
+//!
+//! ```
+//! use rtrb::array::{Consumer, Producer, RingBuffer};
+//!
+//! // This can be used either as a global variable or at function scope:
+//! static RB: RingBuffer<i32, 64> = RingBuffer::new();
+//!
+//! // This can be called from any thread, and/or moved to any thread:
+//! let mut producer = RB.producer().unwrap();
+//! assert_eq!(producer.push(10), Ok(()));
+//!
+//! // It's possible to store producers/consumers in a lifetime-less `struct`,
+//! // because they have `'static` lifetime:
+//! struct MyStruct {
+//!     consumer: Consumer<'static, i32>,
+//! }
+//! let mut s = MyStruct { consumer: RB.consumer().unwrap() };
+//! assert_eq!(s.consumer.pop(), Ok(10));
+//! ```
 
 const HAS_PRODUCER: u8 = 0b10000000;
 const HAS_CONSUMER: u8 = 0b01000000;

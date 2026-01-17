@@ -83,10 +83,10 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::arc2::{PushError, RingBuffer};
     ///
-    /// let (mut p, mut c) = RingBuffer::new(1);
+    /// let (mut producer, mut consumer) = RingBuffer::new(1);
     ///
-    /// assert_eq!(p.push(10), Ok(()));
-    /// assert_eq!(p.push(20), Err(PushError::Full(20)));
+    /// assert_eq!(producer.push(10), Ok(()));
+    /// assert_eq!(producer.push(20), Err(PushError::Full(20)));
     /// ```
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
         if let Some(tail) = self.next_tail() {
@@ -117,10 +117,10 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::arc2::RingBuffer;
     ///
-    /// let (mut p, mut c) = RingBuffer::new(4096);
-    /// assert_eq!(p.push(0.5f32), Ok(()));
+    /// let (mut producer, mut consumer) = RingBuffer::new(4096);
+    /// assert_eq!(producer.push(0.5f32), Ok(()));
     ///
-    /// assert_eq!(p.slots(), 4095);
+    /// assert_eq!(producer.slots(), 4095);
     /// ```
     pub fn slots(&self) -> usize {
         let b = &self.buffer;
@@ -139,11 +139,11 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::arc2::RingBuffer;
     ///
-    /// let (mut p, mut c) = RingBuffer::new(1);
+    /// let (mut producer, mut consumer) = RingBuffer::new(1);
     ///
-    /// assert!(!p.is_full());
-    /// assert_eq!(p.push(10), Ok(()));
-    /// assert!(p.is_full());
+    /// assert!(!producer.is_full());
+    /// assert_eq!(producer.push(10), Ok(()));
+    /// assert!(producer.is_full());
     /// ```
     ///
     /// Since items can be concurrently consumed on another thread, the ring buffer
@@ -151,9 +151,9 @@ impl<T> Producer<T> {
     ///
     /// ```
     /// # use rtrb::arc2::RingBuffer;
-    /// # let (mut p, mut c) = RingBuffer::new(1);
-    /// # assert_eq!(p.push(10), Ok(()));
-    /// if p.is_full() {
+    /// # let (mut producer, mut consumer) = RingBuffer::new(1);
+    /// # assert_eq!(producer.push(10), Ok(()));
+    /// if producer.is_full() {
     ///     // The buffer might be full, but it might as well not be
     ///     // if an item was just consumed on another thread.
     /// }
@@ -163,9 +163,9 @@ impl<T> Producer<T> {
     ///
     /// ```
     /// # use rtrb::arc2::RingBuffer;
-    /// # let (mut p, mut c) = RingBuffer::new(1);
-    /// # assert_eq!(p.push(10), Ok(()));
-    /// if !p.is_full() {
+    /// # let (mut producer, mut consumer) = RingBuffer::new(1);
+    /// # assert_eq!(producer.push(10), Ok(()));
+    /// if !producer.is_full() {
     ///     // At least one slot is guaranteed to be available for writing.
     /// }
     /// ```
@@ -185,13 +185,13 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::arc2::RingBuffer;
     ///
-    /// let (mut p, mut c) = RingBuffer::new(4096);
+    /// let (mut producer, mut consumer) = RingBuffer::new(4096);
     ///
-    /// assert_eq!(p.push(-0.7), Ok(()));
-    /// assert_eq!(p.slots(), 4095);
-    /// assert_eq!(c.slots(), 1);
-    /// assert_eq!(p.capacity(), 4096);
-    /// assert_eq!(c.capacity(), 4096);
+    /// assert_eq!(producer.push(-0.7), Ok(()));
+    /// assert_eq!(producer.slots(), 4095);
+    /// assert_eq!(consumer.slots(), 1);
+    /// assert_eq!(producer.capacity(), 4096);
+    /// assert_eq!(consumer.capacity(), 4096);
     /// ```
     pub fn capacity(&self) -> usize {
         self.buffer.capacity()
@@ -210,14 +210,14 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::arc2::RingBuffer;
     ///
-    /// let (mut p, mut c) = RingBuffer::new(7);
-    /// assert!(!p.is_abandoned());
-    /// assert_eq!(p.push(10), Ok(()));
-    /// drop(c);
+    /// let (mut producer, mut consumer) = RingBuffer::new(7);
+    /// assert!(!producer.is_abandoned());
+    /// assert_eq!(producer.push(10), Ok(()));
+    /// drop(consumer);
     /// // The items that are still in the ring buffer are not accessible anymore.
-    /// assert!(p.is_abandoned());
+    /// assert!(producer.is_abandoned());
     /// // Even though it's futile, items can still be written:
-    /// assert_eq!(p.push(11), Ok(()));
+    /// assert_eq!(producer.push(11), Ok(()));
     /// ```
     ///
     /// Since the consumer can be concurrently dropped on another thread,
@@ -225,9 +225,9 @@ impl<T> Producer<T> {
     ///
     /// ```
     /// # use rtrb::arc2::RingBuffer;
-    /// # let (mut p, mut c) = RingBuffer::new(1);
-    /// # assert_eq!(p.push(10), Ok(()));
-    /// if !p.is_abandoned() {
+    /// # let (mut producer, mut consumer) = RingBuffer::new(1);
+    /// # assert_eq!(producer.push(10), Ok(()));
+    /// if !producer.is_abandoned() {
     ///     // Right now, the consumer might still be alive, but it might as well not be
     ///     // if another thread has just dropped it.
     /// }
@@ -237,9 +237,9 @@ impl<T> Producer<T> {
     ///
     /// ```
     /// # use rtrb::arc2::RingBuffer;
-    /// # let (mut p, mut c) = RingBuffer::new(1);
-    /// # assert_eq!(p.push(10), Ok(()));
-    /// if p.is_abandoned() {
+    /// # let (mut producer, mut consumer) = RingBuffer::new(1);
+    /// # assert_eq!(producer.push(10), Ok(()));
+    /// if producer.is_abandoned() {
     ///     // The consumer does definitely not exist anymore.
     /// }
     /// ```

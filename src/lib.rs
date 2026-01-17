@@ -71,6 +71,9 @@
 //!
 //! </details>
 //!
+//! You can find this example (and more!) at
+//! <https://github.com/mgeier/rtrb/blob/main/examples/>.
+//!
 //! # General Properties
 //!
 //! ... SPSC ... bounded ... wrap-around ... single element vs chunks? ...
@@ -110,11 +113,11 @@
 //!
 //! static RB: RingBuffer<i32, 64> = RingBuffer::new();
 //!
-//! let mut p: Producer<'static, i32> = RB.producer().unwrap();
+//! let mut producer: Producer<'static, i32> = RB.producer().unwrap();
 //!
 //! // You can create producer and consumer in different threads, or you can
-//! // create them in the same thread and move them to separate threads afterwards.
-//! let mut c: Consumer<'static, i32> = RB.consumer().unwrap();
+//! // move them to other threads afterwards.
+//! let mut consumer: Consumer<'static, i32> = RB.consumer().unwrap();
 //! ```
 //!
 //! A disadvantage ... size restrictions (stack size) ...

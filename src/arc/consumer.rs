@@ -79,20 +79,20 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::arc::{PopError, RingBuffer};
     ///
-    /// let (mut p, mut c) = RingBuffer::new(1);
+    /// let (mut producer, mut consumer) = RingBuffer::new(1);
     ///
-    /// assert_eq!(p.push(10), Ok(()));
-    /// assert_eq!(c.pop(), Ok(10));
-    /// assert_eq!(c.pop(), Err(PopError::Empty));
+    /// assert_eq!(producer.push(10), Ok(()));
+    /// assert_eq!(consumer.pop(), Ok(10));
+    /// assert_eq!(consumer.pop(), Err(PopError::Empty));
     /// ```
     ///
     /// To obtain an [`Option<T>`](Option), use [`.ok()`](Result::ok) on the result.
     ///
     /// ```
     /// # use rtrb::arc::RingBuffer;
-    /// # let (mut p, mut c) = RingBuffer::new(1);
-    /// assert_eq!(p.push(20), Ok(()));
-    /// assert_eq!(c.pop().ok(), Some(20));
+    /// # let (mut producer, mut consumer) = RingBuffer::new(1);
+    /// assert_eq!(producer.push(20), Ok(()));
+    /// assert_eq!(consumer.pop().ok(), Some(20));
     /// ```
     pub fn pop(&mut self) -> Result<T, PopError> {
         if let Some(head) = self.next_head() {
@@ -119,12 +119,12 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::arc::{PeekError, RingBuffer};
     ///
-    /// let (mut p, mut c) = RingBuffer::new(1);
+    /// let (mut producer, mut consumer) = RingBuffer::new(1);
     ///
-    /// assert_eq!(c.peek(), Err(PeekError::Empty));
-    /// assert_eq!(p.push(10), Ok(()));
-    /// assert_eq!(c.peek(), Ok(&10));
-    /// assert_eq!(c.peek(), Ok(&10));
+    /// assert_eq!(consumer.peek(), Err(PeekError::Empty));
+    /// assert_eq!(producer.push(10), Ok(()));
+    /// assert_eq!(consumer.peek(), Ok(&10));
+    /// assert_eq!(consumer.peek(), Ok(&10));
     /// ```
     pub fn peek(&self) -> Result<&T, PeekError> {
         if let Some(head) = self.next_head() {
@@ -154,11 +154,11 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::arc::RingBuffer;
     ///
-    /// let (mut p, mut c) = RingBuffer::new(1024);
+    /// let (mut producer, mut consumer) = RingBuffer::new(1024);
     ///
-    /// assert_eq!(c.slots(), 0);
-    /// assert_eq!(p.push(0.0), Ok(()));
-    /// assert_eq!(c.slots(), 1);
+    /// assert_eq!(consumer.slots(), 0);
+    /// assert_eq!(producer.push(0.0), Ok(()));
+    /// assert_eq!(consumer.slots(), 1);
     /// ```
     pub fn slots(&self) -> usize {
         let b = &self.buffer;
@@ -177,11 +177,11 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::arc::RingBuffer;
     ///
-    /// let (mut p, mut c) = RingBuffer::new(1);
+    /// let (mut producer, mut consumer) = RingBuffer::new(1);
     ///
-    /// assert!(c.is_empty());
-    /// assert_eq!(p.push(0.0), Ok(()));
-    /// assert!(!c.is_empty());
+    /// assert!(consumer.is_empty());
+    /// assert_eq!(producer.push(0.0), Ok(()));
+    /// assert!(!consumer.is_empty());
     /// ```
     ///
     /// Since items can be concurrently produced on another thread, the ring buffer
@@ -189,9 +189,9 @@ impl<T> Consumer<T> {
     ///
     /// ```
     /// # use rtrb::arc::RingBuffer;
-    /// # let (mut p, mut c) = RingBuffer::new(1);
-    /// # assert_eq!(p.push(0.0), Ok(()));
-    /// if c.is_empty() {
+    /// # let (mut producer, mut consumer) = RingBuffer::new(1);
+    /// # assert_eq!(producer.push(0.0), Ok(()));
+    /// if consumer.is_empty() {
     ///     // The buffer might be empty, but it might as well not be
     ///     // if an item was just produced on another thread.
     /// }
@@ -201,9 +201,9 @@ impl<T> Consumer<T> {
     ///
     /// ```
     /// # use rtrb::arc::RingBuffer;
-    /// # let (mut p, mut c) = RingBuffer::new(1);
-    /// # assert_eq!(p.push(0.0), Ok(()));
-    /// if !c.is_empty() {
+    /// # let (mut producer, mut consumer) = RingBuffer::new(1);
+    /// # assert_eq!(producer.push(0.0), Ok(()));
+    /// if !consumer.is_empty() {
     ///     // At least one slot is guaranteed to be available for reading.
     /// }
     /// ```
@@ -231,13 +231,13 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::arc::RingBuffer;
     ///
-    /// let (mut p, mut c) = RingBuffer::new(7);
-    /// assert!(!c.is_abandoned());
-    /// assert_eq!(p.push(10), Ok(()));
-    /// drop(p);
-    /// assert!(c.is_abandoned());
+    /// let (mut producer, mut consumer) = RingBuffer::new(7);
+    /// assert!(!consumer.is_abandoned());
+    /// assert_eq!(producer.push(10), Ok(()));
+    /// drop(producer);
+    /// assert!(consumer.is_abandoned());
     /// // The items that are left in the ring buffer can still be consumed:
-    /// assert_eq!(c.pop(), Ok(10));
+    /// assert_eq!(consumer.pop(), Ok(10));
     /// ```
     ///
     /// Since the producer can be concurrently dropped on another thread,
@@ -245,9 +245,9 @@ impl<T> Consumer<T> {
     ///
     /// ```
     /// # use rtrb::arc::RingBuffer;
-    /// # let (mut p, mut c) = RingBuffer::new(1);
-    /// # assert_eq!(p.push(10), Ok(()));
-    /// if !c.is_abandoned() {
+    /// # let (mut producer, mut consumer) = RingBuffer::new(1);
+    /// # assert_eq!(producer.push(10), Ok(()));
+    /// if !consumer.is_abandoned() {
     ///     // Right now, the producer might still be alive, but it might as well not be
     ///     // if another thread has just dropped it.
     /// }
@@ -257,9 +257,9 @@ impl<T> Consumer<T> {
     ///
     /// ```
     /// # use rtrb::arc::RingBuffer;
-    /// # let (mut p, mut c) = RingBuffer::new(1);
-    /// # assert_eq!(p.push(10), Ok(()));
-    /// if c.is_abandoned() {
+    /// # let (mut producer, mut consumer) = RingBuffer::new(1);
+    /// # assert_eq!(producer.push(10), Ok(()));
+    /// if consumer.is_abandoned() {
     ///     // The producer does definitely not exist anymore.
     /// }
     /// ```

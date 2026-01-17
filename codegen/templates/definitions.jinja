@@ -37,16 +37,16 @@
 {##}
 {% macro doctest_create_ring_buffer(capacity, prefix="    ///") %}
 {% if N %}{% if arc %}
-{{ prefix }} let (mut p, mut c) = RingBuffer::<_, {{ capacity }}>::new();
+{{ prefix }} let (mut producer, mut consumer) = RingBuffer::<_, {{ capacity }}>::new();
 {%- else %}
 {{ prefix }} let rb = RingBuffer::<_, {{ capacity }}>::new();
-{{ prefix }} let mut p = rb.producer().unwrap();
-{{ prefix }} let mut c = rb.consumer().unwrap();
+{{ prefix }} let mut producer = rb.producer().unwrap();
+{{ prefix }} let mut consumer = rb.consumer().unwrap();
 {%- endif %}{% else %}{% if arc %}
-{{ prefix }} let (mut p, mut c) = RingBuffer::new({{ capacity }});
+{{ prefix }} let (mut producer, mut consumer) = RingBuffer::new({{ capacity }});
 {%- else %}
 {{ prefix }} let rb = RingBuffer::new({{ capacity }});
-{{ prefix }} let mut p = rb.producer().unwrap();
-{{ prefix }} let mut c = rb.consumer().unwrap();
+{{ prefix }} let mut producer = rb.producer().unwrap();
+{{ prefix }} let mut consumer = rb.consumer().unwrap();
 {%- endif %}{% endif %}
 {%- endmacro %}

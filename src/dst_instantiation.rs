@@ -81,13 +81,23 @@ macro_rules! dst_ring_buffer_instantiation {
                 layout.pad_to_align()
             }
 
-            /// Creates a `RingBuffer` at the given memory address.
+            /// Creates a new `RingBuffer` at the given memory address.
+            ///
+            /// To access an already existing `RingBuffer` at a given address,
+            /// use [`RingBuffer::from_raw_parts()`].
+            /// This can be used, for example, to communicate between two processes
+            /// via shared memory.
+            ///
+            /// If you don't need control over the memory location, you can simply use
+            /// [`RingBuffer::new()`], which will automatically allocate the required memory
+            /// on the heap.
             ///
             /// # Safety
             ///
             /// The provided memory allocation must have the required size and alignment
             /// (see [`RingBuffer::layout()`]), it must exist at least as long
-            /// as the returned reference and have no other reference (even immutable).
+            /// as the returned reference and can only be accessed via the `&RingBuffer`
+            /// returned from this method or from [`RingBuffer::from_raw_parts()`].
             pub unsafe fn new_at<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {
                 // TODO: check for power-of-two capacity?
 

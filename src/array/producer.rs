@@ -75,11 +75,11 @@ impl<T> Producer<'_, T> {
     /// use rtrb::array::{PushError, RingBuffer};
     ///
     /// let rb = RingBuffer::<_, 1>::new();
-    /// let mut p = rb.producer().unwrap();
-    /// let mut c = rb.consumer().unwrap();
+    /// let mut producer = rb.producer().unwrap();
+    /// let mut consumer = rb.consumer().unwrap();
     ///
-    /// assert_eq!(p.push(10), Ok(()));
-    /// assert_eq!(p.push(20), Err(PushError::Full(20)));
+    /// assert_eq!(producer.push(10), Ok(()));
+    /// assert_eq!(producer.push(20), Err(PushError::Full(20)));
     /// ```
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
         if let Some(tail) = self.next_tail() {
@@ -111,11 +111,11 @@ impl<T> Producer<'_, T> {
     /// use rtrb::array::RingBuffer;
     ///
     /// let rb = RingBuffer::<_, 4096>::new();
-    /// let mut p = rb.producer().unwrap();
-    /// let mut c = rb.consumer().unwrap();
-    /// assert_eq!(p.push(0.5f32), Ok(()));
+    /// let mut producer = rb.producer().unwrap();
+    /// let mut consumer = rb.consumer().unwrap();
+    /// assert_eq!(producer.push(0.5f32), Ok(()));
     ///
-    /// assert_eq!(p.slots(), 4095);
+    /// assert_eq!(producer.slots(), 4095);
     /// ```
     pub fn slots(&self) -> usize {
         let b = &self.buffer;
@@ -135,12 +135,12 @@ impl<T> Producer<'_, T> {
     /// use rtrb::array::RingBuffer;
     ///
     /// let rb = RingBuffer::<_, 1>::new();
-    /// let mut p = rb.producer().unwrap();
-    /// let mut c = rb.consumer().unwrap();
+    /// let mut producer = rb.producer().unwrap();
+    /// let mut consumer = rb.consumer().unwrap();
     ///
-    /// assert!(!p.is_full());
-    /// assert_eq!(p.push(10), Ok(()));
-    /// assert!(p.is_full());
+    /// assert!(!producer.is_full());
+    /// assert_eq!(producer.push(10), Ok(()));
+    /// assert!(producer.is_full());
     /// ```
     ///
     /// Since items can be concurrently consumed on another thread, the ring buffer
@@ -149,10 +149,10 @@ impl<T> Producer<'_, T> {
     /// ```
     /// # use rtrb::array::RingBuffer;
     /// # let rb = RingBuffer::<_, 1>::new();
-    /// # let mut p = rb.producer().unwrap();
-    /// # let mut c = rb.consumer().unwrap();
-    /// # assert_eq!(p.push(10), Ok(()));
-    /// if p.is_full() {
+    /// # let mut producer = rb.producer().unwrap();
+    /// # let mut consumer = rb.consumer().unwrap();
+    /// # assert_eq!(producer.push(10), Ok(()));
+    /// if producer.is_full() {
     ///     // The buffer might be full, but it might as well not be
     ///     // if an item was just consumed on another thread.
     /// }
@@ -163,10 +163,10 @@ impl<T> Producer<'_, T> {
     /// ```
     /// # use rtrb::array::RingBuffer;
     /// # let rb = RingBuffer::<_, 1>::new();
-    /// # let mut p = rb.producer().unwrap();
-    /// # let mut c = rb.consumer().unwrap();
-    /// # assert_eq!(p.push(10), Ok(()));
-    /// if !p.is_full() {
+    /// # let mut producer = rb.producer().unwrap();
+    /// # let mut consumer = rb.consumer().unwrap();
+    /// # assert_eq!(producer.push(10), Ok(()));
+    /// if !producer.is_full() {
     ///     // At least one slot is guaranteed to be available for writing.
     /// }
     /// ```
@@ -187,14 +187,14 @@ impl<T> Producer<'_, T> {
     /// use rtrb::array::RingBuffer;
     ///
     /// let rb = RingBuffer::<_, 4096>::new();
-    /// let mut p = rb.producer().unwrap();
-    /// let mut c = rb.consumer().unwrap();
+    /// let mut producer = rb.producer().unwrap();
+    /// let mut consumer = rb.consumer().unwrap();
     ///
-    /// assert_eq!(p.push(-0.7), Ok(()));
-    /// assert_eq!(p.slots(), 4095);
-    /// assert_eq!(c.slots(), 1);
-    /// assert_eq!(p.capacity(), 4096);
-    /// assert_eq!(c.capacity(), 4096);
+    /// assert_eq!(producer.push(-0.7), Ok(()));
+    /// assert_eq!(producer.slots(), 4095);
+    /// assert_eq!(consumer.slots(), 1);
+    /// assert_eq!(producer.capacity(), 4096);
+    /// assert_eq!(consumer.capacity(), 4096);
     /// ```
     pub fn capacity(&self) -> usize {
         self.buffer.capacity()

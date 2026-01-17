@@ -129,9 +129,11 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// use rtrb::bip_array::RingBuffer;
     ///
     /// let rb = RingBuffer::<_, 128>::new();
-    /// let mut p = rb.producer().unwrap();
-    /// assert_eq!(p.push(0.0f32), Ok(()));
+    /// let mut producer = rb.producer().unwrap();
+    /// assert_eq!(producer.push(0.0f32), Ok(()));
     /// ```
+    ///
+    /// See the [module-level documentation](crate::bip_array) for `static` usage.
     pub const fn new() -> Self {
         const {
             assert!(Self::update_capacity(N) == N, "`N` must be a power of two");
@@ -149,19 +151,19 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// use rtrb::bip_array::RingBuffer;
     ///
     /// let rb = RingBuffer::<_, 64>::new();
-    /// let mut p = rb.producer().unwrap();
-    /// let mut c = rb.consumer().unwrap();
+    /// let mut producer = rb.producer().unwrap();
+    /// let mut consumer = rb.consumer().unwrap();
     /// assert!(rb.producer().is_none());
-    /// assert_eq!(p.push(10), Ok(()));
-    /// drop(p);
-    /// assert!(!c.has_producer());
+    /// assert_eq!(producer.push(10), Ok(()));
+    /// drop(producer);
+    /// assert!(!consumer.has_producer());
     /// assert!(!rb.has_producer());
-    /// let mut p = rb.producer().unwrap();
-    /// assert!(c.has_producer());
+    /// let mut producer = rb.producer().unwrap();
+    /// assert!(consumer.has_producer());
     /// assert!(rb.has_producer());
-    /// assert_eq!(p.push(20), Ok(()));
-    /// assert_eq!(c.pop(), Ok(10));
-    /// assert_eq!(c.pop(), Ok(20));
+    /// assert_eq!(producer.push(20), Ok(()));
+    /// assert_eq!(consumer.pop(), Ok(10));
+    /// assert_eq!(consumer.pop(), Ok(20));
     /// ```
     pub fn producer(&self) -> Option<Producer<'_, T>> {
         use core::cell::Cell;
@@ -189,19 +191,19 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// use rtrb::bip_array::RingBuffer;
     ///
     /// let rb = RingBuffer::<_, 64>::new();
-    /// let mut p = rb.producer().unwrap();
-    /// let mut c = rb.consumer().unwrap();
+    /// let mut producer = rb.producer().unwrap();
+    /// let mut consumer = rb.consumer().unwrap();
     /// assert!(rb.consumer().is_none());
-    /// assert_eq!(p.push(10), Ok(()));
-    /// assert_eq!(p.push(20), Ok(()));
-    /// assert_eq!(c.pop(), Ok(10));
-    /// drop(c);
-    /// assert!(!p.has_consumer());
+    /// assert_eq!(producer.push(10), Ok(()));
+    /// assert_eq!(producer.push(20), Ok(()));
+    /// assert_eq!(consumer.pop(), Ok(10));
+    /// drop(consumer);
+    /// assert!(!producer.has_consumer());
     /// assert!(!rb.has_consumer());
-    /// let mut c = rb.consumer().unwrap();
-    /// assert!(p.has_consumer());
+    /// let mut consumer = rb.consumer().unwrap();
+    /// assert!(producer.has_consumer());
     /// assert!(rb.has_consumer());
-    /// assert_eq!(c.pop(), Ok(20));
+    /// assert_eq!(consumer.pop(), Ok(20));
     /// ```
     pub fn consumer(&self) -> Option<Consumer<'_, T>> {
         use core::cell::Cell;
