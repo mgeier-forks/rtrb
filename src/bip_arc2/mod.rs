@@ -4,7 +4,9 @@
 
 //! A bi-partite ring buffer whose capacity is a power of two.
 //!
-//! See ...
+//! If you need arbitrary capacities, use [`rtrb::bip_arc`](crate::bip_arc) instead.
+//!
+//! *See the [crate-level documentation](crate) for information about the available options.*
 //!
 //! # Usage
 //!

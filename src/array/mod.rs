@@ -2,7 +2,9 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/array.toml`.
 
-//! TODO: array docs
+//! Storage in an `array` (i.e. with a compile-time capacity).
+//!
+//! *See the [crate-level documentation](crate) for information about the available options.*
 //!
 //! # Usage
 //!

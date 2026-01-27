@@ -10,10 +10,29 @@
 //! |-|-|-|-|-|
 //! | [`arc`]/[`arc2`] | heap | ✔️ | ✔️ ||
 //! | [`mod@array`] | array || ✔️ ||
-//! | [`embedded`] | array ||||
+//! | [`dst_box`] | heap || ✔️ ||
 //! | [`bip_arc`]/[`bip_arc2`] | heap | ✔️ | ✔️ | ✔️ |
 //! | [`bip_array`] | array || ✔️ | ✔️ |
 //! | [`vrb_arc2`] | mmap | ✔️ | ✔️ | ✔️ |
+//!
+//! TODO: this is only a subset of possibilities. See the list of modules for more options
+//! (but still not an exhaustive list).
+//!
+//! TODO: provide power-of-two [`array2`] (and variants)?
+//! So far, this has not shown any performance advantages.
+//!
+//! TODO: provide "reference counted" versions for `array` variants?
+//! If you can use the heap, you might as well use [`arc`].
+//! So far, no performance advantages have been observed for `array`, their main advantage
+//! is the ability to be stored on the stack. And they can easily be used with `static`.
+//! But none of this is relevant for the "reference counted" variety.
+//!
+//! TODO: should there be an [`embedded`] variant (i.e. `array` storage + no cache padding + ...)?
+//! Or should this be a Cargo feature (maybe named `cache-padded`)?
+//! This would reduce the amount of auto-generated code as well as the number of available modules
+//! to choose from.
+//! However, it might be surprising that a Cargo feature changes the performance
+//! (and memory layout). Or isn't it?
 //!
 //!
 //! # A Quick Example
@@ -94,7 +113,7 @@
 //!
 //! # Storage
 //!
-//! The modules containing the word `array` (TODO: as well as `embedded`?)
+//! The modules containing the word `array`
 //! are using the built-in
 //! [`prim@array`] type for storing ring buffer elements.
 //! This means that the capacity must be known at compile time.
@@ -161,13 +180,18 @@
 //!
 //! # Usage with Shared Memory
 //!
-//! ... [`shared-memory` example application](https://github.com/mgeier/rtrb/blob/main/examples/shared-memory.rs) ...
+//! ... [`shared-memory-array` example application](https://github.com/mgeier/rtrb/blob/main/examples/shared-memory-array.rs) ...
 //!
 //! ```text
-//! cargo run --example shared-memory
+//! cargo run --example shared-memory-array
 //! ```
 //!
-//! TODO: shared memory with DST?
+//! ... [`shared-memory-dst` example application](https://github.com/mgeier/rtrb/blob/main/examples/shared-memory-dst.rs) ...
+//!
+//! ```text
+//! cargo run --example shared-memory-dst
+//! ```
+//!
 //!
 //! # Usage in Embedded Systems
 //!
@@ -193,7 +217,7 @@ use core::{fmt, mem::MaybeUninit};
 
 #[allow(dead_code, clippy::undocumented_unsafe_blocks)]
 mod cache_padded;
-/// TODO: public re-export, see crossbeam-utils
+/// Re-export from [`crossbeam_utils::CachePadded`](https://docs.rs/crossbeam-utils/).
 #[doc(inline)]
 pub use cache_padded::CachePadded;
 
@@ -211,6 +235,7 @@ pub mod arc;
 #[cfg(feature = "alloc")]
 pub mod arc2;
 pub mod array;
+pub mod array2;
 #[cfg(feature = "alloc")]
 pub mod bip_arc;
 #[cfg(feature = "alloc")]
@@ -313,7 +338,6 @@ pub enum ChunkError {
 #[cfg(feature = "std")]
 impl std::error::Error for ChunkError {}
 
-// TODO: a version without "alloc" feature.
 impl fmt::Display for ChunkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

@@ -31,6 +31,8 @@
 //! Implementations in other languages:
 //! <https://github.com/willemt/bipbuffer> (C)
 //!
+//! *See the [crate-level documentation](crate) for information about the available options.*
+//!
 //! # Usage
 //!
 //! A [`RingBuffer`] consists of two parts:

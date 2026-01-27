@@ -2,7 +2,14 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/dst_arc.toml`.
 
-//! TODO: dst docs
+//! TODO: This is for testing purposes.
+//!
+//! this is quite cool but it is unclear whether its performance holds up against `Vec` storage
+//!
+//! If it turns out to have better performance,
+//! it could completely replace `Vec` storage and become the new [`rtrb::arc`](crate::arc) variant.
+//!
+//! *See the [crate-level documentation](crate) for information about the available options.*
 //!
 //! # Usage
 //!

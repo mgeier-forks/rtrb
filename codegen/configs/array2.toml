@@ -1,0 +1,11 @@
+arc = false
+padded = true
+pow2 = true
+storage = "array"
+
+module_docstring = """
+//! TODO: is this necessary?
+//!
+//! So far, power-of-two indexing has shown no performance advantage.
+//! Apparently, the compiler can do this optimization on its own.
+"""

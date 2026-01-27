@@ -4,5 +4,5 @@ pow2 = false
 storage = "array"
 
 module_docstring = """
-//! TODO: array docs
+//! Storage in an `array` (i.e. with a compile-time capacity).
 """

@@ -4,5 +4,10 @@ pow2 = false
 storage = "dst"
 
 module_docstring = """
-//! TODO: dst docs
+//! TODO: This is for testing purposes.
+//!
+//! this is quite cool but it is unclear whether its performance holds up against `Vec` storage
+//!
+//! If it turns out to have better performance,
+//! it could completely replace `Vec` storage and become the new [`rtrb::arc`](crate::arc) variant.
 """

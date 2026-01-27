@@ -2,10 +2,19 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/embedded.toml`.
 
-//! TODO: embedded
+//! TODO: does this make sense?
 //!
 //! no cache padding, no dynamic allocation
-//! power-of-two optimizations might be done automatically by the compiler? TODO: verify
+//!
+//! So far, using power-of-two indices has not shown any performance advantages.
+//! The compiler seems to make such optimizations automatically
+//! when the capacity is known at compile time.
+//!
+//! instead of yet another configuration, could "cache padded" be a Cargo feature?
+//!
+//! what about cached indices? do they make sense in an embedded context?
+//!
+//! *See the [crate-level documentation](crate) for information about the available options.*
 //!
 //! # Usage
 //!

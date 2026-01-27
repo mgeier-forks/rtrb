@@ -4,5 +4,5 @@ pow2 = true
 storage = "vec"
 
 module_docstring = """
-//! TODO: arc2 docs
+//! Same as [`rtrb::arc`](crate::arc), but with a capacity that is a power of two.
 """

@@ -2,7 +2,9 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/arc2.toml`.
 
-//! TODO: arc2 docs
+//! Same as [`rtrb::arc`](crate::arc), but with a capacity that is a power of two.
+//!
+//! *See the [crate-level documentation](crate) for information about the available options.*
 //!
 //! # Usage
 //!

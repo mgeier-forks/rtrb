@@ -2,7 +2,12 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/bip_dst_arc.toml`.
 
-//! TODO: bip dst docs
+//! TODO: This is for testing purposes.
+//!
+//! There should be no functional differences between this and [`rtrb::bip_arc`](crate::bip_arc).
+//! If it turns out to have better preformance, it should replace that.
+//!
+//! *See the [crate-level documentation](crate) for information about the available options.*
 //!
 //! # Usage
 //!

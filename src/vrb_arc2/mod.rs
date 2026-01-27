@@ -16,6 +16,8 @@
 //!
 //! ... `capacity` will be rounded up to page size ... (TODO: add this in constructor docs?)
 //!
+//! *See the [crate-level documentation](crate) for information about the available options.*
+//!
 //! # Usage
 //!
 //! A [`RingBuffer`] consists of two parts:

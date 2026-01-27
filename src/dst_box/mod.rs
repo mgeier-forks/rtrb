@@ -2,7 +2,20 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/dst_box.toml`.
 
-//! TODO: dst_box docs
+//! TODO: Is this useful?
+//!
+//! TODO: Rename to `rtrb::boxed`?
+//!
+//! In contrast to [`rtrb::arc`](crate::arc), this provides a [`RingBuffer`]
+//! that is *not* automatically dropped when both its [`Producer`] and its [`Consumer`]
+//! go out of scope.
+//!
+//! TODO: mention `new()` and `new_at()`.
+//!
+//! This allows usage with dynamic capacity in combination with shared memory
+//! (and pre-allocated memory in general), see the `shared-memory-dst` example.
+//!
+//! *See the [crate-level documentation](crate) for information about the available options.*
 //!
 //! # Usage
 //!

@@ -5,5 +5,8 @@ pow2 = false
 storage = "dst"
 
 module_docstring = """
-//! TODO: bip dst docs
+//! TODO: This is for testing purposes.
+//!
+//! There should be no functional differences between this and [`rtrb::bip_arc`](crate::bip_arc).
+//! If it turns out to have better preformance, it should replace that.
 """
