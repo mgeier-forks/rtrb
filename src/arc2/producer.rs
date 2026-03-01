@@ -8,7 +8,7 @@ use super::arc_ring_buffer::ArcRingBuffer;
 use super::IS_ABANDONED;
 use super::{
     chunks::{WriteChunk, WriteChunkUninit},
-    ChunkError, PushError, RingBuffer,
+    ChunkError, CopyToUninit, PushError, RingBuffer,
 };
 use crate::atomic::*;
 
@@ -127,6 +127,18 @@ impl<T> Producer<T> {
         let head = b.head.load(Ordering::Acquire);
         self.cached_head.set(head);
         b.capacity() - b.distance(head, self.cached_tail.get())
+    }
+
+    /// Returns the number of cached slots.
+    ///
+    /// In many cases, this will not provide all available slots,
+    /// but it might be marginally faster than [`Producer::slots()`]
+    /// because it doesn't access the atomic read index.
+    pub fn cached_slots(&self) -> usize {
+        let b = &self.buffer;
+        let head = self.cached_head.get();
+        let tail = self.cached_tail.get();
+        b.capacity() - b.distance(head, tail)
     }
 
     /// Returns `true` if there are currently no slots available for writing.
@@ -352,5 +364,81 @@ impl<T> Producer<T> {
         let offset = b.collapse_position(tail);
         // SAFETY: `offset` has been set to a valid position.
         Ok(unsafe { WriteChunkUninit::new(self, n, offset) })
+    }
+}
+
+impl<T: Copy> Producer<T> {
+    /// Copies as many items as possible from the given `slice` into the ring buffer.
+    ///
+    /// The written slots are automatically made available to be read by the [`Consumer`].
+    ///
+    /// Returns two sub-slices of `slice`:
+    /// - The part that has been copied into the ring buffer (possibly empty).
+    /// - The unused remainder (possibly empty).
+    ///
+    /// To copy an entire slice (and fail otherwise), [`Producer::push_entire_slice()`] can be used.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::Producer;
+    ///
+    /// fn push_at_least_one_element<'a>(
+    ///     p: &mut Producer<i32>,
+    ///     s: &'a [i32],
+    /// ) -> Result<&'a [i32], &'a [i32]> {
+    ///     match p.push_partial_slice(s) {
+    ///         ([], remainder) => Err(remainder),
+    ///         (_, remainder) => Ok(remainder),
+    ///     }
+    /// }
+    ///
+    /// fn block_while_pushing_entire_slice(p: &mut Producer<i32>, mut s: &[i32]) {
+    ///     while let (_, remainder @ [_, ..]) = p.push_partial_slice(s) {
+    ///         std::thread::yield_now();
+    ///         s = remainder;
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
+    pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
+        let slots = if self.cached_slots() < slice.len() {
+            slice.len().min(self.slots())
+        } else {
+            slice.len()
+        };
+        let (pushed, remainder) = slice.split_at(slots);
+        // With MSRV 1.58, unwrap_unchecked() can be used.
+        match self.push_entire_slice(pushed) {
+            Ok(()) => {}
+            // SAFETY: The requested slots are available.
+            Err(_) => unsafe { core::hint::unreachable_unchecked() },
+        };
+        (pushed, remainder)
+    }
+
+    /// Copies all items from the given `slice` into the ring buffer.
+    ///
+    /// The written slots are automatically made available to be read by the [`Consumer`].
+    ///
+    /// To copy only into the available slots, [`Producer::push_partial_slice()`] can be used.
+    ///
+    /// # Errors
+    ///
+    /// If not enough free space is available in the ring buffer,
+    /// a [`ChunkError`] with the available slots is returned.
+    pub fn push_entire_slice(&mut self, slice: &[T]) -> Result<(), ChunkError> {
+        let mut chunk = self.write_chunk_uninit(slice.len())?;
+        let (one, two) = chunk.as_mut_slices();
+        let mid = one.len();
+        // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
+        slice[..mid].copy_to_uninit(one);
+        slice[mid..].copy_to_uninit(two);
+        // SAFETY: All slots have been initialized
+        unsafe {
+            chunk.commit_all();
+        }
+        Ok(())
     }
 }

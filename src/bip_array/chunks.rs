@@ -22,8 +22,39 @@
 //!
 //! # Examples
 //!
-//! This example uses a single thread for simplicity, but in a real application,
+//! The following examples use a single thread for simplicity, but in a real application,
 //! `producer` and `consumer` would of course live on different threads:
+//!
+//! If the trait bound `T: Copy` is satisfied,
+//! the `push_*_slice()` and `pop_*_slice()` methods can be used.
+//!
+//! ```
+//! use rtrb::bip_array::RingBuffer;
+//!
+//! let rb = RingBuffer::<_, 4>::new();
+//! let mut producer = rb.producer().unwrap();
+//! let mut consumer = rb.consumer().unwrap();
+//!
+//! let source = vec![1, 2, 3, 4, 5, 6];
+//! let (pushed, remainder) = producer.push_partial_slice(&source);
+//! assert_eq!(pushed, [1, 2, 3, 4]);
+//! assert_eq!(remainder, [5, 6]);
+//!
+//! let mut destination = vec![0; 3];
+//! consumer.pop_entire_slice(&mut destination).unwrap();
+//! assert_eq!(destination, [1, 2, 3]);
+//!
+//! let (popped, remainder) = consumer.pop_partial_slice(&mut destination);
+//! assert_eq!(popped, [4]);
+//! assert_eq!(remainder, [2, 3]);
+//! // The returned slices are mutable sub-slices into `destination`.
+//! remainder[0] = 99;
+//! assert_eq!(destination, [4, 99, 3]);
+//! ```
+//!
+//! If this convenience interface is too limited (or if `T` is not `Copy`)
+//! the more fundamental methods [`Producer::write_chunk()`],
+//! [`Producer::write_chunk_uninit()`] and [`Consumer::read_chunk()`] can be used.
 //!
 //! ```
 //! use rtrb::bip_array::RingBuffer;
@@ -316,7 +347,7 @@ impl<T> WriteChunkUninit<'_, T> {
     /// or [`commit_all()`](WriteChunkUninit::commit_all).
     /// If items are written but *not* committed afterwards,
     /// they will *not* become available for reading and
-    /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
+    /// they will eventually be dropped (if `T` implements [`Drop`]).
     pub fn as_mut_slice(&mut self) -> &mut [MaybeUninit<T>] {
         // SAFETY: The pointer and length have been computed correctly in write_chunk_uninit().
         unsafe { core::slice::from_raw_parts_mut(self.ptr.cast(), self.len) }

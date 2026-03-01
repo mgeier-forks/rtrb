@@ -51,9 +51,19 @@
 //! ```
 //!
 //! See the documentation of the [`chunks#examples`] module
-//! for examples that write multiple items at once with
-//! [`Producer::write_chunk_uninit()`] and [`Producer::write_chunk()`]
-//! and read multiple items with [`Consumer::read_chunk()`].
+//! for examples that write/read multiple items at once.
+//! See also:
+//!
+//!   * [`Producer::write_chunk()`]
+//!   * [`Producer::write_chunk_uninit()`]
+//!   * [`Producer::push_partial_slice()`] (if `T: Copy`)
+//!   * [`Producer::push_entire_slice()`] (if `T: Copy`)
+//!
+//!   * [`Consumer::read_chunk()`]
+//!   * [`Consumer::pop_partial_slice()`] (if `T: Copy`)
+//!   * [`Consumer::pop_partial_slice_uninit()`] (if `T: Copy`)
+//!   * [`Consumer::pop_entire_slice()`] (if `T: Copy`)
+//!   * [`Consumer::pop_entire_slice_uninit()`] (if `T: Copy`)
 
 const HAS_PRODUCER: u8 = 0b10000000;
 const HAS_CONSUMER: u8 = 0b01000000;
