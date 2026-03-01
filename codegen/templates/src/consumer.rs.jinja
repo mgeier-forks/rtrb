@@ -729,19 +729,35 @@ impl<T: Copy> Consumer<{{ arc_tick_blank }}T> {
     ///
     /// To copy only the available slots, [`Consumer::pop_partial_slice_uninit()`] can be used.
     /// To copy into an initialized slice, [`Consumer::pop_entire_slice()`] can be used.
+{% if bip %}
+    pub fn pop_entire_slice_uninit<'a>(
+        &mut self,
+        _slice: &'a mut [MaybeUninit<T>],
+    ) -> Result<&'a mut [T], ChunkError> {
+        // TODO: see Producer
+        todo!()
+    }
+{% else %}
     pub fn pop_entire_slice_uninit<'a>(
         &mut self,
         slice: &'a mut [MaybeUninit<T>],
     ) -> Result<&'a mut [T], ChunkError> {
         let chunk = self.read_chunk(slice.len())?;
+        {% if storage == "vrb" %}
+        let src = chunk.as_slice();
+        // NB: If slice.is_empty(), chunk will be empty as well and the following is a no-op:
+        src.copy_to_uninit(slice);
+        {% else %}
         let (one, two) = chunk.as_slices();
         let mid = one.len();
         // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
         one.copy_to_uninit(&mut slice[..mid]);
         two.copy_to_uninit(&mut slice[mid..]);
+        {% endif %}
         chunk.commit_all();
         // NB: This can be replaced by `assume_init_mut()` once stabilized:
         // SAFETY: The entire `slice` has been initialized above.
         Ok(unsafe { &mut *(slice as *mut _ as *mut [_]) })
     }
+{% endif %}
 }

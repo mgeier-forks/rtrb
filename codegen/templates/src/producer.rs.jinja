@@ -659,15 +659,32 @@ impl<T: Copy> Producer<{{ arc_tick_blank }}T> {
     ///
     /// If not enough free space is available in the ring buffer,
     /// a [`ChunkError`] with the available slots is returned.
+{% if bip %}
+    pub fn push_entire_slice(&mut self, _slice: &[T]) -> Result<(), ChunkError> {
+        // TODO: check if it fits into first slice
+        //self.slots()? self.cached_slots? self.cached_slots_contiguous()?
+        // TODO: if not, check if it fits into first 2 slices
+        todo!()
+    }
+{% else %}
     pub fn push_entire_slice(&mut self, slice: &[T]) -> Result<(), ChunkError> {
         let mut chunk = self.write_chunk_uninit(slice.len())?;
+        {% if storage == "vrb" %}
+        let dst = chunk.as_mut_slice();
+        // NB: If slice.is_empty(), chunk will be empty as well and the following is a no-op:
+        slice.copy_to_uninit(dst);
+        {% else %}
         let (one, two) = chunk.as_mut_slices();
         let mid = one.len();
         // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
         slice[..mid].copy_to_uninit(one);
         slice[mid..].copy_to_uninit(two);
+        {% endif %}
         // SAFETY: All slots have been initialized
-        unsafe { chunk.commit_all() };
+        unsafe {
+            chunk.commit_all();
+        }
         Ok(())
     }
+{% endif %}
 }
