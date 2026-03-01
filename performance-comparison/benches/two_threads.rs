@@ -2,15 +2,17 @@
 #[macro_use]
 mod two_threads;
 
+use core::num::NonZeroUsize;
+
 use ringbuf::traits::Consumer as _;
 use ringbuf::traits::Producer as _;
 use ringbuf::traits::Split as _;
 
 create_two_threads_benchmark!(
-    "1-npnc",
-    |capacity| npnc::bounded::spsc::channel(capacity.next_power_of_two()),
-    |p, i| p.produce(i).is_ok(),
-    |c| c.consume().ok(),
+    "1-gil",
+    |capacity| gil::spsc::channel(NonZeroUsize::new(capacity).unwrap()),
+    |p, i| p.try_send(i).is_ok(),
+    |c| c.try_recv(),
     ::
     "2-crossbeam-queue-pr338",
     crossbeam_queue_pr338::spsc::new,
@@ -27,18 +29,15 @@ create_two_threads_benchmark!(
     |p, i| p.try_send(i).is_ok(),
     |c| c.try_recv().ok(),
     ::
-    "5-ringbuf",
+    "5-ringbuffer-spsc",
+    |capacity| ringbuffer_spsc::ringbuffer(capacity.next_power_of_two()),
+    |p, i| p.push(i).is_none(),
+    |c| c.pull(),
+    ::
+    "6-ringbuf",
     |capacity| ringbuf::HeapRb::new(capacity).split(),
     |p, i| p.try_push(i).is_ok(),
     |c| c.try_pop(),
-    ::
-    "6-concurrent-queue",
-    |capacity| {
-        let q = std::sync::Arc::new(concurrent_queue::ConcurrentQueue::bounded(capacity));
-        (q.clone(), q)
-    },
-    |q, i| q.push(i).is_ok(),
-    |q| q.pop().ok(),
     ::
     "7-crossbeam-queue",
     |capacity| {

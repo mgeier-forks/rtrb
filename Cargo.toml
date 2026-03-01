@@ -1,6 +1,6 @@
 [package]
 name = "rtrb"
-version = "0.3.2"
+version = "0.3.3"
 authors = [
     "Stjepan Glavina <stjepang@gmail.com>",
     "Matthias Geier <Matthias.Geier@gmail.com>",
@@ -36,7 +36,7 @@ libc = { version = "0.2", optional = true }
 
 [dev-dependencies]
 rstest = "0.26.1"
-rand = "0.9"
+rand = "0.10"
 criterion = "0.8"
 # TODO: This is only needed for the doctests of cache_padded.rs! Is there a way to avoid this?
 crossbeam-utils = { version = "0.8", default-features = false }
