@@ -15,7 +15,7 @@ use super::ring_buffer::RingBufferUnsized;
 {% endif %}
 use super::{
     chunks::{WriteChunk, WriteChunkUninit},
-    ChunkError, PushError{% if not N %}, RingBuffer{% endif %},
+    ChunkError, CopyToUninit, PushError{% if not N %}, RingBuffer{% endif %},
 };
 {% if not arc %}
 use super::{HAS_CONSUMER, HAS_PRODUCER};
@@ -598,7 +598,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
 {% endif %}
 }
 
-impl<T: Copy> Producer<T> {
+impl<T: Copy> Producer<{{ arc_tick_blank }}T> {
     /// Copies as many items as possible from the given `slice` into the ring buffer.
     ///
     /// The written slots are automatically made available to be read by the [`Consumer`].

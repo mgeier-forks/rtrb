@@ -5,6 +5,7 @@
 // using the configuration file `codegen/configs/{{ module_name }}.toml`.
 
 use core::cell::Cell;
+use core::mem::MaybeUninit;
 
 {% if arc %}
 use super::arc_ring_buffer::ArcRingBuffer;
@@ -13,7 +14,7 @@ use super::IS_ABANDONED;
 {% if N %}
 use super::ring_buffer::RingBufferUnsized;
 {% endif %}
-use super::{chunks::ReadChunk, ChunkError, PeekError, PopError{% if not N %}, RingBuffer{% endif %}};
+use super::{chunks::ReadChunk, ChunkError, CopyToUninit, PeekError, PopError{% if not N %}, RingBuffer{% endif %}};
 {% if not arc %}
 use super::{HAS_CONSUMER, HAS_PRODUCER};
 {% endif %}
@@ -558,7 +559,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
 {% endif %}
 }
 
-impl<T: Copy> Consumer<T> {
+impl<T: Copy> Consumer<{{ arc_tick_blank }}T> {
     /// Copies as many items as possible from the ring buffer to the given `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
