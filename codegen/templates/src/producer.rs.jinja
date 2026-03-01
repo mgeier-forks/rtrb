@@ -250,27 +250,6 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
         (slots, b.collapse_position(refreshed_head))
     }
 
-    /// Returns the number of cached slots of the next two contiguous segments.
-    ///
-    /// In many cases, this will not provide all available slots,
-    /// but it might be marginally faster than [`Producer::slots_contiguous()`]
-    /// because it doesn't access the atomic read index.
-    pub fn cached_slots_contiguous(&self) -> (usize, usize) {
-        let b = &self.buffer;
-        let head = self.cached_head.get();
-        let tail = self.cached_tail.get();
-        let is_empty = head == tail;
-        let collapsed_head = b.collapse_position(head);
-        let collapsed_tail = b.collapse_position(tail);
-        if is_empty || collapsed_head < collapsed_tail {
-            let slots = b.capacity() - collapsed_tail;
-            debug_assert!(slots != 0 || b.capacity() == 0);
-            (slots, collapsed_head)
-        } else {
-            (collapsed_head - collapsed_tail, 0)
-        }
-    }
-
     /// Returns the number of slots of the next contiguous segment available for writing with
     /// [`write_chunk()`](Producer::write_chunk) or
     /// [`write_chunk_uninit()`](Producer::write_chunk_uninit).
@@ -680,51 +659,9 @@ impl<T: Copy> Producer<{{ arc_tick_blank }}T> {
     ///
     /// If not enough free space is available in the ring buffer,
     /// a [`ChunkError`] with the available slots is returned.
-{% if bip %}
-    /// This number of slots might not be available in a contiguous chunk.
-    pub fn push_entire_slice(&mut self, slice: &[T]) -> Result<(), ChunkError> {
-        match self.write_chunk_uninit(slice.len()) {
-            Ok(mut chunk) => {
-                let dst = chunk.as_mut_slice();
-                // NB: If slice.is_empty(), chunk will be empty as well and the following is a no-op:
-                slice.copy_to_uninit(dst);
-                // SAFETY: All slots have been initialized
-                unsafe {
-                    chunk.commit_all();
-                }
-                Ok(())
-            },
-            Err(e) => {
-                // The given slice doesn't fit into a contiguous region,
-                // but maybe it can be split into two parts?
-
-                // At this point, `head` has already been refreshed and the cache is up to date.
-                let (one, two) = self.cached_slots_contiguous();
-                if slice.len() <= one + two {
-                    let mut chunk = self.write_chunk_uninit(one).unwrap();
-                    slice[..one].copy_to_uninit(chunk.as_mut_slice());
-                    // SAFETY: All slots have been initialized
-                    unsafe {
-                        chunk.commit_all();
-                    }
-                    let mut chunk = self.write_chunk_uninit(two).unwrap();
-                    slice[one..].copy_to_uninit(chunk.as_mut_slice());
-                    // SAFETY: All slots have been initialized
-                    unsafe {
-                        chunk.commit_all();
-                    }
-                    Ok(())
-                } else {
-                    // TODO: return sum instead of max?
-                    Err(e)
-                }
-            },
-        }
-    }
-{% else %}
     pub fn push_entire_slice(&mut self, slice: &[T]) -> Result<(), ChunkError> {
         let mut chunk = self.write_chunk_uninit(slice.len())?;
-        {% if storage == "vrb" %}
+        {% if contiguous %}
         let dst = chunk.as_mut_slice();
         // NB: If slice.is_empty(), chunk will be empty as well and the following is a no-op:
         slice.copy_to_uninit(dst);
@@ -741,5 +678,4 @@ impl<T: Copy> Producer<{{ arc_tick_blank }}T> {
         }
         Ok(())
     }
-{% endif %}
 }

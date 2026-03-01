@@ -221,7 +221,23 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// because it doesn't access the atomic write index.
 {% if bip %}
     pub fn cached_slots(&self) -> usize {
-        todo!()
+        let b = &self.buffer;
+        let head = self.cached_head.get();
+        let collapsed_head = b.collapse_position(head);
+        let tail = self.cached_tail.get();
+        let collapsed_tail = b.collapse_position(tail);
+        let is_empty = head == tail;
+        if !is_empty && collapsed_tail <= collapsed_head {
+            // NB: `skip` is only relevant if (collapsed) `tail < head`
+            //     (or if the buffer is full).
+
+            // `tail` has been refreshed since it last wrapped (even if `cached_tail` is outdated),
+            // therefore `skip` needs no synchronization.
+            // TODO: cache skip?
+            b.skip.load(Ordering::Relaxed) - collapsed_head
+        } else {
+            collapsed_tail - collapsed_head
+        }
     }
 {% else %}
     pub fn cached_slots(&self) -> usize {
@@ -729,21 +745,12 @@ impl<T: Copy> Consumer<{{ arc_tick_blank }}T> {
     ///
     /// To copy only the available slots, [`Consumer::pop_partial_slice_uninit()`] can be used.
     /// To copy into an initialized slice, [`Consumer::pop_entire_slice()`] can be used.
-{% if bip %}
-    pub fn pop_entire_slice_uninit<'a>(
-        &mut self,
-        _slice: &'a mut [MaybeUninit<T>],
-    ) -> Result<&'a mut [T], ChunkError> {
-        // TODO: see Producer
-        todo!()
-    }
-{% else %}
     pub fn pop_entire_slice_uninit<'a>(
         &mut self,
         slice: &'a mut [MaybeUninit<T>],
     ) -> Result<&'a mut [T], ChunkError> {
         let chunk = self.read_chunk(slice.len())?;
-        {% if storage == "vrb" %}
+        {% if contiguous %}
         let src = chunk.as_slice();
         // NB: If slice.is_empty(), chunk will be empty as well and the following is a no-op:
         src.copy_to_uninit(slice);
@@ -759,5 +766,4 @@ impl<T: Copy> Consumer<{{ arc_tick_blank }}T> {
         // SAFETY: The entire `slice` has been initialized above.
         Ok(unsafe { &mut *(slice as *mut _ as *mut [_]) })
     }
-{% endif %}
 }
