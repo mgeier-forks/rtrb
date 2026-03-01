@@ -315,6 +315,7 @@ create_two_threads_with_chunks_benchmark!(
         chunk.commit_all();
         &s[..slots]
     },
+    ::
     "push_partial_slice-pop_partial_slice",
     rtrb::arc::RingBuffer::new,
     |p, s| p.push_partial_slice(s).1,
