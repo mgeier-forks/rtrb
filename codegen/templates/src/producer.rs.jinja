@@ -178,9 +178,10 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     /// but it might be marginally faster than [`Producer::slots()`]
     /// because it doesn't access the atomic read index.
     pub fn cached_slots(&self) -> usize {
+        let b = &self.buffer;
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
-        self.buffer.capacity - self.buffer.distance(head, tail)
+        b.capacity() - b.distance(head, tail)
     }
 
 {% if bip %}
