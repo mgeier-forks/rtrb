@@ -77,12 +77,11 @@
 //!     unreachable!();
 //! }
 //!
-//! // One element is still in the queue:
-//! assert_eq!(consumer.peek(), Ok(&12));
-//!
 //! assert_eq!(producer.slots(), 3);
 //! // Those free slots are available in two contiguous chunks:
 //! assert_eq!(producer.slots_contiguous(), (1, 2));
+//! // One element is still in the queue:
+//! assert_eq!(consumer.peek(), Ok(&12));
 //!
 //! let data = vec![20, 21];
 //! // NB: write_chunk_uninit() could be used for possibly better performance:
@@ -121,70 +120,6 @@
 //!
 //! TODO: modify iterator example, use slots_contiguous()
 //!
-//! ## Common Access Patterns
-//!
-//! TODO: does this make sense for "contiguous" variants?
-//!
-//! The following examples show the [`Producer`] side;
-//! similar patterns can of course be used with [`Consumer::read_chunk()`] as well.
-//! Furthermore, the examples use [`Producer::write_chunk_uninit()`],
-//! along with a bit of `unsafe` code.
-//! To avoid this, you can use [`Producer::write_chunk()`] instead,
-//! which requires the trait bound `T: Default` and will lead to a small runtime overhead.
-//!
-//! Copy a whole slice of items into the ring buffer, but only if space permits
-//! (if not, the entire input slice is returned as an error):
-//!
-//! ```
-//! use rtrb::{Producer, CopyToUninit as _};
-//! // TODO:
-//! // use rtrb::bip_arc2::{Producer, CopyToUninit as _};
-//!
-//! fn push_entire_slice<'a, T>(queue: &mut Producer<T>, slice: &'a [T]) -> Result<(), &'a [T]>
-//! where
-//!     T: Copy,
-//! {
-//!     if let Ok(mut chunk) = queue.write_chunk_uninit(slice.len()) {
-//!         let (first, second) = chunk.as_mut_slices();
-//!         let mid = first.len();
-//!         slice[..mid].copy_to_uninit(first);
-//!         slice[mid..].copy_to_uninit(second);
-//!         // SAFETY: All slots have been initialized
-//!         unsafe { chunk.commit_all() };
-//!         Ok(())
-//!     } else {
-//!         Err(slice)
-//!     }
-//! }
-//! ```
-//!
-//! Copy as many items as possible from a given slice, returning the number of copied items:
-//!
-//! ```
-//! use rtrb::{Producer, CopyToUninit as _, ChunkError::TooFewSlots};
-//! // TODO:
-//! // use rtrb::bip_arc2::{Producer, CopyToUninit as _, ChunkError::TooFewSlots};
-//!
-//! fn push_partial_slice<T>(queue: &mut Producer<T>, slice: &[T]) -> usize
-//! where
-//!     T: Copy,
-//! {
-//!     let mut chunk = match queue.write_chunk_uninit(slice.len()) {
-//!         Ok(chunk) => chunk,
-//!         // Remaining slots are returned, this will always succeed:
-//!         Err(TooFewSlots(n)) => queue.write_chunk_uninit(n).unwrap(),
-//!     };
-//!     let end = chunk.len();
-//!     let (first, second) = chunk.as_mut_slices();
-//!     let mid = first.len();
-//!     slice[..mid].copy_to_uninit(first);
-//!     slice[mid..end].copy_to_uninit(second);
-//!     // SAFETY: All slots have been initialized
-//!     unsafe { chunk.commit_all() };
-//!     end
-//! }
-//! ```
-//!
 //! Write as many slots as possible, given an iterator
 //! (and return the number of written slots):
 //!
@@ -215,9 +150,31 @@
 use super::{Consumer, Producer};
 use crate::atomic::*;
 use core::mem::MaybeUninit;
+
 // Only used in documentation:
 #[allow(unused_imports)]
 use super::{CopyToUninit, RingBuffer};
+
+/// Structure for writing into multiple ([`Default`]-initialized) slots in one go.
+///
+/// This is returned from [`Producer::write_chunk()`].
+///
+/// To obtain uninitialized slots, use [`Producer::write_chunk_uninit()`] instead,
+/// which also allows moving items from an iterator into the ring buffer
+/// by means of [`WriteChunkUninit::fill_from_iter()`].
+#[derive(Debug, PartialEq, Eq)]
+pub struct WriteChunk<'a, T>(Option<WriteChunkUninit<'a, T>>);
+
+impl<T> Drop for WriteChunk<'_, T> {
+    fn drop(&mut self) {
+        // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
+        if let Some(mut chunk) = self.0.take() {
+            // No part of the chunk has been committed, all slots are dropped.
+            // SAFETY: All slots have been initialized in From::from().
+            unsafe { chunk.drop_suffix(0) };
+        }
+    }
+}
 
 /// Structure for writing into multiple (uninitialized) slots in one go.
 ///
@@ -248,27 +205,6 @@ impl<'a, T: Default> From<WriteChunkUninit<'a, T>> for WriteChunk<'a, T> {
             unsafe { chunk.ptr.add(i).write(Default::default()) };
         }
         WriteChunk(Some(chunk))
-    }
-}
-
-/// Structure for writing into multiple ([`Default`]-initialized) slots in one go.
-///
-/// This is returned from [`Producer::write_chunk()`].
-///
-/// To obtain uninitialized slots, use [`Producer::write_chunk_uninit()`] instead,
-/// which also allows moving items from an iterator into the ring buffer
-/// by means of [`WriteChunkUninit::fill_from_iter()`].
-#[derive(Debug, PartialEq, Eq)]
-pub struct WriteChunk<'a, T>(Option<WriteChunkUninit<'a, T>>);
-
-impl<T> Drop for WriteChunk<'_, T> {
-    fn drop(&mut self) {
-        // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
-        if let Some(mut chunk) = self.0.take() {
-            // No part of the chunk has been committed, all slots are dropped.
-            // SAFETY: All slots have been initialized in From::from().
-            unsafe { chunk.drop_suffix(0) };
-        }
     }
 }
 
@@ -314,22 +250,6 @@ impl<'a, T> ReadChunk<'a, T> {
 // SAFETY: WriteChunkUninit only exists while a unique reference to the producer is held.
 // It is therefore safe to move it to another thread.
 unsafe impl<T: Send> Send for WriteChunkUninit<'_, T> {}
-
-/// It (and any wrapper structs) can be moved ...
-/// ```
-/// use rtrb::bip_arc2::chunks::ReadChunk;
-/// fn assert_send<X: Send>() {}
-/// assert_send::<ReadChunk<u8>>();
-/// ```
-/// ... but not shared between threads:
-/// ```compile_fail
-/// # use rtrb::bip_arc2::chunks::ReadChunk;
-/// fn assert_sync<X: Sync>() {}
-/// assert_sync::<ReadChunk<u8>>();
-/// ```
-// SAFETY: ReadChunk only exists while a unique reference to the consumer is held.
-// It is therefore safe to move it to another thread.
-unsafe impl<T: Send> Send for ReadChunk<'_, T> {}
 
 impl<T> WriteChunkUninit<'_, T> {
     /// Returns a slice for writing to the requested slots.
@@ -558,6 +478,22 @@ impl<T> WriteChunk<'_, T> {
     }
 }
 
+/// It (and any wrapper structs) can be moved ...
+/// ```
+/// use rtrb::bip_arc2::chunks::ReadChunk;
+/// fn assert_send<X: Send>() {}
+/// assert_send::<ReadChunk<u8>>();
+/// ```
+/// ... but not shared between threads:
+/// ```compile_fail
+/// # use rtrb::bip_arc2::chunks::ReadChunk;
+/// fn assert_sync<X: Sync>() {}
+/// assert_sync::<ReadChunk<u8>>();
+/// ```
+// SAFETY: ReadChunk only exists while a unique reference to the consumer is held.
+// It is therefore safe to move it to another thread.
+unsafe impl<T: Send> Send for ReadChunk<'_, T> {}
+
 impl<T> ReadChunk<'_, T> {
     /// Returns a slice for reading from the requested slots.
     ///
@@ -653,16 +589,6 @@ impl<T> ReadChunk<'_, T> {
         unsafe { self.commit_unchecked(n) };
     }
 
-    /// Returns the number of slots in the chunk.
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    /// Returns `true` if the chunk contains no slots.
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
     unsafe fn commit_unchecked(self, n: usize) -> usize {
         for i in 0..n {
             // SAFETY: The caller must make sure that there are n initialized elements.
@@ -673,6 +599,16 @@ impl<T> ReadChunk<'_, T> {
         b.head.store(head, Ordering::Release);
         self.consumer.cached_head.set(head);
         n
+    }
+
+    /// Returns the number of slots in the chunk.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Returns `true` if the chunk contains no slots.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 }
 
@@ -750,18 +686,13 @@ impl<T> core::iter::FusedIterator for ReadChunkIntoIter<'_, T> {}
 impl std::io::Write for Producer<u8> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        use super::ChunkError::TooFewSlots;
-        let mut chunk = match self.write_chunk_uninit(buf.len()) {
-            Ok(chunk) => chunk,
-            Err(TooFewSlots(0)) => return Err(std::io::ErrorKind::WouldBlock.into()),
-            Err(TooFewSlots(n)) => self.write_chunk_uninit(n).unwrap(),
-        };
-        let end = chunk.len();
-        // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
-        buf[..end].copy_to_uninit(chunk.as_mut_slice());
-        // SAFETY: All slots have been initialized
-        unsafe { chunk.commit_all() };
-        Ok(end)
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        match self.push_partial_slice(buf) {
+            ([], _) => Err(std::io::ErrorKind::WouldBlock.into()),
+            (pushed, _) => Ok(pushed.len()),
+        }
     }
 
     #[inline]
@@ -775,16 +706,12 @@ impl std::io::Write for Producer<u8> {
 impl std::io::Read for Consumer<u8> {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        use super::ChunkError::TooFewSlots;
-        let chunk = match self.read_chunk(buf.len()) {
-            Ok(chunk) => chunk,
-            Err(TooFewSlots(0)) => return Err(std::io::ErrorKind::WouldBlock.into()),
-            Err(TooFewSlots(n)) => self.read_chunk(n).unwrap(),
-        };
-        let end = chunk.len();
-        // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
-        buf[..end].copy_from_slice(chunk.as_slice());
-        chunk.commit_all();
-        Ok(end)
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        match self.pop_partial_slice(buf) {
+            ([], _) => Err(std::io::ErrorKind::WouldBlock.into()),
+            (popped, _) => Ok(popped.len()),
+        }
     }
 }

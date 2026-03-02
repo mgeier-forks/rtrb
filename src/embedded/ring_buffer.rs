@@ -21,7 +21,7 @@ use super::{Consumer, Producer};
 pub struct RingBuffer<T, const N: usize>(RingBufferInner<[MaybeUninit<T>; N]>);
 
 #[derive(Debug)]
-pub struct RingBufferInner<Container: ?Sized> {
+pub(super) struct RingBufferInner<Container: ?Sized> {
     pub(super) head: AtomicUsize,
     pub(super) tail: AtomicUsize,
     pub(super) flags: AtomicU8,
@@ -33,7 +33,7 @@ pub struct RingBufferInner<Container: ?Sized> {
     slots: UnsafeCell<Container>,
 }
 
-pub(crate) type RingBufferUnsized<T> = RingBufferInner<[MaybeUninit<T>]>;
+pub(super) type RingBufferUnsized<T> = RingBufferInner<[MaybeUninit<T>]>;
 
 // SAFETY: If T can be moved between threads, RingBuffer can as well.
 unsafe impl<T: Send, const N: usize> Send for RingBuffer<T, N> {}

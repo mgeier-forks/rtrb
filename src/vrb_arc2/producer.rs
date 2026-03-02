@@ -297,8 +297,8 @@ impl<T> Producer<T> {
     /// the user has to make sure that the relevant slots have been initialized
     /// before calling [`WriteChunkUninit::commit()`] or [`WriteChunkUninit::commit_all()`].
     ///
-    /// For a safe alternative that provides
-    /// a mutable slice    /// of [`Default`]-initialized slots, see [`Producer::write_chunk()`].
+    /// For a safe alternative that provides a mutable slice
+    /// of [`Default`]-initialized slots, see [`Producer::write_chunk()`].
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
