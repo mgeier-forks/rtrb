@@ -287,7 +287,7 @@ impl<T> WriteChunkUninit<'_, T> {
     /// or [`commit_all()`](WriteChunkUninit::commit_all).
     /// If items are written but *not* committed afterwards,
     /// they will *not* become available for reading and
-    /// they will eventually be dropped (if `T` implements [`Drop`]).
+    /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
     pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
         // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit().
         unsafe {
