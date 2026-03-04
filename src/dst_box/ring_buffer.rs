@@ -87,9 +87,9 @@ impl<T> RingBuffer<T> {
     /// Creates a ring buffer with the given `capacity`.
     ///
     /// A (single) [`Producer`] for writing into the ring buffer can be created with
-    /// [`producer()`](RingBuffer::producer).
+    /// [`RingBuffer::producer()`].
     /// A (single) [`Consumer`] for reading from the ring buffer can be created with
-    /// [`consumer()`](RingBuffer::consumer).
+    /// [`RingBuffer::consumer()`].
     ///
     /// # Examples
     ///

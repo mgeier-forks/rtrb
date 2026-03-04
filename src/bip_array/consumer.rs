@@ -20,11 +20,12 @@ use super::{Producer, RingBuffer};
 /// but references from different threads are not allowed
 /// (i.e. it is [`Send`] but not [`Sync`]).
 ///
-/// Individual elements can be moved out of the ring buffer with [`pop()`](Consumer::pop),
-/// multiple elements at once can be read with [`read_chunk()`](Consumer::read_chunk).
+/// Individual elements can be moved out of the ring buffer with [`Consumer::pop()`],
+/// multiple elements at once can be read with [`Consumer::read_chunk()`],
+/// [`Consumer::pop_partial_slice()`] and [`Consumer::pop_partial_slice_uninit()`].
 ///
 /// The number of slots currently available for reading can be obtained with
-/// [`slots()`](Consumer::slots).
+/// [`Consumer::slots()`].
 ///
 /// A `Consumer` can only be created with [`RingBuffer::consumer()`].
 #[derive(Debug, PartialEq, Eq)]
@@ -52,7 +53,7 @@ impl<T> Drop for Consumer<'_, T> {
 /// fn assert_sync<X: Sync>() {}
 /// assert_sync::<Consumer<u8>>();
 /// ```
-// SAFETY: After moving a consumer to another thread, there is still only a single thread
+// SAFETY: After moving the consumer to another thread, there is still only a single thread
 // that can access the consumer side of the queue.
 unsafe impl<T: Send> Send for Consumer<'_, T> where RingBufferUnsized<T>: Sync {}
 
@@ -124,6 +125,24 @@ impl<T> Consumer<'_, T> {
     /// assert_eq!(consumer.peek(), Ok(&10));
     /// assert_eq!(consumer.peek(), Ok(&10));
     /// ```
+    ///
+    /// Note that `peek()` takes a shared reference to `self`,
+    /// which means that other methods that take `&self` can be called
+    /// while the returned reference is still in use.
+    /// However, calling methods that take `&mut self`
+    /// (like [`Consumer::pop()`] and [`Consumer::read_chunk()`]) leads to a compiler error:
+    ///
+    /// ```compile_fail
+    /// use rtrb::bip_array::RingBuffer;
+    ///
+    /// let rb = RingBuffer::<_, 8>::new();
+    /// let mut producer = rb.producer().unwrap();
+    /// let mut consumer = rb.consumer().unwrap();
+    /// producer.push(10).unwrap();
+    /// let shared_ref = consumer.peek().unwrap();
+    /// let value = consumer.pop().unwrap();
+    /// assert_eq!(shared_ref, &10);
+    /// ```
     pub fn peek(&self) -> Result<&T, PeekError> {
         if let Some(head) = self.next_head() {
             // SAFETY: head points to an initialized slot.
@@ -136,11 +155,10 @@ impl<T> Consumer<'_, T> {
     /// Returns the number of slots available for reading.
     ///
     /// Since items can be concurrently produced on another thread, the actual number
-    /// of available slots may increase at any time
-    /// (up to the [`capacity()`](Consumer::capacity)).
+    /// of available slots may increase at any time (up to the [`Consumer::capacity()`]).
     ///
     /// To check for a single available slot,
-    /// using [`is_empty()`](Consumer::is_empty) is often quicker
+    /// using [`Consumer::is_empty()`] is often quicker
     /// (because it might not have to check an atomic variable).
     ///
     /// Due to wrap-around of the internal buffer, the reported slots might not be
@@ -392,15 +410,14 @@ impl<T> Consumer<'_, T> {
     /// Alternatively, items can be moved out of the [`ReadChunk`] using iteration
     /// because it implements [`IntoIterator`]
     /// ([`ReadChunk::into_iter()`] can be used to explicitly turn it into an [`Iterator`]).
-    /// All moved items are automatically made available to be written again by
-    /// the [`Producer`].
+    /// All moved items are automatically made available to be written again by the [`Producer`].
     ///
     /// # Errors
     ///
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
     /// Use
-    /// [`slots_contiguous_first()`](Consumer::slots_contiguous_first)
+    /// [`Consumer::slots_contiguous_first()`]
     /// to obtain the number of available slots beforehand.
     ///
     /// # Examples
@@ -417,9 +434,7 @@ impl<T> Consumer<'_, T> {
             Err(ChunkError::TooFewSlots(slots))
         }
     }
-}
 
-impl<T: Copy> Consumer<'_, T> {
     /// Copies as many items as possible from the ring buffer to the given `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
@@ -455,7 +470,10 @@ impl<T: Copy> Consumer<'_, T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn pop_partial_slice<'a>(&mut self, slice: &'a mut [T]) -> (&'a mut [T], &'a mut [T]) {
+    pub fn pop_partial_slice<'a>(&mut self, slice: &'a mut [T]) -> (&'a mut [T], &'a mut [T])
+    where
+        T: Copy,
+    {
         // SAFETY: Transmuting &mut [T] to &mut [MaybeUninit<T>] is generally unsafe!
         // However, since we can guarantee that only valid T values will ever be written,
         // and the reference never leaves our control, it should be fine.
@@ -541,7 +559,10 @@ impl<T: Copy> Consumer<'_, T> {
     pub fn pop_partial_slice_uninit<'a>(
         &mut self,
         slice: &'a mut [MaybeUninit<T>],
-    ) -> (&'a mut [T], &'a mut [MaybeUninit<T>]) {
+    ) -> (&'a mut [T], &'a mut [MaybeUninit<T>])
+    where
+        T: Copy,
+    {
         let slots = if self.cached_slots() < slice.len() {
             slice.len().min(self.slots())
         } else {
@@ -568,7 +589,10 @@ impl<T: Copy> Consumer<'_, T> {
     ///
     /// To copy only the available slots, [`Consumer::pop_partial_slice()`] can be used.
     /// To copy into an uninitialized slice, [`Consumer::pop_entire_slice_uninit()`] can be used.
-    pub fn pop_entire_slice(&mut self, slice: &mut [T]) -> Result<(), ChunkError> {
+    pub fn pop_entire_slice(&mut self, slice: &mut [T]) -> Result<(), ChunkError>
+    where
+        T: Copy,
+    {
         // SAFETY: Transmuting &mut [T] to &mut [MaybeUninit<T>] is generally unsafe!
         // However, since we can guarantee that only valid T values will ever be written,
         // and the reference never leaves our control, it should be fine.
@@ -592,7 +616,10 @@ impl<T: Copy> Consumer<'_, T> {
     pub fn pop_entire_slice_uninit<'a>(
         &mut self,
         slice: &'a mut [MaybeUninit<T>],
-    ) -> Result<&'a mut [T], ChunkError> {
+    ) -> Result<&'a mut [T], ChunkError>
+    where
+        T: Copy,
+    {
         let chunk = self.read_chunk(slice.len())?;
         let src = chunk.as_slice();
         // NB: If slice.is_empty(), chunk will be empty as well and the following is a no-op:

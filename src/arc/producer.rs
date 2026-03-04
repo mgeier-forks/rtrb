@@ -22,12 +22,13 @@ use super::Consumer;
 /// but references from different threads are not allowed
 /// (i.e. it is [`Send`] but not [`Sync`]).
 ///
-/// Individual elements can be moved into the ring buffer with [`push()`](Producer::push),
-/// multiple elements at once can be written with [`write_chunk()`](Producer::write_chunk)
-/// and [`write_chunk_uninit()`](Producer::write_chunk_uninit).
+/// Individual elements can be moved into the ring buffer with [`Producer::push()`],
+/// multiple elements at once can be written with [`Producer::write_chunk()`],
+/// [`Producer::write_chunk_uninit()`], [`Producer::push_partial_slice()`] and
+/// [`Producer::push_entire_slice()`].
 ///
 /// The number of free slots currently available for writing can be obtained with
-/// [`slots()`](Producer::slots).
+/// [`Producer::slots()`].
 ///
 /// A `Producer` can only be created with [`RingBuffer::new()`]
 /// (together with its counterpart, the [`Consumer`]).
@@ -41,14 +42,17 @@ use super::Consumer;
 #[derive(Debug, PartialEq, Eq)]
 pub struct Producer<T> {
     pub(super) buffer: ArcRingBuffer<T>,
+
     /// A copy of `buffer.head` for quick access.
     ///
-    /// This value can be stale and sometimes needs to be resynchronized
-    /// with `buffer.head`.
+    /// This value can be stale and sometimes needs to be resynchronized with `buffer.head`.
     pub(super) cached_head: Cell<usize>,
+
     /// A copy of `buffer.tail` for quick access.
     ///
     /// This value is always in sync with `buffer.tail`.
+    // NB: Caching the tail seems to have little effect on Intel CPUs, but it seems to
+    //     improve performance on AMD CPUs, see https://github.com/mgeier/rtrb/pull/132
     pub(super) cached_tail: Cell<usize>,
 }
 
@@ -64,7 +68,7 @@ pub struct Producer<T> {
 /// fn assert_sync<X: Sync>() {}
 /// assert_sync::<Producer<u8>>();
 /// ```
-// SAFETY: After moving a producer to another thread, there is still only a single thread
+// SAFETY: After moving the producer to another thread, there is still only a single thread
 // that can access the producer side of the queue.
 unsafe impl<T: Send> Send for Producer<T> where RingBuffer<T>: Sync {}
 
@@ -105,11 +109,10 @@ impl<T> Producer<T> {
     /// Returns the number of slots available for writing.
     ///
     /// Since items can be concurrently consumed on another thread, the actual number
-    /// of available slots may increase at any time
-    /// (up to the [`capacity()`](Producer::capacity)).
+    /// of available slots may increase at any time (up to the [`Producer::capacity()`]).
     ///
     /// To check for a single available slot,
-    /// using [`is_full()`](Producer::is_full) is often quicker
+    /// using [`Producer::is_full()`] is often quicker
     /// (because it might not have to check an atomic variable).
     ///
     /// # Examples
@@ -264,13 +267,13 @@ impl<T> Producer<T> {
     /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
     /// For performance, this special case is implemented separately.
     fn next_tail(&self) -> Option<usize> {
-        let head = self.cached_head.get();
+        let mut head = self.cached_head.get();
         let tail = self.cached_tail.get();
         let b = &self.buffer;
         // Check if the queue is *possibly* full.
         if b.distance(head, tail) == b.capacity() {
             // Refresh the head ...
-            let head = b.head.load(Ordering::Acquire);
+            head = b.head.load(Ordering::Acquire);
             self.cached_head.set(head);
             // ... and check if it's *really* full.
             if b.distance(head, tail) == b.capacity() {
@@ -302,7 +305,7 @@ impl<T> Producer<T> {
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
     /// Use
-    /// [`slots()`](Producer::slots)
+    /// [`Producer::slots()`]
     /// to obtain the number of available slots beforehand.
     ///
     /// # Examples
@@ -318,8 +321,7 @@ impl<T> Producer<T> {
     /// Prepares a chunk of `n` (uninitialized) slots for writing.
     ///
     /// [`WriteChunkUninit::as_mut_slices()`]
-    /// provides mutable access
-    /// to the uninitialized slots.
+    /// provides mutable access to the uninitialized slots.
     /// After writing to those slots, they explicitly have to be made available
     /// to be read by the [`Consumer`] by calling [`WriteChunkUninit::commit()`]
     /// or [`WriteChunkUninit::commit_all()`].
@@ -333,7 +335,7 @@ impl<T> Producer<T> {
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
     /// Use
-    /// [`slots()`](Producer::slots)
+    /// [`Producer::slots()`]
     /// to obtain the number of available slots beforehand.
     ///
     /// # Safety
@@ -344,16 +346,21 @@ impl<T> Producer<T> {
     /// the user has to make sure that the relevant slots have been initialized
     /// before calling [`WriteChunkUninit::commit()`] or [`WriteChunkUninit::commit_all()`].
     ///
-    /// For a safe alternative that provides mutable slices
+    /// For a safe alternative that provides
+    /// mutable slices
     /// of [`Default`]-initialized slots, see [`Producer::write_chunk()`].
+    ///
+    /// # Examples
+    ///
+    /// See the documentation of the [`chunks`](super::chunks#examples) module.
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
-        let head = self.cached_head.get();
+        let mut head = self.cached_head.get();
         let tail = self.cached_tail.get();
         let b = &self.buffer;
         // Check if the queue has *possibly* not enough slots.
         if b.capacity() - b.distance(head, tail) < n {
             // Refresh the head ...
-            let head = b.head.load(Ordering::Acquire);
+            head = b.head.load(Ordering::Acquire);
             self.cached_head.set(head);
             // ... and check if there *really* are not enough slots.
             let slots = b.capacity() - b.distance(head, tail);
@@ -365,9 +372,7 @@ impl<T> Producer<T> {
         // SAFETY: `offset` has been set to a valid position.
         Ok(unsafe { WriteChunkUninit::new(self, n, offset) })
     }
-}
 
-impl<T: Copy> Producer<T> {
     /// Copies as many items as possible from the given `slice` into the ring buffer.
     ///
     /// The written slots are automatically made available to be read by the [`Consumer`].
@@ -402,7 +407,10 @@ impl<T: Copy> Producer<T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
+    pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T])
+    where
+        T: Copy,
+    {
         let slots = if self.cached_slots() < slice.len() {
             slice.len().min(self.slots())
         } else {
@@ -428,7 +436,10 @@ impl<T: Copy> Producer<T> {
     ///
     /// If not enough free space is available in the ring buffer,
     /// a [`ChunkError`] with the available slots is returned.
-    pub fn push_entire_slice(&mut self, slice: &[T]) -> Result<(), ChunkError> {
+    pub fn push_entire_slice(&mut self, slice: &[T]) -> Result<(), ChunkError>
+    where
+        T: Copy,
+    {
         let mut chunk = self.write_chunk_uninit(slice.len())?;
         let (one, two) = chunk.as_mut_slices();
         let mid = one.len();

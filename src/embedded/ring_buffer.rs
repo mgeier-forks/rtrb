@@ -105,9 +105,9 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// Creates a ring buffer with a capacity of `N`.
     ///
     /// A (single) [`Producer`] for writing into the ring buffer can be created with
-    /// [`producer()`](RingBuffer::producer).
+    /// [`RingBuffer::producer()`].
     /// A (single) [`Consumer`] for reading from the ring buffer can be created with
-    /// [`consumer()`](RingBuffer::consumer).
+    /// [`RingBuffer::consumer()`].
     ///
     /// # Examples
     ///

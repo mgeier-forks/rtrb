@@ -182,6 +182,76 @@ impl<T> Drop for WriteChunk<'_, T> {
     }
 }
 
+impl<T> WriteChunk<'_, T> {
+    /// Returns two slices for writing to the requested slots.
+    ///
+    /// All slots are initially filled with their [`Default`] value.
+    ///
+    /// The first slice can only be empty if `0` slots have been requested.
+    /// If the first slice contains all requested slots, the second one is empty.
+    ///
+    /// After writing to the slots, they are *not* automatically made available
+    /// to be read by the [`Consumer`].
+    /// This has to be explicitly done by calling [`commit()`](WriteChunk::commit)
+    /// or [`commit_all()`](WriteChunk::commit_all).
+    /// If items are written but *not* committed afterwards,
+    /// they will *not* become available for reading and
+    /// they will eventually be dropped (if `T` implements [`Drop`]).
+    pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
+        // self.0 is always Some(chunk).
+        let chunk = self.0.as_ref().unwrap();
+        // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit()
+        // and all slots have been initialized in From::from().
+        unsafe {
+            (
+                core::slice::from_raw_parts_mut(chunk.first_ptr, chunk.first_len),
+                core::slice::from_raw_parts_mut(chunk.second_ptr, chunk.second_len),
+            )
+        }
+    }
+
+    /// Makes the whole chunk available for reading.
+    pub fn commit_all(mut self) {
+        // self.0 is always Some(chunk).
+        let chunk = self.0.take().unwrap();
+        // SAFETY: All slots have been initialized in From::from().
+        unsafe { chunk.commit_all() };
+        // `self` is dropped here, with `self.0` being set to `None`.
+    }
+
+    /// Makes the first `n` slots of the chunk available for reading.
+    ///
+    /// The rest of the chunk is dropped.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is greater than the number of slots in the chunk.
+    pub fn commit(mut self, n: usize) {
+        // self.0 is always Some(chunk).
+        let mut chunk = self.0.take().unwrap();
+        // SAFETY: All slots have been initialized in From::from().
+        unsafe {
+            // Slots at index `n` and higher are dropped ...
+            chunk.drop_suffix(n);
+            // ... everything below `n` is committed.
+            chunk.commit(n);
+        }
+        // `self` is dropped here, with `self.0` being set to `None`.
+    }
+
+    /// Returns the number of slots in the chunk.
+    pub fn len(&self) -> usize {
+        // self.0 is always Some(chunk).
+        self.0.as_ref().unwrap().len()
+    }
+
+    /// Returns `true` if the chunk contains no slots.
+    pub fn is_empty(&self) -> bool {
+        // self.0 is always Some(chunk).
+        self.0.as_ref().unwrap().is_empty()
+    }
+}
+
 /// Structure for writing into multiple (uninitialized) slots in one go.
 ///
 /// This is returned from [`Producer::write_chunk_uninit()`].
@@ -223,33 +293,6 @@ impl<'a, T: Default> From<WriteChunkUninit<'a, T>> for WriteChunk<'a, T> {
     }
 }
 
-/// Structure for reading from multiple slots in one go.
-///
-/// This is returned from [`Consumer::read_chunk()`].
-#[derive(Debug, PartialEq, Eq)]
-pub struct ReadChunk<'a, T> {
-    first_ptr: *mut T,
-    first_len: usize,
-    second_ptr: *mut T,
-    second_len: usize,
-    consumer: &'a Consumer<T>,
-}
-
-impl<'a, T> ReadChunk<'a, T> {
-    pub(super) unsafe fn new(consumer: &'a Consumer<T>, n: usize, offset: usize) -> Self {
-        let b = &consumer.buffer;
-        let first_len = n.min(b.capacity() - offset);
-        Self {
-            // SAFETY: Caller must guarantee that `offset` is valid.
-            first_ptr: unsafe { b.data_ptr().add(offset) },
-            first_len,
-            second_ptr: b.data_ptr(),
-            second_len: n - first_len,
-            consumer,
-        }
-    }
-}
-
 /// It (as well as [`WriteChunk`]) can be moved ...
 /// ```
 /// use rtrb::dst_arc::chunks::{WriteChunk, WriteChunkUninit};
@@ -278,8 +321,7 @@ impl<T> WriteChunkUninit<'_, T> {
     /// The first slice can only be empty if `0` slots have been requested.
     /// If the first slice contains all requested slots, the second one is empty.
     ///
-    /// The extension trait [`CopyToUninit`] can be used
-    /// to safely copy data into those slices.
+    /// The extension trait [`CopyToUninit`] can be used to safely copy data into those slices.
     ///
     /// After writing to the slots, they are *not* automatically made available
     /// to be read by the [`Consumer`].
@@ -344,7 +386,6 @@ impl<T> WriteChunkUninit<'_, T> {
     /// } else {
     ///     unreachable!();
     /// }
-    /// assert_eq!(consumer.slots(), 2);
     /// assert_eq!(consumer.pop(), Ok(10));
     /// assert_eq!(consumer.pop(), Ok(20));
     /// assert_eq!(consumer.pop(), Err(PopError::Empty));
@@ -430,73 +471,30 @@ impl<T> WriteChunkUninit<'_, T> {
     }
 }
 
-impl<T> WriteChunk<'_, T> {
-    /// Returns two slices for writing to the requested slots.
-    ///
-    /// All slots are initially filled with their [`Default`] value.
-    ///
-    /// The first slice can only be empty if `0` slots have been requested.
-    /// If the first slice contains all requested slots, the second one is empty.
-    ///
-    /// After writing to the slots, they are *not* automatically made available
-    /// to be read by the [`Consumer`].
-    /// This has to be explicitly done by calling [`commit()`](WriteChunk::commit)
-    /// or [`commit_all()`](WriteChunk::commit_all).
-    /// If items are written but *not* committed afterwards,
-    /// they will *not* become available for reading and
-    /// they will eventually be dropped (if `T` implements [`Drop`]).
-    pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
-        // self.0 is always Some(chunk).
-        let chunk = self.0.as_ref().unwrap();
-        // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit()
-        // and all slots have been initialized in From::from().
-        unsafe {
-            (
-                core::slice::from_raw_parts_mut(chunk.first_ptr, chunk.first_len),
-                core::slice::from_raw_parts_mut(chunk.second_ptr, chunk.second_len),
-            )
+/// Structure for reading from multiple slots in one go.
+///
+/// This is returned from [`Consumer::read_chunk()`].
+#[derive(Debug, PartialEq, Eq)]
+pub struct ReadChunk<'a, T> {
+    first_ptr: *mut T,
+    first_len: usize,
+    second_ptr: *mut T,
+    second_len: usize,
+    consumer: &'a Consumer<T>,
+}
+
+impl<'a, T> ReadChunk<'a, T> {
+    pub(super) unsafe fn new(consumer: &'a Consumer<T>, n: usize, offset: usize) -> Self {
+        let b = &consumer.buffer;
+        let first_len = n.min(b.capacity() - offset);
+        Self {
+            // SAFETY: Caller must guarantee that `offset` is valid.
+            first_ptr: unsafe { b.data_ptr().add(offset) },
+            first_len,
+            second_ptr: b.data_ptr(),
+            second_len: n - first_len,
+            consumer,
         }
-    }
-
-    /// Makes the whole chunk available for reading.
-    pub fn commit_all(mut self) {
-        // self.0 is always Some(chunk).
-        let chunk = self.0.take().unwrap();
-        // SAFETY: All slots have been initialized in From::from().
-        unsafe { chunk.commit_all() };
-        // `self` is dropped here, with `self.0` being set to `None`.
-    }
-
-    /// Makes the first `n` slots of the chunk available for reading.
-    ///
-    /// The rest of the chunk is dropped.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `n` is greater than the number of slots in the chunk.
-    pub fn commit(mut self, n: usize) {
-        // self.0 is always Some(chunk).
-        let mut chunk = self.0.take().unwrap();
-        // SAFETY: All slots have been initialized in From::from().
-        unsafe {
-            // Slots at index `n` and higher are dropped ...
-            chunk.drop_suffix(n);
-            // ... everything below `n` is committed.
-            chunk.commit(n);
-        }
-        // `self` is dropped here, with `self.0` being set to `None`.
-    }
-
-    /// Returns the number of slots in the chunk.
-    pub fn len(&self) -> usize {
-        // self.0 is always Some(chunk).
-        self.0.as_ref().unwrap().len()
-    }
-
-    /// Returns `true` if the chunk contains no slots.
-    pub fn is_empty(&self) -> bool {
-        // self.0 is always Some(chunk).
-        self.0.as_ref().unwrap().is_empty()
     }
 }
 

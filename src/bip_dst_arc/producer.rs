@@ -22,12 +22,13 @@ use super::Consumer;
 /// but references from different threads are not allowed
 /// (i.e. it is [`Send`] but not [`Sync`]).
 ///
-/// Individual elements can be moved into the ring buffer with [`push()`](Producer::push),
-/// multiple elements at once can be written with [`write_chunk()`](Producer::write_chunk)
-/// and [`write_chunk_uninit()`](Producer::write_chunk_uninit).
+/// Individual elements can be moved into the ring buffer with [`Producer::push()`],
+/// multiple elements at once can be written with [`Producer::write_chunk()`],
+/// [`Producer::write_chunk_uninit()`], [`Producer::push_partial_slice()`] and
+/// [`Producer::push_entire_slice()`].
 ///
 /// The number of free slots currently available for writing can be obtained with
-/// [`slots()`](Producer::slots).
+/// [`Producer::slots()`].
 ///
 /// A `Producer` can only be created with [`RingBuffer::new()`]
 /// (together with its counterpart, the [`Consumer`]).
@@ -41,14 +42,17 @@ use super::Consumer;
 #[derive(Debug, PartialEq, Eq)]
 pub struct Producer<T> {
     pub(super) buffer: ArcRingBuffer<T>,
+
     /// A copy of `buffer.head` for quick access.
     ///
-    /// This value can be stale and sometimes needs to be resynchronized
-    /// with `buffer.head`.
+    /// This value can be stale and sometimes needs to be resynchronized with `buffer.head`.
     pub(super) cached_head: Cell<usize>,
+
     /// A copy of `buffer.tail` for quick access.
     ///
     /// This value is always in sync with `buffer.tail`.
+    // NB: Caching the tail seems to have little effect on Intel CPUs, but it seems to
+    //     improve performance on AMD CPUs, see https://github.com/mgeier/rtrb/pull/132
     pub(super) cached_tail: Cell<usize>,
 }
 
@@ -64,7 +68,7 @@ pub struct Producer<T> {
 /// fn assert_sync<X: Sync>() {}
 /// assert_sync::<Producer<u8>>();
 /// ```
-// SAFETY: After moving a producer to another thread, there is still only a single thread
+// SAFETY: After moving the producer to another thread, there is still only a single thread
 // that can access the producer side of the queue.
 unsafe impl<T: Send> Send for Producer<T> where RingBuffer<T>: Sync {}
 
@@ -105,20 +109,19 @@ impl<T> Producer<T> {
     /// Returns the number of slots available for writing.
     ///
     /// Since items can be concurrently consumed on another thread, the actual number
-    /// of available slots may increase at any time
-    /// (up to the [`capacity()`](Producer::capacity)).
+    /// of available slots may increase at any time (up to the [`Producer::capacity()`]).
     ///
     /// To check for a single available slot,
-    /// using [`is_full()`](Producer::is_full) is often quicker
+    /// using [`Producer::is_full()`] is often quicker
     /// (because it might not have to check an atomic variable).
     ///
     /// Due to wrap-around of the internal buffer, the reported slots might not be
     /// on a contiguous segment and therefore not entirely available for writing with
-    /// [`write_chunk()`](Producer::write_chunk) or
-    /// [`write_chunk_uninit()`](Producer::write_chunk_uninit).
+    /// [`Producer::write_chunk()`] or
+    /// [`Producer::write_chunk_uninit()`].
     /// To get the number of contiguous slots,
-    /// [`slots_contiguous_first()`](Producer::slots_contiguous_first) or
-    /// [`slots_contiguous_max()`](Producer::slots_contiguous_max) can be used.
+    /// [`Producer::slots_contiguous_first()`] or
+    /// [`Producer::slots_contiguous_max()`] can be used.
     ///
     /// # Examples
     ///
@@ -177,8 +180,8 @@ impl<T> Producer<T> {
     }
 
     /// Returns the number of slots of the next two contiguous segments available
-    /// for writing with [`write_chunk()`](Producer::write_chunk) or
-    /// [`write_chunk_uninit()`](Producer::write_chunk_uninit).
+    /// for writing with [`Producer::write_chunk()`] or
+    /// [`Producer::write_chunk_uninit()`].
     ///
     /// When a chunk larger than the first segment is written
     /// (assuming the second number is large enough to allow that),
@@ -191,15 +194,15 @@ impl<T> Producer<T> {
     /// If the first number is `0`, the second will be `0` as well.
     ///
     /// If you are only interested in the first number, using
-    /// [`slots_contiguous_first()`](Producer::slots_contiguous_first)
+    /// [`Producer::slots_contiguous_first()`]
     /// should be slightly more efficient.
     ///
-    /// The sum of both numbers is returned by [`slots()`](Producer::slots), their maximum
-    /// is returned by [`slots_contiguous_max()`](Producer::slots_contiguous_max).
+    /// The sum of both numbers is returned by [`Producer::slots()`], their maximum
+    /// is returned by [`Producer::slots_contiguous_max()`].
     ///
     /// Since items can be concurrently consumed on another thread, the actual number
     /// of available slots may increase at any time
-    /// (up to the [`capacity()`](Producer::capacity)).
+    /// (up to the [`Producer::capacity()`]).
     pub fn slots_contiguous(&self) -> (usize, usize) {
         let (slots, refreshed_head, try_at_beginning) = self.slots_contiguous_helper();
         if !try_at_beginning {
@@ -215,27 +218,27 @@ impl<T> Producer<T> {
     }
 
     /// Returns the number of slots of the next contiguous segment available for writing with
-    /// [`write_chunk()`](Producer::write_chunk) or
-    /// [`write_chunk_uninit()`](Producer::write_chunk_uninit).
+    /// [`Producer::write_chunk()`] or
+    /// [`Producer::write_chunk_uninit()`].
     ///
     /// This is the same as the first number returned by
-    /// [`slots_contiguous()`](Producer::slots_contiguous), but slightly more efficient.
+    /// [`Producer::slots_contiguous()`], but slightly more efficient.
     ///
     /// If you want to avoid skipping any slots, you should use this method instead of
-    /// [`slots_contiguous_max()`](Producer::slots_contiguous_max).
+    /// [`Producer::slots_contiguous_max()`].
     pub fn slots_contiguous_first(&self) -> usize {
         self.slots_contiguous_helper().0
     }
 
     /// Convenience function to obtain the maximum of the two values returned by
-    /// [`slots_contiguous()`](Producer::slots_contiguous).
+    /// [`Producer::slots_contiguous()`].
     ///
     /// This number will also be reported via a [`ChunkError`] when calling
-    /// [`write_chunk()`](Producer::write_chunk) or
-    /// [`write_chunk_uninit()`](Producer::write_chunk_uninit) with a larger number.
+    /// [`Producer::write_chunk()`] or
+    /// [`Producer::write_chunk_uninit()`] with a larger number.
     ///
     /// If you want to avoid skipping any slots, you should use
-    /// [`slots_contiguous_first()`](Producer::slots_contiguous_first) instead.
+    /// [`Producer::slots_contiguous_first()`] instead.
     pub fn slots_contiguous_max(&self) -> usize {
         let (one, two) = self.slots_contiguous();
         one.max(two)
@@ -283,7 +286,7 @@ impl<T> Producer<T> {
     /// ```
     ///
     /// A ring buffer (of the Bip Buffer variety) can be full even if it contains
-    /// fewer items than its [`capacity()`](Producer::capacity()).
+    /// fewer items than its [`Producer::capacity()`].
     ///
     /// ```
     /// use std::io::{Read, Write};
@@ -311,7 +314,7 @@ impl<T> Producer<T> {
     /// [`Producer::slots()`] available for writing and
     /// [`Consumer::slots()`] available for
     /// reading, as well as potentially some slots that have been skipped in
-    /// [`Producer::write_chunk`] or [`Producer::write_chunk_uninit`].
+    /// [`Producer::write_chunk()`] or [`Producer::write_chunk_uninit()`].
     ///
     /// # Examples
     ///
@@ -385,13 +388,13 @@ impl<T> Producer<T> {
     /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
     /// For performance, this special case is implemented separately.
     fn next_tail(&self) -> Option<usize> {
-        let head = self.cached_head.get();
+        let mut head = self.cached_head.get();
         let tail = self.cached_tail.get();
         let b = &self.buffer;
         // Check if the queue is *possibly* full.
         if b.distance(head, tail) == b.capacity() {
             // Refresh the head ...
-            let head = b.head.load(Ordering::Acquire);
+            head = b.head.load(Ordering::Acquire);
             self.cached_head.set(head);
             // ... and check if it's *really* full.
             if b.distance(head, tail) == b.capacity() {
@@ -423,8 +426,8 @@ impl<T> Producer<T> {
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
     /// Use
-    /// [`slots_contiguous_max()`](Producer::slots_contiguous_max) (or
-    /// [`slots_contiguous_first()`](Producer::slots_contiguous_first))
+    /// [`Producer::slots_contiguous_max()`] (or
+    /// [`Producer::slots_contiguous_first()`])
     /// to obtain the number of available slots beforehand.
     ///
     /// # Examples
@@ -440,8 +443,7 @@ impl<T> Producer<T> {
     /// Prepares a chunk of `n` (uninitialized) slots for writing.
     ///
     /// [`WriteChunkUninit::as_mut_slice()`]
-    /// provides mutable access
-    /// to the uninitialized slots.
+    /// provides mutable access to the uninitialized slots.
     /// After writing to those slots, they explicitly have to be made available
     /// to be read by the [`Consumer`] by calling [`WriteChunkUninit::commit()`]
     /// or [`WriteChunkUninit::commit_all()`].
@@ -455,8 +457,8 @@ impl<T> Producer<T> {
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
     /// Use
-    /// [`slots_contiguous_max()`](Producer::slots_contiguous_max) (or
-    /// [`slots_contiguous_first()`](Producer::slots_contiguous_first))
+    /// [`Producer::slots_contiguous_max()`] (or
+    /// [`Producer::slots_contiguous_first()`])
     /// to obtain the number of available slots beforehand.
     ///
     /// # Safety
@@ -467,8 +469,13 @@ impl<T> Producer<T> {
     /// the user has to make sure that the relevant slots have been initialized
     /// before calling [`WriteChunkUninit::commit()`] or [`WriteChunkUninit::commit_all()`].
     ///
-    /// For a safe alternative that provides a mutable slice
+    /// For a safe alternative that provides
+    /// a mutable slice
     /// of [`Default`]-initialized slots, see [`Producer::write_chunk()`].
+    ///
+    /// # Examples
+    ///
+    /// See the documentation of the [`chunks`](super::chunks#examples) module.
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
         let b = &self.buffer;
         let (mut slots, refreshed_head, try_at_beginning) = self.slots_contiguous_helper();
@@ -496,9 +503,7 @@ impl<T> Producer<T> {
         }
         Err(ChunkError::TooFewSlots(slots))
     }
-}
 
-impl<T: Copy> Producer<T> {
     /// Copies as many items as possible from the given `slice` into the ring buffer.
     ///
     /// The written slots are automatically made available to be read by the [`Consumer`].
@@ -533,7 +538,10 @@ impl<T: Copy> Producer<T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
+    pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T])
+    where
+        T: Copy,
+    {
         let slots = if self.cached_slots() < slice.len() {
             slice.len().min(self.slots())
         } else {
@@ -559,7 +567,10 @@ impl<T: Copy> Producer<T> {
     ///
     /// If not enough free space is available in the ring buffer,
     /// a [`ChunkError`] with the available slots is returned.
-    pub fn push_entire_slice(&mut self, slice: &[T]) -> Result<(), ChunkError> {
+    pub fn push_entire_slice(&mut self, slice: &[T]) -> Result<(), ChunkError>
+    where
+        T: Copy,
+    {
         let mut chunk = self.write_chunk_uninit(slice.len())?;
         let dst = chunk.as_mut_slice();
         // NB: If slice.is_empty(), chunk will be empty as well and the following is a no-op:
