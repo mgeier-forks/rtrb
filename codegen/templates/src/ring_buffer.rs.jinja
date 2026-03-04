@@ -405,9 +405,9 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
 {% endif %}
 {% if not arc %}
     /// A (single) [`Producer`] for writing into the ring buffer can be created with
-    /// [`producer()`](RingBuffer::producer).
+    /// [`RingBuffer::producer()`].
     /// A (single) [`Consumer`] for reading from the ring buffer can be created with
-    /// [`consumer()`](RingBuffer::consumer).
+    /// [`RingBuffer::consumer()`].
     ///
 {% endif %}
     /// # Examples
