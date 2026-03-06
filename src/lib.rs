@@ -216,7 +216,13 @@ extern crate alloc;
 use core::{fmt, mem::MaybeUninit};
 
 #[allow(dead_code, clippy::undocumented_unsafe_blocks)]
+#[cfg(not(doctest))]
 mod cache_padded;
+/// Dummy module to avoid failing cache_padded doctests.
+#[cfg(doctest)]
+mod cache_padded {
+    pub struct CachePadded;
+}
 /// Re-export from [`crossbeam_utils::CachePadded`](https://docs.rs/crossbeam-utils/).
 #[doc(inline)]
 pub use cache_padded::CachePadded;

@@ -38,8 +38,6 @@ libc = { version = "0.2", optional = true }
 rstest = "0.26.1"
 rand = "0.10"
 criterion = "0.8"
-# TODO: This is only needed for the doctests of cache_padded.rs! Is there a way to avoid this?
-crossbeam-utils = { version = "0.8", default-features = false }
 crossbeam-queue-pr338 = { git = "https://github.com/mgeier/crossbeam", branch = "spsc", package = "crossbeam-queue" }
 npnc = "0.2"
 shared_memory = "0.12"
