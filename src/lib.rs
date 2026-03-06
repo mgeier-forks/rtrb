@@ -260,8 +260,8 @@ pub use arc::{Consumer, Producer, RingBuffer};
 #[cfg(feature = "alloc")]
 #[doc(hidden)]
 pub mod chunks {
-    pub use crate::arc::chunks::{ReadChunk, ReadChunkIntoIter, WriteChunk, WriteChunkUninit};
-    pub use crate::ChunkError;
+    pub use super::arc::chunks::{ReadChunk, ReadChunkIntoIter, WriteChunk, WriteChunkUninit};
+    pub use super::arc::ChunkError;
 }
 
 #[doc(hidden)]
