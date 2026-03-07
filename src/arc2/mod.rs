@@ -8,11 +8,11 @@
 //!
 //! # Usage
 //!
-//! A [`RingBuffer`] consists of two parts:
-//! a [`Producer`] for writing into the ring buffer and
+//! In this module, the [`RingBuffer`] itself is not directly accessible.
+//! Instead, [`RingBuffer::new()`] returns a [`Producer`] for writing into the ring buffer and
 //! a [`Consumer`] for reading from the ring buffer.
-//!
-//! TODO: more usage instructions
+//! As soon as both of these are dropped,
+//! the underlying [`RingBuffer`] is automatically dropped as well.
 //!
 //! # Examples
 //!
@@ -101,9 +101,5 @@ pub use crate::ChunkError;
 /// ```
 /// use rtrb::arc2::CopyToUninit as _;
 /// ```
-///
-/// TODO: update link:
-///
-/// For a usage example, see [`crate::chunks`](crate::chunks#common-access-patterns).
 #[doc(inline)]
 pub use crate::CopyToUninit;
