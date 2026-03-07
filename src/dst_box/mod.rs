@@ -10,11 +10,6 @@
 //! that is *not* automatically dropped when both its [`Producer`] and its [`Consumer`]
 //! go out of scope.
 //!
-//! TODO: mention `new()` and `new_at()`.
-//!
-//! This allows usage with dynamic capacity in combination with shared memory
-//! (and pre-allocated memory in general), see the `shared-memory-dst` example.
-//!
 //! *See the [crate-level documentation](crate) for information about the available options.*
 //!
 //! # Usage
@@ -24,6 +19,12 @@
 //! [`RingBuffer::producer()`],
 //! and a (single) [`Consumer`] for reading from the ring buffer can be created with
 //! [`RingBuffer::consumer()`].
+//!
+//! [`RingBuffer::new_at()`] can be used to create a `RingBuffer` in pre-allocated memory.
+//! [`RingBuffer::from_raw_parts()`] can be used to get access to a `RingBuffer`
+//! that has been created at a given memory address.
+//! These functions allow usage with dynamic capacity in combination with shared memory
+//! (and pre-allocated memory in general), see the `shared-memory-dst` example.
 //!
 //! # Examples
 //!
