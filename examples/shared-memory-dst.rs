@@ -43,10 +43,9 @@ impl Owner<'_> {
     }
 }
 
+// NB: This is not really necessary here, it is only relevant if T implements Drop.
 impl Drop for Owner<'_> {
     fn drop(&mut self) {
-        // NB: This is not really necessary here,
-        // it is only relevant if T implements Drop.
         let ptr = self.0 as *const _ as *mut Buffer;
         // SAFETY: The reference self.0 will not be accessed after this.
         unsafe { ptr.drop_in_place() };

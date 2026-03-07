@@ -214,6 +214,71 @@ impl<T> RingBuffer<T> {
         self.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
     }
 
+    /// Calculates memory layout using the given `capacity`.
+    ///
+    /// This can be used to allocate (e.g. with [`alloc::alloc::alloc()`])
+    /// the right amount of properly aligned memory to be used with [`RingBuffer::new_at()`].
+    /// It is *not* needed when using [`RingBuffer::new()`].
+    pub fn layout(capacity: usize) -> Layout {
+        Self::layout_helper(capacity)
+    }
+
+    /// Creates a new `RingBuffer` at the given memory address.
+    ///
+    /// To access an already existing `RingBuffer` at a given address,
+    /// use [`RingBuffer::from_raw_parts()`].
+    /// This can be used, for example, to communicate between two processes
+    /// via shared memory.
+    ///
+    /// The created `RingBuffer` will not be dropped automatically!
+    /// This means that if any `T`s remain in the buffer, they will be leaked
+    /// (which is only relevant if `T` implements `Drop`).
+    /// To avoid this, call [`std::ptr::drop_in_place()`],
+    /// but make sure that no other reference exists at that point.
+    ///
+    /// If you don't need control over the memory location, you can simply use
+    /// [`RingBuffer::new()`], which will automatically allocate the required memory
+    /// on the heap.
+    ///
+    /// # Safety
+    ///
+    /// The provided memory must be uninitialized,
+    /// must have the required size and alignment (see [`RingBuffer::layout()`]),
+    /// it must exist at least as long as the returned reference
+    /// and can only be accessed via the `&RingBuffer` returned from this method
+    /// or from [`RingBuffer::from_raw_parts()`].
+    pub unsafe fn new_at<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {
+        // TODO: check for power-of-two capacity?
+
+        let ptr = Self::coerce(ptr, capacity);
+        // SAFETY: Pointer is valid and no other reference exists.
+        unsafe {
+            Self::default_initialize(ptr);
+        }
+        // SAFETY: `ptr` is non-null and object is fully initialized.
+        unsafe { &*ptr }
+    }
+
+    /// Provides access to an existing `RingBuffer` at a given memory address.
+    ///
+    /// [`RingBuffer::new_at()`] creates a `RingBuffer` at some
+    /// (allocated but uninitialized) memory location.
+    /// `RingBuffer::from_raw_parts()` provides access to an already
+    /// existing `RingBuffer` at the given address. Both are extremely unsafe!
+    ///
+    /// # Safety
+    ///
+    /// The provided memory must have been initialized by [`RingBuffer::new_at()`]
+    /// and the memory allocation must exist at least as long as the returned reference.
+    /// There are no ABI stability guarantees.
+    pub unsafe fn from_raw_parts<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {
+        // TODO: check for power-of-two capacity?
+
+        let ptr = Self::coerce(ptr, capacity);
+        // SAFETY: `ptr` must be non-null and object must be fully initialized.
+        unsafe { &*ptr }
+    }
+
     const fn update_capacity(capacity: usize) -> usize {
         // No need to update, we are not relying on power-of-two sizes.
         capacity

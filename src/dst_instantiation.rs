@@ -62,7 +62,7 @@ macro_rules! dst_ring_buffer_instantiation {
 
         impl<T> RingBuffer<T> {
             /// Calculate memory layout using the given `capacity`.
-            pub fn layout(capacity: usize) -> Layout {
+            fn layout_helper(capacity: usize) -> Layout {
                 // TODO: check for power-of-two capacity?
 
                 // Start with an empty layout ...
@@ -79,55 +79,6 @@ macro_rules! dst_ring_buffer_instantiation {
                     .extend(Layout::array::<T>(capacity).unwrap())
                     .unwrap();
                 layout.pad_to_align()
-            }
-
-            /// Creates a new `RingBuffer` at the given memory address.
-            ///
-            /// To access an already existing `RingBuffer` at a given address,
-            /// use [`RingBuffer::from_raw_parts()`].
-            /// This can be used, for example, to communicate between two processes
-            /// via shared memory.
-            ///
-            /// If you don't need control over the memory location, you can simply use
-            /// [`RingBuffer::new()`], which will automatically allocate the required memory
-            /// on the heap.
-            ///
-            /// # Safety
-            ///
-            /// The provided memory allocation must have the required size and alignment
-            /// (see [`RingBuffer::layout()`]), it must exist at least as long
-            /// as the returned reference and can only be accessed via the `&RingBuffer`
-            /// returned from this method or from [`RingBuffer::from_raw_parts()`].
-            pub unsafe fn new_at<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {
-                // TODO: check for power-of-two capacity?
-
-                let ptr = Self::coerce(ptr, capacity);
-                // SAFETY: Pointer is valid and no other reference exists.
-                unsafe {
-                    Self::default_initialize(ptr);
-                }
-                // SAFETY: `ptr` is non-null and object is fully initialized.
-                unsafe { &*ptr }
-            }
-
-            /// Provides access to an existing `RingBuffer` at a given memory address.
-            ///
-            /// [`RingBuffer::new_at()`] creates a `RingBuffer` at some
-            /// (allocated but uninitialized) memory location.
-            /// `RingBuffer::from_raw_parts()` provides access to an already
-            /// existing `RingBuffer` at the given address. Both are extremely unsafe!
-            ///
-            /// # Safety
-            ///
-            /// The provided memory must have been initialized by [`RingBuffer::new_at()`]
-            /// and the memory allocation must exist at least as long as the returned reference.
-            /// There are no ABI stability guarantees.
-            pub unsafe fn from_raw_parts<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {
-                // TODO: check for power-of-two capacity?
-
-                let ptr = Self::coerce(ptr, capacity);
-                // SAFETY: `ptr` must be non-null and object must be fully initialized.
-                unsafe { &*ptr }
             }
 
             fn coerce(ptr: *mut u8, capacity: usize) -> *mut Self {
@@ -155,7 +106,7 @@ macro_rules! dst_ring_buffer_instantiation {
             ///
             /// The dynamically-sized part remains uninitialized.
             fn instantiate(capacity: usize) -> Box<Self> {
-                let layout = Self::layout(capacity);
+                let layout = Self::layout_helper(capacity);
                 // SAFETY: `layout` has non-zero size.
                 let ptr = unsafe { alloc::alloc::alloc(layout) };
                 if ptr.is_null() {
