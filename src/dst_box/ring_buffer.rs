@@ -16,7 +16,11 @@ dst_ring_buffer_instantiation! {
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
 /// Elements can be written with a [`Producer`] and read with a [`Consumer`],
-/// which can be obtained with ... TODO
+/// which can be obtained with [`RingBuffer::producer()`]
+/// and [`RingBuffer::consumer()`], respectively.
+///
+/// [`RingBuffer::new()`] automatically allocates memory on the heap.
+/// To work with pre-allocated memory, [`RingBuffer::new_at()`] can be used.
 ///
 /// *See also the [module-level documentation](crate::dst_box).*
 #[derive(Debug)]
@@ -269,6 +273,7 @@ impl<T> RingBuffer<T> {
     /// # Safety
     ///
     /// The provided memory must have been initialized by [`RingBuffer::new_at()`]
+    /// (using the same `capacity`)
     /// and the memory allocation must exist at least as long as the returned reference.
     /// There are no ABI stability guarantees.
     pub unsafe fn from_raw_parts<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {

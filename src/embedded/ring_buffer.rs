@@ -13,7 +13,8 @@ use super::{Consumer, Producer};
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
 /// Elements can be written with a [`Producer`] and read with a [`Consumer`],
-/// which can be obtained with ... TODO
+/// which can be obtained with [`RingBuffer::producer()`]
+/// and [`RingBuffer::consumer()`], respectively.
 ///
 /// *See also the [module-level documentation](crate::embedded).*
 #[derive(Debug, PartialEq, Eq)]
