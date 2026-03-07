@@ -115,7 +115,6 @@ impl<T> RingBuffer<T> {
     /// assert_eq!(producer.push(0.0f32), Ok(()));
     /// ```
     pub fn new(capacity: usize) -> Box<Self> {
-        // TODO: updating capacity will happen in construct()?
         let capacity = Self::update_capacity(capacity);
         Self::construct(capacity)
     }
@@ -224,6 +223,7 @@ impl<T> RingBuffer<T> {
     /// the right amount of properly aligned memory to be used with [`RingBuffer::new_at()`].
     /// It is *not* needed when using [`RingBuffer::new()`].
     pub fn layout(capacity: usize) -> Layout {
+        let capacity = Self::update_capacity(capacity);
         Self::layout_helper(capacity)
     }
 
@@ -252,8 +252,7 @@ impl<T> RingBuffer<T> {
     /// and can only be accessed via the `&RingBuffer` returned from this method
     /// or from [`RingBuffer::from_raw_parts()`].
     pub unsafe fn new_at<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {
-        // TODO: check for power-of-two capacity?
-
+        let capacity = Self::update_capacity(capacity);
         let ptr = Self::coerce(ptr, capacity);
         // SAFETY: Pointer is valid and no other reference exists.
         unsafe {
@@ -277,8 +276,7 @@ impl<T> RingBuffer<T> {
     /// and the memory allocation must exist at least as long as the returned reference.
     /// There are no ABI stability guarantees.
     pub unsafe fn from_raw_parts<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {
-        // TODO: check for power-of-two capacity?
-
+        let capacity = Self::update_capacity(capacity);
         let ptr = Self::coerce(ptr, capacity);
         // SAFETY: `ptr` must be non-null and object must be fully initialized.
         unsafe { &*ptr }

@@ -63,8 +63,6 @@ macro_rules! dst_ring_buffer_instantiation {
         impl<T> RingBuffer<T> {
             /// Calculate memory layout using the given `capacity`.
             fn layout_helper(capacity: usize) -> Layout {
-                // TODO: check for power-of-two capacity?
-
                 // Start with an empty layout ...
                 let layout = Layout::new::<()>();
                 // ... and add all fields from RingBuffer,
@@ -82,8 +80,6 @@ macro_rules! dst_ring_buffer_instantiation {
             }
 
             fn coerce(ptr: *mut u8, capacity: usize) -> *mut Self {
-                // TODO: check for power-of-two capacity?
-
                 // Create a (fat) pointer to a slice ...
                 let ptr: *mut [T] = core::ptr::slice_from_raw_parts_mut(ptr.cast(), capacity);
                 // ... and coerce it into our own dynamically sized type:
