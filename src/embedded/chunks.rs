@@ -123,20 +123,17 @@
 //! ```
 //! use rtrb::embedded::{Consumer, Producer};
 //!
-//! // TODO: make this work for "array" variants:
-//! //fn move_items<T>(src: &mut Consumer<T>, dst: &mut Producer<T>) -> usize {
-//! //    let n = src.slots().min(dst.slots());
-//! //    dst.write_chunk_uninit(n).unwrap().fill_from_iter(src.read_chunk(n).unwrap())
-//! //}
+//! fn move_items<T>(src: &mut Consumer<T>, dst: &mut Producer<T>) -> usize {
+//!     let n = src.slots().min(dst.slots());
+//!     dst.write_chunk_uninit(n).unwrap().fill_from_iter(src.read_chunk(n).unwrap())
+//! }
 //! ```
 //!
 //! Write as many slots as possible, given an iterator
 //! (and return the number of written slots):
 //!
 //! ```
-//! use rtrb::{Producer, ChunkError::TooFewSlots};
-//! // TODO:
-//! // use rtrb::embedded::{Producer, ChunkError::TooFewSlots};
+//! use rtrb::embedded::{Producer, ChunkError::TooFewSlots};
 //!
 //! fn push_from_iter<T, I>(queue: &mut Producer<T>, iter: I) -> usize
 //! where

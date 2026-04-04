@@ -117,35 +117,6 @@
 //! assert_eq!(v, [20, 21]);
 //! assert!(consumer.is_empty());
 //! ```
-//!
-//! TODO: modify iterator example, use slots_contiguous()
-//!
-//! Write as many slots as possible, given an iterator
-//! (and return the number of written slots):
-//!
-//! ```
-//! use rtrb::{Producer, ChunkError::TooFewSlots};
-//! // TODO:
-//! // use rtrb::bip_dst_arc::{Producer, ChunkError::TooFewSlots};
-//!
-//! fn push_from_iter<T, I>(queue: &mut Producer<T>, iter: I) -> usize
-//! where
-//!     T: Default,
-//!     I: IntoIterator<Item = T>,
-//! {
-//!     let iter = iter.into_iter();
-//!     let n = match iter.size_hint() {
-//!         (_, None) => queue.slots(),
-//!         (_, Some(n)) => n,
-//!     };
-//!     let chunk = match queue.write_chunk_uninit(n) {
-//!         Ok(chunk) => chunk,
-//!         // Remaining slots are returned, this will always succeed:
-//!         Err(TooFewSlots(n)) => queue.write_chunk_uninit(n).unwrap(),
-//!     };
-//!     chunk.fill_from_iter(iter)
-//! }
-//! ```
 
 use super::{Consumer, Producer};
 use crate::atomic::*;

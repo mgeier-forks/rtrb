@@ -20,13 +20,86 @@
 //! Immutable access to the slots of the chunk can be obtained with
 //! [`ReadChunk::as_slice()`].
 //!
+//! # Examples
+//!
+//! The following examples use a single thread for simplicity, but in a real application,
+//! `producer` and `consumer` would of course live on different threads:
+//!
+//! If the trait bound `T: Copy` is satisfied,
+//! the `push_*_slice()` and `pop_*_slice()` methods can be used.
+//!
+//! ```
+//! use rtrb::vrb_arc2::RingBuffer;
+//!
+//! let (mut producer, mut consumer) = RingBuffer::new(4096);
+//!
+//! let source = vec![0.1; 4000];
+//! assert!(producer.push_entire_slice(&source).is_ok());
+//! let mut destination = vec![0.0; 2000];
+//! assert!(consumer.pop_entire_slice(&mut destination).is_ok());
+//! let source = vec![-0.1; 4096];
+//! let (pushed, remainder) = producer.push_partial_slice(&source);
+//! assert_eq!(remainder.len(), 2000);
+//! ```
+//!
+//! If this convenience interface is too limited (or if `T` is not `Copy`)
+//! the more fundamental methods [`Producer::write_chunk()`],
+//! [`Producer::write_chunk_uninit()`] and [`Consumer::read_chunk()`] can be used.
+//!
+//! ```
+//! use rtrb::vrb_arc2::RingBuffer;
+//!
+//! let (mut producer, mut consumer) = RingBuffer::new(4096);
+//!
+//! if let Ok(chunk) = producer.write_chunk_uninit(3000) {
+//!     chunk.fill_from_iter(std::iter::repeat(10).take(2000));
+//!     // Note that we requested 3000 slots but we've only written to 2000 of them!
+//! } else {
+//!     unreachable!();
+//! }
+//!
+//! assert_eq!(producer.slots(), 2096);
+//! assert_eq!(consumer.slots(), 2000);
+//!
+//! if let Ok(chunk) = consumer.read_chunk(1000) {
+//!     // We ignore the content, but mark it as read:
+//!     chunk.commit_all();
+//! } else {
+//!     unreachable!();
+//! }
+//!
+//! assert_eq!(producer.slots(), 3096);
+//! assert_eq!(consumer.slots(), 1000);
+//!
+//! if let Ok(mut chunk) = producer.write_chunk(3096) {
+//!     let slice = chunk.as_mut_slice();
+//!     // We are getting a single contiguous slice:
+//!     assert_eq!(slice.len(), 3096);
+//!     slice[3095] = 99;
+//!     chunk.commit_all();
+//! } else {
+//!     unreachable!();
+//! }
+//!
+//! assert_eq!(producer.slots(), 0);
+//! ```
+//!
+//! The iterator API can be used to move items from one ring buffer to another:
+//!
+//! ```
+//! use rtrb::vrb_arc2::{Consumer, Producer};
+//!
+//! fn move_items<T>(src: &mut Consumer<T>, dst: &mut Producer<T>) -> usize {
+//!     let n = src.slots().min(dst.slots());
+//!     dst.write_chunk_uninit(n).unwrap().fill_from_iter(src.read_chunk(n).unwrap())
+//! }
+//! ```
+//!
 //! Write as many slots as possible, given an iterator
 //! (and return the number of written slots):
 //!
 //! ```
-//! use rtrb::{Producer, ChunkError::TooFewSlots};
-//! // TODO:
-//! // use rtrb::vrb_arc2::{Producer, ChunkError::TooFewSlots};
+//! use rtrb::vrb_arc2::{Producer, ChunkError::TooFewSlots};
 //!
 //! fn push_from_iter<T, I>(queue: &mut Producer<T>, iter: I) -> usize
 //! where

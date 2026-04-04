@@ -479,15 +479,12 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     {# TODO: These two options are for testing. In the end, only one might be needed. #}
     {% if storage == "dst" %}
     pub fn new(capacity: usize) -> Box<Self> {
-        let capacity = Self::update_capacity(capacity);
-        Self::construct(capacity)
-    }
     {% else %}
     pub fn new(capacity: usize) -> Self {
+    {% endif %}
         let capacity = Self::update_capacity(capacity);
         Self::construct(capacity)
     }
-    {% endif %}
 {% endif %}{% endif %}
 
 {% if not arc %}
