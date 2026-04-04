@@ -59,7 +59,7 @@ fn main() {
             Watcher as _,
         };
         use std::collections::HashSet;
-        let (mut tx, mut rx) = rtrb::RingBuffer::new(128);
+        let (mut tx, mut rx) = rtrb::arc::RingBuffer::new(128);
         let mut watcher = RecommendedWatcher::new(
             move |res| match res {
                 Ok(Event {

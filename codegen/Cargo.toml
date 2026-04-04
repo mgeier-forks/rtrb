@@ -12,6 +12,5 @@ watch = ["dep:notify", "dep:rtrb"]
 glob = "0.3"
 minijinja = { version = "2.14", features = ["loader"] }
 notify = { version = "8.2", optional = true }
-#rtrb = { path = "..", optional = true }
-rtrb = { version = "0.3", optional = true }
-toml = "0.9"
+rtrb = { path = "..", optional = true }
+toml = "1.1"

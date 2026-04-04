@@ -45,6 +45,11 @@ Feel free to share your own results by commenting on that issue.
 Development
 -----------
 
+The source code for the different `RingBuffer` variants in this crate
+has been pieced together from templates and the generated files have been
+committed to the repository.
+See the [`codegen/`](https://github.com/mgeier/rtrb/tree/main/codegen) sub-directory for details.
+
 Creating the HTML docs (which will be available in `target/doc/rtrb/index.html`):
 
     cargo doc
