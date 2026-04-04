@@ -154,6 +154,7 @@ fn trait_impls() {
     assert_ne!(c, another_c);
 }
 
+#[allow(clippy::undocumented_unsafe_blocks)]
 #[test]
 fn no_race_with_is_abandoned() {
     static mut V: u32 = 0;

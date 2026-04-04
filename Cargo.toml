@@ -31,6 +31,13 @@ vrb = ["dep:libc", "alloc"]
 [package.metadata.docs.rs]
 all-features = true
 
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "warn"
+unnecessary_safety_comment = "warn"
+
 [dependencies]
 libc = { version = "0.2", optional = true }
 

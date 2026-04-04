@@ -112,15 +112,16 @@
 //! assert_eq!(producer.slots(), 3096);
 //! assert_eq!(consumer.slots(), 1000);
 //!
-//! if let Ok(chunk) = producer.write_chunk(3096) {
+//! if let Ok(mut chunk) = producer.write_chunk(3096) {
 //!     let slice = chunk.as_mut_slice();
-//!     // We are getting a single contiguous slice:
 //!     assert_eq!(slice.len(), 3096);
 //!     slice[3095] = 99;
 //!     chunk.commit_all();
 //! } else {
 //!     unreachable!();
 //! }
+//!
+//! assert_eq!(consumer.slots(), 4096);
 {% else %}
 {{ doctest_create_ring_buffer(4, prefix="//!") }}
 //!

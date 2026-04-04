@@ -31,7 +31,10 @@ impl Owner<'_> {
     /// `shmem` must point to unused, writable memory.
     unsafe fn new(shmem: &Shmem) -> Self {
         let ptr = cast_ptr(shmem);
-        ptr.write(Buffer::new());
+        // SAFETY: see docstring.
+        unsafe {
+            ptr.write(Buffer::new());
+        }
         Self {
             ptr,
             _phantom: PhantomData,
@@ -39,6 +42,7 @@ impl Owner<'_> {
     }
 
     fn buffer(&self) -> &Buffer {
+        // SAFETY: Caller of new() must make sure the memory is valid.
         unsafe { self.ptr.as_ref() }
     }
 
@@ -51,6 +55,7 @@ impl Drop for Owner<'_> {
     fn drop(&mut self) {
         // NB: This is not really necessary here,
         // it is only relevant if T implements Drop.
+        // SAFETY: pointer is valid and drop() is only called once.
         unsafe { self.ptr.drop_in_place() };
     }
 }
@@ -64,6 +69,7 @@ impl Drop for Owner<'_> {
 /// `shmem` must point to correctly initialized memory.
 unsafe fn get_consumer(shmem: &Shmem) -> Option<Consumer<'_, i32>> {
     let ptr = cast_ptr(shmem);
+    // SAFETY: see docstring.
     unsafe { ptr.as_ref().consumer() }
 }
 
@@ -110,6 +116,7 @@ fn main() -> Result<(), Error> {
     let name = "delete-me";
     match ShmemConf::new().size(size).flink(name).create() {
         Ok(shmem) => {
+            // SAFETY: shared memory has the right size, alignment and lifetime.
             let owner = unsafe { Owner::new(&shmem) };
             let mut p = owner.producer().unwrap();
             println!("please start the same program again (in another terminal)");
@@ -164,6 +171,7 @@ fn main() -> Result<(), Error> {
             println!("connecting to other process ...");
             println!("(remove the file `delete-me` if this is the only process)");
             let shmem = ShmemConf::new().flink(name).open()?;
+            // SAFETY: memory has been initialized with Owner::new().
             let mut c = unsafe { get_consumer(&shmem) }.ok_or(Error::AlreadyConsuming)?;
             print_flush!("receiving data ...");
             loop {

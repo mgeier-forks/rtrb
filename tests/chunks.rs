@@ -106,6 +106,7 @@ fn single_capacity() {
     }
 }
 
+#[allow(clippy::undocumented_unsafe_blocks)]
 #[test]
 fn drop_write_chunk() {
     // Static variable to count all drop() invocations

@@ -205,8 +205,6 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(missing_docs, missing_debug_implementations)]
-#![deny(unsafe_op_in_unsafe_fn)]
-#![warn(clippy::undocumented_unsafe_blocks, clippy::unnecessary_safety_comment)]
 // Add "Available on crate feature ... only." on docs.rs (where applicable).
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 

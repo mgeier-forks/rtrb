@@ -73,7 +73,6 @@
 //!
 //! if let Ok(mut chunk) = producer.write_chunk(3096) {
 //!     let slice = chunk.as_mut_slice();
-//!     // We are getting a single contiguous slice:
 //!     assert_eq!(slice.len(), 3096);
 //!     slice[3095] = 99;
 //!     chunk.commit_all();
@@ -81,7 +80,7 @@
 //!     unreachable!();
 //! }
 //!
-//! assert_eq!(producer.slots(), 0);
+//! assert_eq!(consumer.slots(), 4096);
 //! ```
 //!
 //! The iterator API can be used to move items from one ring buffer to another:

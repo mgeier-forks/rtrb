@@ -31,7 +31,8 @@ impl Owner<'_> {
     /// `shmem` must point to unused, writable memory.
     unsafe fn new(shmem: &Shmem, capacity: usize) -> Self {
         let ptr = validate_ptr(shmem, capacity);
-        Self(Buffer::new_at(ptr, capacity))
+        // SAFETY: see docstring.
+        Self(unsafe { Buffer::new_at(ptr, capacity) })
     }
 
     fn buffer(&self) -> &Buffer {
@@ -62,7 +63,8 @@ impl Drop for Owner<'_> {
 /// `capacity` must be the same as the one used in Buffer::new_at().
 unsafe fn get_consumer(shmem: &Shmem, capacity: usize) -> Option<Consumer<'_, i32>> {
     let ptr = validate_ptr(shmem, capacity);
-    let rb = Buffer::from_raw_parts(ptr, capacity);
+    // SAFETY: see docstring.
+    let rb = unsafe { Buffer::from_raw_parts(ptr, capacity) };
     rb.consumer()
 }
 
@@ -110,6 +112,7 @@ fn main() -> Result<(), Error> {
     let name = "delete-me";
     match ShmemConf::new().size(layout.size()).flink(name).create() {
         Ok(shmem) => {
+            // SAFETY: shared memory has the right size, alignment and lifetime.
             let owner = unsafe { Owner::new(&shmem, capacity) };
             let mut p = owner.producer().unwrap();
             println!("please start the same program again (in another terminal)");
@@ -164,6 +167,7 @@ fn main() -> Result<(), Error> {
             println!("connecting to other process ...");
             println!("(remove the file `delete-me` if this is the only process)");
             let shmem = ShmemConf::new().flink(name).open()?;
+            // SAFETY: memory has been initialized with Owner::new().
             let mut c = unsafe { get_consumer(&shmem, capacity) }.ok_or(Error::AlreadyConsuming)?;
             print_flush!("receiving data ...");
             loop {
