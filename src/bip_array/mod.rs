@@ -28,16 +28,18 @@
 //! let mut producer = rb.producer().unwrap();
 //! let mut consumer = rb.consumer().unwrap();
 //!
-//! assert_eq!(producer.push(10), Ok(()));
-//! assert_eq!(producer.push(20), Ok(()));
-//! assert_eq!(producer.push(30), Err(PushError::Full(30)));
-//!
 //! std::thread::scope(|s| {
+//!     # #[cfg(not(miri))]
 //!     s.spawn(move || {
+//!         std::thread::sleep(std::time::Duration::from_secs(1));
 //!         assert_eq!(consumer.pop(), Ok(10));
 //!         assert_eq!(consumer.pop(), Ok(20));
 //!         assert_eq!(consumer.pop(), Err(PopError::Empty));
 //!     });
+//!
+//!     assert_eq!(producer.push(10), Ok(()));
+//!     assert_eq!(producer.push(20), Ok(()));
+//!     assert_eq!(producer.push(30), Err(PushError::Full(30)));
 //! });
 //! ```
 //!
