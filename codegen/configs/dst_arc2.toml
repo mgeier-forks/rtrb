@@ -1,0 +1,10 @@
+arc = true
+padded = true
+pow2 = true
+storage = "dst"
+
+module_docstring = """
+//! TODO: This is for testing purposes.
+//!
+//! See `dst_arc`.
+"""

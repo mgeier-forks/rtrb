@@ -250,6 +250,8 @@ pub mod bip_dst_arc;
 #[cfg(feature = "alloc")]
 pub mod dst_arc;
 #[cfg(feature = "alloc")]
+pub mod dst_arc2;
+#[cfg(feature = "alloc")]
 pub mod dst_box;
 pub mod embedded;
 #[cfg(feature = "vrb")]
