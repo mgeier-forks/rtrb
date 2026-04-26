@@ -29,6 +29,16 @@ create_two_threads_benchmark!(
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::
+    "3-rtrb::dst_arc",
+    rtrb::dst_arc::RingBuffer::new,
+    |p, i| p.push(i).is_ok(),
+    |c| c.pop().ok(),
+    ::
+    "3-rtrb::dst_arc2",
+    rtrb::dst_arc2::RingBuffer::new,
+    |p, i| p.push(i).is_ok(),
+    |c| c.pop().ok(),
+    ::
     "4-omango",
     |capacity| omango::queue::spsc::bounded(u32::try_from(capacity).unwrap()),
     |p, i| p.try_send(i).is_ok(),
