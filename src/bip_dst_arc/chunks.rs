@@ -119,7 +119,6 @@
 //! ```
 
 use super::{Consumer, Producer};
-use crate::atomic::*;
 use core::mem::MaybeUninit;
 
 // Only used in documentation:
@@ -413,14 +412,14 @@ impl<T> WriteChunkUninit<'_, T> {
             // Storing `tail` before `skip` would be problematic, because
             // the consumer would see new data at the beginning of the buffer,
             // but wouldn't know that the end has to be skipped.
-            b.skip.store(collapsed_tail, Ordering::Relaxed);
+            b.set_skip(collapsed_tail);
             tail = b.increment(tail, b.capacity() - collapsed_tail + n);
             debug_assert_eq!(b.collapse_position(tail), n);
         } else {
             tail = b.increment(tail, n);
         }
         // Using `Release` here makes sure that storing `skip` "happens before".
-        b.tail.store(tail, Ordering::Release);
+        b.set_tail(tail);
         self.producer.cached_tail.set(tail);
         n
     }
@@ -565,7 +564,7 @@ impl<T> ReadChunk<'_, T> {
         }
         let b = &self.consumer.buffer;
         let head = b.increment(self.consumer.cached_head.get(), n);
-        b.head.store(head, Ordering::Release);
+        b.set_head(head);
         self.consumer.cached_head.set(head);
         n
     }
@@ -621,7 +620,7 @@ impl<T> Drop for ReadChunkIntoIter<'_, T> {
     fn drop(&mut self) {
         let c = self.chunk.consumer;
         let head = c.buffer.increment(c.cached_head.get(), self.iterated);
-        c.buffer.head.store(head, Ordering::Release);
+        c.buffer.set_head(head);
         c.cached_head.set(head);
     }
 }

@@ -6,8 +6,6 @@ use core::cell::Cell;
 use core::mem::MaybeUninit;
 
 use super::{chunks::ReadChunk, ChunkError, CopyToUninit, PeekError, PopError, RingBuffer};
-use super::{HAS_CONSUMER, HAS_PRODUCER};
-use crate::atomic::*;
 
 // Only used in documentation:
 #[allow(unused_imports)]
@@ -36,7 +34,7 @@ pub struct Consumer<'a, T> {
 
 impl<T> Drop for Consumer<'_, T> {
     fn drop(&mut self) {
-        let _ = self.buffer.flags.fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
+        self.buffer.drop_consumer();
     }
 }
 
@@ -96,7 +94,7 @@ impl<T> Consumer<'_, T> {
             // SAFETY: head points to an initialized slot.
             let value = unsafe { b.slot_ptr(head).read() };
             let head = b.increment1(head);
-            b.head.store(head, Ordering::Release);
+            b.set_head(head);
             self.cached_head.set(head);
             Ok(value)
         } else {
@@ -179,7 +177,7 @@ impl<T> Consumer<'_, T> {
     /// ```
     pub fn slots(&self) -> usize {
         let b = &self.buffer;
-        let tail = b.tail.load(Ordering::Acquire);
+        let tail = b.tail();
         self.cached_tail.set(tail);
         b.distance(self.cached_head.get(), tail)
     }
@@ -259,7 +257,7 @@ impl<T> Consumer<'_, T> {
     ///
     /// See also [`RingBuffer::has_producer()`].
     pub fn has_producer(&self) -> bool {
-        self.buffer.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
+        self.buffer.has_producer()
     }
 
     /// Get the `head` position for reading the next slot, if available.
@@ -273,7 +271,7 @@ impl<T> Consumer<'_, T> {
         // Check if the queue is *possibly* empty.
         if head == tail {
             // Refresh the tail ...
-            let tail = self.buffer.tail.load(Ordering::Acquire);
+            let tail = self.buffer.tail();
             self.cached_tail.set(tail);
             // ... and check if it's *really* empty.
             if head == tail {
@@ -315,7 +313,7 @@ impl<T> Consumer<'_, T> {
         // Check if the queue has *possibly* not enough slots.
         if b.distance(head, tail) < n {
             // Refresh the tail ...
-            let tail = b.tail.load(Ordering::Acquire);
+            let tail = b.tail();
             self.cached_tail.set(tail);
             // ... and check if there *really* are not enough slots.
             let slots = b.distance(head, tail);

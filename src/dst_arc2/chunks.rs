@@ -151,7 +151,6 @@
 //! ```
 
 use super::{Consumer, Producer};
-use crate::atomic::*;
 use core::mem::MaybeUninit;
 
 // Only used in documentation:
@@ -462,7 +461,7 @@ impl<T> WriteChunkUninit<'_, T> {
     unsafe fn commit_unchecked(self, n: usize) -> usize {
         let p = self.producer;
         let tail = p.buffer.increment(p.cached_tail.get(), n);
-        p.buffer.tail.store(tail, Ordering::Release);
+        p.buffer.set_tail(tail);
         p.cached_tail.set(tail);
         n
     }
@@ -632,7 +631,7 @@ impl<T> ReadChunk<'_, T> {
         }
         let c = self.consumer;
         let head = c.buffer.increment(c.cached_head.get(), n);
-        c.buffer.head.store(head, Ordering::Release);
+        c.buffer.set_head(head);
         c.cached_head.set(head);
         n
     }
@@ -688,7 +687,7 @@ impl<T> Drop for ReadChunkIntoIter<'_, T> {
     fn drop(&mut self) {
         let c = self.chunk.consumer;
         let head = c.buffer.increment(c.cached_head.get(), self.iterated);
-        c.buffer.head.store(head, Ordering::Release);
+        c.buffer.set_head(head);
         c.cached_head.set(head);
     }
 }

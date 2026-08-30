@@ -7,8 +7,6 @@ use core::mem::MaybeUninit;
 
 use super::ring_buffer::RingBufferUnsized;
 use super::{chunks::ReadChunk, ChunkError, CopyToUninit, PeekError, PopError};
-use super::{HAS_CONSUMER, HAS_PRODUCER};
-use crate::atomic::*;
 
 // Only used in documentation:
 #[allow(unused_imports)]
@@ -37,7 +35,7 @@ pub struct Consumer<'a, T> {
 
 impl<T> Drop for Consumer<'_, T> {
     fn drop(&mut self) {
-        let _ = self.buffer.flags.fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
+        self.buffer.drop_consumer();
     }
 }
 
@@ -97,7 +95,7 @@ impl<T> Consumer<'_, T> {
             // SAFETY: head points to an initialized slot.
             let value = unsafe { b.slot_ptr(head).read() };
             let head = b.increment1(head);
-            b.head.store(head, Ordering::Release);
+            b.set_head(head);
             self.cached_head.set(head);
             Ok(value)
         } else {
@@ -203,7 +201,7 @@ impl<T> Consumer<'_, T> {
             // `tail` has been refreshed since it last wrapped (even if `cached_tail` is outdated),
             // therefore `skip` needs no synchronization.
             // TODO: cache skip?
-            b.skip.load(Ordering::Relaxed) - collapsed_head
+            b.skip() - collapsed_head
         } else {
             collapsed_tail - collapsed_head
         }
@@ -224,10 +222,10 @@ impl<T> Consumer<'_, T> {
             () => {
                 // `skip` is never read in the producer thread, only written. Storing it before
                 // `head` makes sure that we don't overwrite the producer's value prematurely.
-                b.skip.store(b.capacity(), Ordering::Relaxed);
+                b.set_skip(b.capacity());
                 head = b.increment(head, b.capacity() - collapsed_head);
                 // Using `Release` here makes sure that storing `skip` "happens before".
-                b.head.store(head, Ordering::Release);
+                b.set_head(head);
                 self.cached_head.set(head);
                 collapsed_head = b.collapse_position(head);
                 debug_assert_eq!(collapsed_head, 0);
@@ -236,7 +234,7 @@ impl<T> Consumer<'_, T> {
 
         macro_rules! refresh_tail {
             () => {
-                tail = b.tail.load(Ordering::Acquire);
+                tail = b.tail();
                 self.cached_tail.set(tail);
                 collapsed_tail = b.collapse_position(tail);
             };
@@ -249,7 +247,7 @@ impl<T> Consumer<'_, T> {
 
             // `tail` has been refreshed since it last wrapped (even if `cached_tail` is outdated),
             // therefore `skip` needs no synchronization.
-            let slots = b.skip.load(Ordering::Relaxed) - collapsed_head;
+            let slots = b.skip() - collapsed_head;
             if slots > 0 {
                 (slots, None, true)
             } else {
@@ -264,7 +262,7 @@ impl<T> Consumer<'_, T> {
             is_empty = head == tail;
             if !is_empty && collapsed_tail <= collapsed_head {
                 // Loading `skip` "happens after" loading `tail`.
-                let slots = b.skip.load(Ordering::Relaxed) - collapsed_head;
+                let slots = b.skip() - collapsed_head;
                 if slots > 0 {
                     (slots, Some(tail), true)
                 } else {
@@ -306,7 +304,7 @@ impl<T> Consumer<'_, T> {
         }
         let b = &self.buffer;
         let refreshed_tail = refreshed_tail.unwrap_or_else(|| {
-            let tail = b.tail.load(Ordering::Acquire);
+            let tail = b.tail();
             self.cached_tail.set(tail);
             tail
         });
@@ -386,7 +384,7 @@ impl<T> Consumer<'_, T> {
     ///
     /// See also [`RingBuffer::has_producer()`].
     pub fn has_producer(&self) -> bool {
-        self.buffer.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
+        self.buffer.has_producer()
     }
 
     /// Get the `head` position for reading the next slot, if available.

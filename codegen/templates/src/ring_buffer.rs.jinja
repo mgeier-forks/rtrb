@@ -22,6 +22,7 @@ use core::mem::ManuallyDrop;
 {% endif %}
 {% if arc %}
 use super::arc_ring_buffer::ArcRingBuffer;
+use super::IS_ABANDONED;
 {% else %}
 use super::{HAS_CONSUMER, HAS_PRODUCER};
 {% endif %}
@@ -59,13 +60,13 @@ pub struct RingBuffer<T, const N: usize>(RingBufferInner<[MaybeUninit<T>; N]>);
 
 #[derive(Debug)]
 pub(super) struct RingBufferInner<Container: ?Sized> {
-    pub(super) head: {{ CachePadded("AtomicUsize") }},
-    pub(super) tail: {{ CachePadded("AtomicUsize") }},
+    head: {{ CachePadded("AtomicUsize") }},
+    tail: {{ CachePadded("AtomicUsize") }},
     {% if bip %}
     // TODO: measure whether CachePadded helps
-    pub(super) skip: {{ CachePadded("AtomicUsize") }},
+    skip: {{ CachePadded("AtomicUsize") }},
     {% endif %}
-    pub(super) flags: AtomicU8,
+    flags: AtomicU8,
     /// The possibly unsized container holding slots.
     ///
     /// This must be in an `UnsafeCell` because both producer and consumer
@@ -121,17 +122,29 @@ impl<T> RingBufferUnsized<T> {
     pub(super) fn capacity(&self) -> usize {
         self.slots.get().len()
     }
+{% if not arc %}
+
+    pub(super) fn has_producer(&self) -> bool {
+        // TODO: Avoid code duplication with RingBuffer<T, N>::has_producer()?
+        self.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
+    }
+
+    pub(super) fn has_consumer(&self) -> bool {
+        // TODO: Avoid code duplication with RingBuffer<T, N>::has_consumer()?
+        self.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
+    }
+{% endif %}
 }
 {% elif storage == "dst" %}
 #[derive(Debug)]
 pub struct RingBuffer<T> {
-    pub(super) head: {{ CachePadded("AtomicUsize") }},
-    pub(super) tail: {{ CachePadded("AtomicUsize") }},
+    head: {{ CachePadded("AtomicUsize") }},
+    tail: {{ CachePadded("AtomicUsize") }},
     {% if bip %}
     // TODO: measure whether CachePadded helps
-    pub(super) skip: {{ CachePadded("AtomicUsize") }},
+    skip: {{ CachePadded("AtomicUsize") }},
     {% endif %}
-    pub(super) flags: AtomicU8,
+    flags: AtomicU8,
     /// Storage for the ring buffer elements (dynamically sized).
     ///
     /// This must be in an `UnsafeCell` because both producer and consumer
@@ -180,13 +193,13 @@ impl<T> Drop for RingBuffer<T> {
 {% elif storage == "vec" %}
 #[derive(Debug)]
 pub struct RingBuffer<T> {
-    pub(super) head: {{ CachePadded("AtomicUsize") }},
-    pub(super) tail: {{ CachePadded("AtomicUsize") }},
+    head: {{ CachePadded("AtomicUsize") }},
+    tail: {{ CachePadded("AtomicUsize") }},
     {% if bip %}
     // TODO: measure whether CachePadded helps
-    pub(super) skip: {{ CachePadded("AtomicUsize") }},
+    skip: {{ CachePadded("AtomicUsize") }},
     {% endif %}
-    pub(super) flags: AtomicU8,
+    flags: AtomicU8,
     /// The buffer holding slots.
     data_ptr: *mut T,
     capacity: usize,
@@ -242,9 +255,9 @@ compile_error!("vrb must use powers of two");
 // TODO: reuse from storage_vec, disabling "skip"?
 #[derive(Debug)]
 pub struct RingBuffer<T> {
-    pub(super) head: {{ CachePadded("AtomicUsize") }},
-    pub(super) tail: {{ CachePadded("AtomicUsize") }},
-    pub(super) flags: AtomicU8,
+    head: {{ CachePadded("AtomicUsize") }},
+    tail: {{ CachePadded("AtomicUsize") }},
+    flags: AtomicU8,
     /// Pointer to the first mapped region
     data_ptr: *mut T,
     capacity: usize,
@@ -779,6 +792,73 @@ impl<T> RingBufferUnsized<T> {
         } else {
             2 * self.capacity() - a + b
         }
+    }
+{% endif %}
+
+    pub(super) fn head(&self) -> usize {
+        self.head.load(Ordering::Acquire)
+    }
+
+    pub(super) fn set_head(&self, value: usize) {
+        self.head.store(value, Ordering::Release);
+    }
+
+    pub(super) fn tail(&self) -> usize {
+        self.tail.load(Ordering::Acquire)
+    }
+
+    pub(super) fn set_tail(&self, value: usize) {
+        self.tail.store(value, Ordering::Release);
+    }
+{% if bip %}
+
+    pub(super) fn skip(&self) -> usize {
+        self.skip.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn set_skip(&self, value: usize) {
+        self.skip.store(value, Ordering::Relaxed);
+    }
+{% endif %}
+{% if arc %}
+
+    pub(super) fn is_abandoned(&self) -> bool {
+        self.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
+    }
+
+    pub(super) fn abandon(&self) -> bool {
+        // The "store" part of `fetch_or()` has to use `Release` to make sure that any previous writes
+        // to the ring buffer happen before it (in the thread that drops first).
+        // The "load" part can be `Relaxed` for the first thread,
+        // but it must be `Acquire` for the second one (see below).
+        if self.flags.fetch_or(IS_ABANDONED, Ordering::Release) & IS_ABANDONED == 0 {
+            // The flag wasn't set before, so we are the first to drop our
+            // producer/consumer and it should not be dropped yet.
+            false
+        } else {
+            // The flag was already set, i.e. the other thread has already dropped its
+            // consumer/producer and it can be dropped now.
+
+            // However, since the load of `flags` was `Relaxed`,
+            // we have to use `Acquire` here to make sure that reading `head` and `tail`
+            // in the destructor happens after this point.
+
+            // Ideally, we would use a memory fence like this:
+            //core::sync::atomic::fence(Ordering::Acquire);
+            // ... but as long as ThreadSanitizer doesn't support fences,
+            // we use load(Acquire) as a work-around to avoid false positives:
+            let _ = self.flags.load(Ordering::Acquire);
+            true
+        }
+    }
+{% else %}
+
+    pub(super) fn drop_producer(&self) {
+        let _ = self.flags.fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
+    }
+
+    pub(super) fn drop_consumer(&self) {
+        let _ = self.flags.fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
     }
 {% endif %}
 }

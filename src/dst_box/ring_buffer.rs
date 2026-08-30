@@ -25,9 +25,9 @@ dst_ring_buffer_instantiation! {
 /// *See also the [module-level documentation](crate::dst_box).*
 #[derive(Debug)]
 pub struct RingBuffer<T> {
-    pub(super) head: CachePadded<AtomicUsize>,
-    pub(super) tail: CachePadded<AtomicUsize>,
-    pub(super) flags: AtomicU8,
+    head: CachePadded<AtomicUsize>,
+    tail: CachePadded<AtomicUsize>,
+    flags: AtomicU8,
     /// Storage for the ring buffer elements (dynamically sized).
     ///
     /// This must be in an `UnsafeCell` because both producer and consumer
@@ -366,5 +366,29 @@ impl<T> RingBuffer<T> {
         } else {
             2 * self.capacity() - a + b
         }
+    }
+
+    pub(super) fn head(&self) -> usize {
+        self.head.load(Ordering::Acquire)
+    }
+
+    pub(super) fn set_head(&self, value: usize) {
+        self.head.store(value, Ordering::Release);
+    }
+
+    pub(super) fn tail(&self) -> usize {
+        self.tail.load(Ordering::Acquire)
+    }
+
+    pub(super) fn set_tail(&self, value: usize) {
+        self.tail.store(value, Ordering::Release);
+    }
+
+    pub(super) fn drop_producer(&self) {
+        let _ = self.flags.fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
+    }
+
+    pub(super) fn drop_consumer(&self) {
+        let _ = self.flags.fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
     }
 }

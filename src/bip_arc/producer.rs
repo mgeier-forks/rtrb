@@ -5,12 +5,10 @@
 use core::cell::Cell;
 
 use super::arc_ring_buffer::ArcRingBuffer;
-use super::IS_ABANDONED;
 use super::{
     chunks::{WriteChunk, WriteChunkUninit},
     ChunkError, CopyToUninit, PushError, RingBuffer,
 };
-use crate::atomic::*;
 
 // Only used in documentation:
 #[allow(unused_imports)]
@@ -98,7 +96,7 @@ impl<T> Producer<T> {
             // SAFETY: tail points to an empty slot.
             unsafe { b.slot_ptr(tail).write(value) };
             let tail = b.increment1(tail);
-            b.tail.store(tail, Ordering::Release);
+            b.set_tail(tail);
             self.cached_tail.set(tail);
             Ok(())
         } else {
@@ -135,7 +133,7 @@ impl<T> Producer<T> {
     /// ```
     pub fn slots(&self) -> usize {
         let b = &self.buffer;
-        let head = b.head.load(Ordering::Acquire);
+        let head = b.head();
         self.cached_head.set(head);
         b.capacity() - b.distance(head, self.cached_tail.get())
     }
@@ -167,7 +165,7 @@ impl<T> Producer<T> {
             debug_assert!(slots != 0 || b.capacity() == 0);
             return (slots, None, true);
         }
-        head = b.head.load(Ordering::Acquire);
+        head = b.head();
         self.cached_head.set(head);
         is_empty = head == tail;
         collapsed_head = b.collapse_position(head);
@@ -210,7 +208,7 @@ impl<T> Producer<T> {
         }
         let b = &self.buffer;
         let refreshed_head = refreshed_head.unwrap_or_else(|| {
-            let head = b.head.load(Ordering::Acquire);
+            let head = b.head();
             self.cached_head.set(head);
             head
         });
@@ -380,7 +378,7 @@ impl<T> Producer<T> {
     /// }
     /// ```
     pub fn is_abandoned(&self) -> bool {
-        self.buffer.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
+        self.buffer.is_abandoned()
     }
 
     /// Get the tail position for writing the next slot, if available.
@@ -394,7 +392,7 @@ impl<T> Producer<T> {
         // Check if the queue is *possibly* full.
         if b.distance(head, tail) == b.capacity() {
             // Refresh the head ...
-            head = b.head.load(Ordering::Acquire);
+            head = b.head();
             self.cached_head.set(head);
             // ... and check if it's *really* full.
             if b.distance(head, tail) == b.capacity() {
@@ -491,7 +489,7 @@ impl<T> Producer<T> {
                 return Ok(unsafe { WriteChunkUninit::new(self, n, 0) });
             }
             if refreshed_head.is_none() {
-                head = b.head.load(Ordering::Acquire);
+                head = b.head();
                 self.cached_head.set(head);
                 collapsed_head = b.collapse_position(head);
                 if collapsed_head >= n {

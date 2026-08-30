@@ -25,11 +25,11 @@ pub struct RingBuffer<T, const N: usize>(RingBufferInner<[MaybeUninit<T>; N]>);
 
 #[derive(Debug)]
 pub(super) struct RingBufferInner<Container: ?Sized> {
-    pub(super) head: CachePadded<AtomicUsize>,
-    pub(super) tail: CachePadded<AtomicUsize>,
+    head: CachePadded<AtomicUsize>,
+    tail: CachePadded<AtomicUsize>,
     // TODO: measure whether CachePadded helps
-    pub(super) skip: CachePadded<AtomicUsize>,
-    pub(super) flags: AtomicU8,
+    skip: CachePadded<AtomicUsize>,
+    flags: AtomicU8,
     /// The possibly unsized container holding slots.
     ///
     /// This must be in an `UnsafeCell` because both producer and consumer
@@ -80,6 +80,16 @@ impl<T> RingBufferUnsized<T> {
 
     pub(super) fn capacity(&self) -> usize {
         self.slots.get().len()
+    }
+
+    pub(super) fn has_producer(&self) -> bool {
+        // TODO: Avoid code duplication with RingBuffer<T, N>::has_producer()?
+        self.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
+    }
+
+    pub(super) fn has_consumer(&self) -> bool {
+        // TODO: Avoid code duplication with RingBuffer<T, N>::has_consumer()?
+        self.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
     }
 }
 
@@ -330,5 +340,37 @@ impl<T> RingBufferUnsized<T> {
         } else {
             2 * self.capacity() - a + b
         }
+    }
+
+    pub(super) fn head(&self) -> usize {
+        self.head.load(Ordering::Acquire)
+    }
+
+    pub(super) fn set_head(&self, value: usize) {
+        self.head.store(value, Ordering::Release);
+    }
+
+    pub(super) fn tail(&self) -> usize {
+        self.tail.load(Ordering::Acquire)
+    }
+
+    pub(super) fn set_tail(&self, value: usize) {
+        self.tail.store(value, Ordering::Release);
+    }
+
+    pub(super) fn skip(&self) -> usize {
+        self.skip.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn set_skip(&self, value: usize) {
+        self.skip.store(value, Ordering::Relaxed);
+    }
+
+    pub(super) fn drop_producer(&self) {
+        let _ = self.flags.fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
+    }
+
+    pub(super) fn drop_consumer(&self) {
+        let _ = self.flags.fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
     }
 }

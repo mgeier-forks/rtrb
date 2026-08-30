@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
 use super::arc_ring_buffer::ArcRingBuffer;
+use super::IS_ABANDONED;
 use crate::atomic::*;
 // Padded indices to avoid false sharing.
 use crate::CachePadded;
@@ -20,11 +21,11 @@ use super::{Consumer, Producer};
 /// *See also the [module-level documentation](crate::bip_arc2).*
 #[derive(Debug)]
 pub struct RingBuffer<T> {
-    pub(super) head: CachePadded<AtomicUsize>,
-    pub(super) tail: CachePadded<AtomicUsize>,
+    head: CachePadded<AtomicUsize>,
+    tail: CachePadded<AtomicUsize>,
     // TODO: measure whether CachePadded helps
-    pub(super) skip: CachePadded<AtomicUsize>,
-    pub(super) flags: AtomicU8,
+    skip: CachePadded<AtomicUsize>,
+    flags: AtomicU8,
     /// The buffer holding slots.
     data_ptr: *mut T,
     capacity: usize,
@@ -184,5 +185,59 @@ impl<T> RingBuffer<T> {
     /// Returns the distance between two positions.
     pub(super) fn distance(&self, a: usize, b: usize) -> usize {
         b.wrapping_sub(a)
+    }
+
+    pub(super) fn head(&self) -> usize {
+        self.head.load(Ordering::Acquire)
+    }
+
+    pub(super) fn set_head(&self, value: usize) {
+        self.head.store(value, Ordering::Release);
+    }
+
+    pub(super) fn tail(&self) -> usize {
+        self.tail.load(Ordering::Acquire)
+    }
+
+    pub(super) fn set_tail(&self, value: usize) {
+        self.tail.store(value, Ordering::Release);
+    }
+
+    pub(super) fn skip(&self) -> usize {
+        self.skip.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn set_skip(&self, value: usize) {
+        self.skip.store(value, Ordering::Relaxed);
+    }
+
+    pub(super) fn is_abandoned(&self) -> bool {
+        self.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
+    }
+
+    pub(super) fn abandon(&self) -> bool {
+        // The "store" part of `fetch_or()` has to use `Release` to make sure that any previous writes
+        // to the ring buffer happen before it (in the thread that drops first).
+        // The "load" part can be `Relaxed` for the first thread,
+        // but it must be `Acquire` for the second one (see below).
+        if self.flags.fetch_or(IS_ABANDONED, Ordering::Release) & IS_ABANDONED == 0 {
+            // The flag wasn't set before, so we are the first to drop our
+            // producer/consumer and it should not be dropped yet.
+            false
+        } else {
+            // The flag was already set, i.e. the other thread has already dropped its
+            // consumer/producer and it can be dropped now.
+
+            // However, since the load of `flags` was `Relaxed`,
+            // we have to use `Acquire` here to make sure that reading `head` and `tail`
+            // in the destructor happens after this point.
+
+            // Ideally, we would use a memory fence like this:
+            //core::sync::atomic::fence(Ordering::Acquire);
+            // ... but as long as ThreadSanitizer doesn't support fences,
+            // we use load(Acquire) as a work-around to avoid false positives:
+            let _ = self.flags.load(Ordering::Acquire);
+            true
+        }
     }
 }

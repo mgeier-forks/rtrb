@@ -6,9 +6,7 @@ use core::cell::Cell;
 use core::mem::MaybeUninit;
 
 use super::arc_ring_buffer::ArcRingBuffer;
-use super::IS_ABANDONED;
 use super::{chunks::ReadChunk, ChunkError, CopyToUninit, PeekError, PopError, RingBuffer};
-use crate::atomic::*;
 
 // Only used in documentation:
 #[allow(unused_imports)]
@@ -105,7 +103,7 @@ impl<T> Consumer<T> {
             // SAFETY: head points to an initialized slot.
             let value = unsafe { b.slot_ptr(head).read() };
             let head = b.increment1(head);
-            b.head.store(head, Ordering::Release);
+            b.set_head(head);
             self.cached_head.set(head);
             Ok(value)
         } else {
@@ -205,7 +203,7 @@ impl<T> Consumer<T> {
             // `tail` has been refreshed since it last wrapped (even if `cached_tail` is outdated),
             // therefore `skip` needs no synchronization.
             // TODO: cache skip?
-            b.skip.load(Ordering::Relaxed) - collapsed_head
+            b.skip() - collapsed_head
         } else {
             collapsed_tail - collapsed_head
         }
@@ -226,10 +224,10 @@ impl<T> Consumer<T> {
             () => {
                 // `skip` is never read in the producer thread, only written. Storing it before
                 // `head` makes sure that we don't overwrite the producer's value prematurely.
-                b.skip.store(b.capacity(), Ordering::Relaxed);
+                b.set_skip(b.capacity());
                 head = b.increment(head, b.capacity() - collapsed_head);
                 // Using `Release` here makes sure that storing `skip` "happens before".
-                b.head.store(head, Ordering::Release);
+                b.set_head(head);
                 self.cached_head.set(head);
                 collapsed_head = b.collapse_position(head);
                 debug_assert_eq!(collapsed_head, 0);
@@ -238,7 +236,7 @@ impl<T> Consumer<T> {
 
         macro_rules! refresh_tail {
             () => {
-                tail = b.tail.load(Ordering::Acquire);
+                tail = b.tail();
                 self.cached_tail.set(tail);
                 collapsed_tail = b.collapse_position(tail);
             };
@@ -251,7 +249,7 @@ impl<T> Consumer<T> {
 
             // `tail` has been refreshed since it last wrapped (even if `cached_tail` is outdated),
             // therefore `skip` needs no synchronization.
-            let slots = b.skip.load(Ordering::Relaxed) - collapsed_head;
+            let slots = b.skip() - collapsed_head;
             if slots > 0 {
                 (slots, None, true)
             } else {
@@ -266,7 +264,7 @@ impl<T> Consumer<T> {
             is_empty = head == tail;
             if !is_empty && collapsed_tail <= collapsed_head {
                 // Loading `skip` "happens after" loading `tail`.
-                let slots = b.skip.load(Ordering::Relaxed) - collapsed_head;
+                let slots = b.skip() - collapsed_head;
                 if slots > 0 {
                     (slots, Some(tail), true)
                 } else {
@@ -308,7 +306,7 @@ impl<T> Consumer<T> {
         }
         let b = &self.buffer;
         let refreshed_tail = refreshed_tail.unwrap_or_else(|| {
-            let tail = b.tail.load(Ordering::Acquire);
+            let tail = b.tail();
             self.cached_tail.set(tail);
             tail
         });
@@ -421,7 +419,7 @@ impl<T> Consumer<T> {
     /// }
     /// ```
     pub fn is_abandoned(&self) -> bool {
-        self.buffer.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
+        self.buffer.is_abandoned()
     }
 
     /// Get the `head` position for reading the next slot, if available.
