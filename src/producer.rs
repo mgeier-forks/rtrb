@@ -6,7 +6,7 @@ use super::arc_ring_buffer::ArcRingBuffer;
 
 use super::{
     chunks::{WriteChunk, WriteChunkUninit},
-    ChunkError, PushError, CopyToUninit as _
+    ChunkError, CopyToUninit as _, PushError,
 };
 
 /// The producer side of a [`RingBuffer`].
@@ -53,6 +53,14 @@ pub struct Producer<T> {
 unsafe impl<T: Send> Send for Producer<T> {}
 
 impl<T> Producer<T> {
+    pub(super) unsafe fn new(buffer: ArcRingBuffer<T>, head: usize, tail: usize) -> Self {
+        Self {
+            buffer,
+            cached_head: Cell::new(head),
+            cached_tail: Cell::new(tail),
+        }
+    }
+
     /// Attempts to push an element into the queue.
     ///
     /// The element is *moved* into the ring buffer and its slot
@@ -75,9 +83,14 @@ impl<T> Producer<T> {
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
         if let Some(tail) = self.next_tail() {
             // SAFETY: tail points to an empty slot.
-            unsafe { self.buffer.slot_ptr(tail).write(value) };
+            unsafe {
+                self.buffer.slot_ptr(tail).write(value);
+            }
             let tail = self.buffer.increment1(tail);
-            self.buffer.set_tail(tail);
+            // SAFETY: The new `tail` has been calculated correctly.
+            unsafe {
+                self.buffer.set_tail(tail);
+            }
             self.cached_tail.set(tail);
             Ok(())
         } else {
@@ -315,11 +328,13 @@ impl<T> Producer<T> {
         Ok(unsafe { WriteChunkUninit::new(self, n, offset) })
     }
 
-    pub(super) unsafe fn commit_unchecked(&self, n: usize) -> usize {
+    pub(super) unsafe fn advance_unchecked(&self, n: usize) {
         let tail = self.buffer.increment(self.cached_tail.get(), n);
-        self.buffer.set_tail(tail);
+        // SAFETY: The user must make sure that `n` slots have been written.
+        unsafe {
+            self.buffer.set_tail(tail);
+        }
         self.cached_tail.set(tail);
-        n
     }
 }
 

@@ -143,13 +143,16 @@
 
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
-use core::sync::atomic::Ordering;
 
-use crate::{Consumer, Producer};
+// For backwards compatibility. May be deprecated and removed in the future.
+#[doc(hidden)]
+pub use super::ChunkError;
+
+use super::{Consumer, Producer};
 
 // This is used in the documentation.
 #[allow(unused_imports)]
-use crate::RingBuffer;
+use super::RingBuffer;
 
 /// Structure for writing into multiple ([`Default`]-initialized) slots in one go.
 ///
@@ -337,7 +340,7 @@ impl<T> WriteChunkUninit<'_, T> {
         debug_assert!(n <= self.len(), "cannot commit more than chunk size");
         let capped_n = n.min(self.len());
         // SAFETY: Delegated to the caller.
-        unsafe { self.producer.commit_unchecked(capped_n) };
+        unsafe { self.producer.advance_unchecked(capped_n) };
     }
 
     /// Makes the whole chunk available for reading.
@@ -348,7 +351,7 @@ impl<T> WriteChunkUninit<'_, T> {
     pub unsafe fn commit_all(self) {
         let slots = self.len();
         // SAFETY: Delegated to the caller.
-        unsafe { self.producer.commit_unchecked(slots) };
+        unsafe { self.producer.advance_unchecked(slots) };
     }
 
     /// Moves items from an iterator into the (uninitialized) slots of the chunk.
@@ -420,7 +423,10 @@ impl<T> WriteChunkUninit<'_, T> {
             }
         }
         // SAFETY: iterated slots have been initialized above.
-        unsafe { self.producer.commit_unchecked(iterated) }
+        unsafe {
+            self.producer.advance_unchecked(iterated);
+        }
+        iterated
     }
 
     /// Returns the number of slots in the chunk.
@@ -593,7 +599,7 @@ impl<T> ReadChunk<'_, T> {
     pub fn commit_all(self) {
         let slots = self.len();
         // SAFETY: self.len() initialized elements have been obtained in read_chunk().
-        unsafe { self.consumer.commit_unchecked(slots) };
+        unsafe { self.commit_unchecked(slots) };
     }
 
     unsafe fn commit_unchecked(self, n: usize) -> usize {
@@ -604,11 +610,10 @@ impl<T> ReadChunk<'_, T> {
 
         impl<T> Drop for PanicGuard<'_, T> {
             fn drop(&mut self) {
-                let c = self.consumer;
-                // Mark dropped slots as read, even if their drop() panicked.
-                let head = c.buffer.increment(c.cached_head.get(), self.dropped);
-                c.buffer.head.store(head, Ordering::Release);
-                c.cached_head.set(head);
+                // SAFETY: `self.dropped` slots have been dropped, the last one might have panicked.
+                unsafe {
+                    self.consumer.advance_unchecked(self.dropped);
+                }
             }
         }
 
@@ -713,10 +718,10 @@ impl<T> Drop for ReadChunkIntoIter<'_, T> {
     ///
     /// Non-iterated items remain in the ring buffer and are *not* dropped.
     fn drop(&mut self) {
-        let c = &self.chunk.consumer;
-        let head = c.buffer.increment(c.cached_head.get(), self.iterated);
-        c.buffer.head.store(head, Ordering::Release);
-        c.cached_head.set(head);
+        // SAFETY: Iterated items have been moved out and are *not* dropped here.
+        unsafe {
+            self.chunk.consumer.advance_unchecked(self.iterated);
+        }
     }
 }
 

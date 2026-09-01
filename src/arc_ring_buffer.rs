@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use core::{cell::Cell, ptr::NonNull};
+use core::ptr::NonNull;
 
 use super::{Consumer, Producer, RingBuffer};
 
@@ -29,16 +29,10 @@ impl<T> ArcRingBuffer<T> {
         // SAFETY: Pointer from `Box` is always non-null.
         let ptr = unsafe { NonNull::new_unchecked(ptr) };
 
-        let p = Producer {
-            buffer: Self { ptr },
-            cached_head: Cell::new(head),
-            cached_tail: Cell::new(tail),
-        };
-        let c = Consumer {
-            buffer: Self { ptr },
-            cached_head: Cell::new(head),
-            cached_tail: Cell::new(tail),
-        };
+        // SAFETY: `ptr` is valid, `head` and `tail` are correct.
+        let p = unsafe { Producer::new(Self { ptr }, head, tail) };
+        // SAFETY: `ptr` is valid, `head` and `tail` are correct.
+        let c = unsafe { Consumer::new(Self { ptr }, head, tail) };
         (p, c)
     }
 }

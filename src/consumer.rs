@@ -49,6 +49,14 @@ pub struct Consumer<T> {
 unsafe impl<T: Send> Send for Consumer<T> {}
 
 impl<T> Consumer<T> {
+    pub(super) unsafe fn new(buffer: ArcRingBuffer<T>, head: usize, tail: usize) -> Self {
+        Self {
+            buffer,
+            cached_head: Cell::new(head),
+            cached_tail: Cell::new(tail),
+        }
+    }
+
     /// Attempts to pop an element from the queue.
     ///
     /// The element is *moved* out of the ring buffer and its slot
@@ -83,7 +91,10 @@ impl<T> Consumer<T> {
             // SAFETY: head points to an initialized slot.
             let value = unsafe { self.buffer.slot_ptr(head).read() };
             let head = self.buffer.increment1(head);
-            self.buffer.set_head(head);
+            // SAFETY: `head` has been calculated correctly.
+            unsafe {
+                self.buffer.set_head(head);
+            }
             self.cached_head.set(head);
             Ok(value)
         } else {
@@ -322,6 +333,15 @@ impl<T> Consumer<T> {
         let offset = b.collapse_position(head);
         // SAFETY: `offset` has been set to a valid position.
         Ok(unsafe { ReadChunk::new(self, n, offset) })
+    }
+
+    pub(super) unsafe fn advance_unchecked(&self, n: usize) {
+        let head = self.buffer.increment(self.cached_head.get(), n);
+        // SAFETY: The user must make sure that `n` slots have been read.
+        unsafe {
+            self.buffer.set_head(head);
+        }
+        self.cached_head.set(head);
     }
 }
 

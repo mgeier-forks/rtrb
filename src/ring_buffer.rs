@@ -164,7 +164,7 @@ impl<T> RingBuffer<T> {
         self.head.load(Ordering::Acquire)
     }
 
-    pub(super) fn set_head(&self, value: usize) {
+    pub(super) unsafe fn set_head(&self, value: usize) {
         self.head.store(value, Ordering::Release);
     }
 
@@ -172,11 +172,11 @@ impl<T> RingBuffer<T> {
         self.tail.load(Ordering::Acquire)
     }
 
-    pub(super) fn set_tail(&self, value: usize) {
+    pub(super) unsafe fn set_tail(&self, value: usize) {
         self.tail.store(value, Ordering::Release);
     }
 
-    pub(super) fn abandon(&self) -> bool {
+    pub(super) unsafe fn abandon(&self) -> bool {
         // The "store" part of `fetch_or()` has to use `Release` to make sure that any previous writes
         // to the ring buffer happen before it (in the thread that drops first).
         // The "load" part can be `Relaxed` for the first thread,
