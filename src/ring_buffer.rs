@@ -100,31 +100,35 @@ impl<T> RingBuffer<T> {
         self.capacity
     }
 
+    pub(super) fn data_ptr(&self) -> *mut T {
+        self.data_ptr
+    }
+
     /// Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
-    fn collapse_position(&self, pos: usize) -> usize {
-        debug_assert!(pos == 0 || pos < 2 * self.capacity);
-        if pos < self.capacity {
+    pub(super) fn collapse_position(&self, pos: usize) -> usize {
+        debug_assert!(pos == 0 || pos < 2 * self.capacity());
+        if pos < self.capacity() {
             pos
         } else {
-            pos - self.capacity
+            pos - self.capacity()
         }
     }
 
     /// Returns a pointer to the slot at position `pos`.
     ///
     /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
-    unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
-        debug_assert!(pos == 0 || pos < 2 * self.capacity);
+    pub(super) unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
+        debug_assert!(pos == 0 || pos < 2 * self.capacity());
         let pos = self.collapse_position(pos);
         // SAFETY: The caller must ensure a valid pos.
         unsafe { self.data_ptr.add(pos) }
     }
 
     /// Increments a position by going `n` slots forward.
-    fn increment(&self, pos: usize, n: usize) -> usize {
-        debug_assert!(pos == 0 || pos < 2 * self.capacity);
-        debug_assert!(n <= self.capacity);
-        let threshold = 2 * self.capacity - n;
+    pub(super) fn increment(&self, pos: usize, n: usize) -> usize {
+        debug_assert!(pos == 0 || pos < 2 * self.capacity());
+        debug_assert!(n <= self.capacity());
+        let threshold = 2 * self.capacity() - n;
         if pos < threshold {
             pos + n
         } else {
@@ -135,10 +139,10 @@ impl<T> RingBuffer<T> {
     /// Increments a position by going one slot forward.
     ///
     /// This is more efficient than self.increment(..., 1).
-    fn increment1(&self, pos: usize) -> usize {
-        debug_assert_ne!(self.capacity, 0);
-        debug_assert!(pos < 2 * self.capacity);
-        if pos < 2 * self.capacity - 1 {
+    pub(super) fn increment1(&self, pos: usize) -> usize {
+        debug_assert_ne!(self.capacity(), 0);
+        debug_assert!(pos < 2 * self.capacity());
+        if pos < 2 * self.capacity() - 1 {
             pos + 1
         } else {
             0
@@ -146,18 +150,30 @@ impl<T> RingBuffer<T> {
     }
 
     /// Returns the distance between two positions.
-    fn distance(&self, a: usize, b: usize) -> usize {
-        debug_assert!(a == 0 || a < 2 * self.capacity);
-        debug_assert!(b == 0 || b < 2 * self.capacity);
+    pub(super) fn distance(&self, a: usize, b: usize) -> usize {
+        debug_assert!(a == 0 || a < 2 * self.capacity());
+        debug_assert!(b == 0 || b < 2 * self.capacity());
         if a <= b {
             b - a
         } else {
-            2 * self.capacity - a + b
+            2 * self.capacity() - a + b
         }
     }
 
-    pub(super) fn is_abandoned(&self) -> bool {
-        self.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
+    pub(super) fn head(&self) -> usize {
+        self.head.load(Ordering::Acquire)
+    }
+
+    pub(super) fn set_head(&self, value: usize) {
+        self.head.store(value, Ordering::Release);
+    }
+
+    pub(super) fn tail(&self) -> usize {
+        self.tail.load(Ordering::Acquire)
+    }
+
+    pub(super) fn set_tail(&self, value: usize) {
+        self.tail.store(value, Ordering::Release);
     }
 
     pub(super) fn abandon(&self) -> bool {
@@ -185,6 +201,10 @@ impl<T> RingBuffer<T> {
             true
         }
     }
+
+    pub(super) fn is_abandoned(&self) -> bool {
+        self.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
+    }
 }
 
 impl<T> Drop for RingBuffer<T> {
@@ -202,7 +222,7 @@ impl<T> Drop for RingBuffer<T> {
 
         // Finally, deallocate the buffer, but don't run any destructors.
         // SAFETY: data_ptr and capacity are still valid from the original initialization.
-        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.capacity) };
+        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.capacity()) };
     }
 }
 

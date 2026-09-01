@@ -1,5 +1,4 @@
 use alloc::boxed::Box;
-use core::sync::atomic::{Ordering};
 use core::{cell::Cell, ptr::NonNull};
 
 use super::{Consumer, Producer, RingBuffer};
@@ -21,8 +20,8 @@ impl<T> ArcRingBuffer<T> {
         // NB: the following loads don't need Acquire (Relaxed would be enough),
         // but it's easier to reuse the helper functions.
         debug_assert!(!rb.is_abandoned());
-        let head = rb.head.load(Ordering::Relaxed);
-        let tail = rb.tail.load(Ordering::Relaxed);
+        let head = rb.head();
+        let tail = rb.tail();
 
         // We leak the `Box` here, but in the `Drop` implementation the pointer
         // will be turned back into a `Box` and its memory will be properly deallocated.

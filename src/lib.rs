@@ -188,3 +188,25 @@ impl<T> fmt::Display for PushError<T> {
         }
     }
 }
+
+/// Error type for [`Consumer::read_chunk()`], [`Consumer::pop_entire_slice()`],
+/// [`Consumer::pop_entire_slice_uninit()`], [`Producer::write_chunk()`],
+/// [`Producer::write_chunk_uninit()`] and [`Producer::push_entire_slice()`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ChunkError {
+    /// Fewer than the requested number of slots were available.
+    ///
+    /// Contains the number of slots that were available.
+    TooFewSlots(usize),
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for ChunkError {}
+
+impl fmt::Display for ChunkError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ChunkError::TooFewSlots(_) => "too few slots available in ring buffer".fmt(f),
+        }
+    }
+}
