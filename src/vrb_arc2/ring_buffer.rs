@@ -3,12 +3,13 @@
 // using the configuration file `codegen/configs/vrb_arc2.toml`.
 
 use super::arc_ring_buffer::ArcRingBuffer;
-use super::IS_ABANDONED;
 use crate::atomic::*;
 // Padded indices to avoid false sharing.
 use crate::CachePadded;
 
 use super::{Consumer, Producer};
+
+const IS_ABANDONED: u8 = 0b10000000;
 
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///

@@ -26,8 +26,6 @@
 //! As soon as both of these are dropped,
 //! the underlying [`RingBuffer`] is automatically dropped as well.
 
-const IS_ABANDONED: u8 = 0b10000000;
-
 mod ring_buffer;
 pub use ring_buffer::RingBuffer;
 mod producer;

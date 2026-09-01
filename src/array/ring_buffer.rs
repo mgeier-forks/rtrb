@@ -5,12 +5,14 @@
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 
-use super::{HAS_CONSUMER, HAS_PRODUCER};
 use crate::atomic::*;
 // Padded indices to avoid false sharing.
 use crate::CachePadded;
 
 use super::{Consumer, Producer};
+
+const HAS_PRODUCER: u8 = 0b10000000;
+const HAS_CONSUMER: u8 = 0b01000000;
 
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///

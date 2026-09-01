@@ -100,13 +100,6 @@
 {% endif %}
 {% endif %}
 
-{% if arc %}
-const IS_ABANDONED: u8 = 0b10000000;
-{% else %}
-const HAS_PRODUCER: u8 = 0b10000000;
-const HAS_CONSUMER: u8 = 0b01000000;
-{% endif %}
-
 {% if bip and not contiguous %}
 compile_error!("bip implies contiguous");
 {% endif %}

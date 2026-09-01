@@ -22,9 +22,6 @@ use core::mem::ManuallyDrop;
 {% endif %}
 {% if arc %}
 use super::arc_ring_buffer::ArcRingBuffer;
-use super::IS_ABANDONED;
-{% else %}
-use super::{HAS_CONSUMER, HAS_PRODUCER};
 {% endif %}
 use crate::atomic::*;
 {% if padded %}
@@ -33,6 +30,13 @@ use crate::CachePadded;
 {% endif %}
 
 use super::{Consumer, Producer};
+
+{% if arc %}
+const IS_ABANDONED: u8 = 0b10000000;
+{% else %}
+const HAS_PRODUCER: u8 = 0b10000000;
+const HAS_CONSUMER: u8 = 0b01000000;
+{% endif %}
 
 {% if storage == "dst" %}
 dst_ring_buffer_instantiation! {

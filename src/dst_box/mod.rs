@@ -68,9 +68,6 @@
 //!   * [`Consumer::pop_entire_slice()`] (if `T: Copy`)
 //!   * [`Consumer::pop_entire_slice_uninit()`] (if `T: Copy`)
 
-const HAS_PRODUCER: u8 = 0b10000000;
-const HAS_CONSUMER: u8 = 0b01000000;
-
 mod ring_buffer;
 pub use ring_buffer::RingBuffer;
 mod producer;

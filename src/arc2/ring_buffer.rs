@@ -6,12 +6,13 @@ use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
 use super::arc_ring_buffer::ArcRingBuffer;
-use super::IS_ABANDONED;
 use crate::atomic::*;
 // Padded indices to avoid false sharing.
 use crate::CachePadded;
 
 use super::{Consumer, Producer};
+
+const IS_ABANDONED: u8 = 0b10000000;
 
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
