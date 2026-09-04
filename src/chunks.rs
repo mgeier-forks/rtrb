@@ -152,7 +152,7 @@ use super::{Consumer, Producer};
 
 // This is used in the documentation.
 #[allow(unused_imports)]
-use super::RingBuffer;
+use super::{CopyToUninit, RingBuffer};
 
 /// Structure for writing into multiple ([`Default`]-initialized) slots in one go.
 ///

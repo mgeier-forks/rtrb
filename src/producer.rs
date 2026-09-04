@@ -9,6 +9,10 @@ use super::{
     ChunkError, CopyToUninit as _, PushError,
 };
 
+// Only used in documentation:
+#[allow(unused_imports)]
+use super::Consumer;
+
 /// The producer side of a [`RingBuffer`].
 ///
 /// Can be moved between threads,

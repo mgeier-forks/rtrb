@@ -5,6 +5,10 @@ use super::arc_ring_buffer::ArcRingBuffer;
 
 use super::{chunks::ReadChunk, ChunkError, CopyToUninit as _, PeekError, PopError, RingBuffer};
 
+// Only used in documentation:
+#[allow(unused_imports)]
+use super::Producer;
+
 /// The consumer side of a [`RingBuffer`].
 ///
 /// Can be moved between threads,
