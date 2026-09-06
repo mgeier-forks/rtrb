@@ -2,7 +2,6 @@
 // It has been auto-generated from `codegen/templates/src/ring_buffer.rs.jinja`
 // using the configuration file `codegen/configs/arc.toml`.
 
-use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
 use super::arc_ring_buffer::ArcRingBuffer;
@@ -92,6 +91,11 @@ impl<T> Eq for RingBuffer<T> {}
 impl<T> RingBuffer<T> {
     /// Creates a ring buffer with the given `capacity`
     /// and returns [`Producer`] and [`Consumer`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `capacity * size_of::<T>()` exceeds `isize::MAX` bytes or,
+    /// when `T` is a zero-sized type, if `capacity` is larger than `usize::MAX / 2`.
     ///
     /// # Examples
     ///
@@ -207,7 +211,7 @@ impl<T> RingBuffer<T> {
         self.head.load(Ordering::Acquire)
     }
 
-    pub(super) fn set_head(&self, value: usize) {
+    pub(super) unsafe fn set_head(&self, value: usize) {
         self.head.store(value, Ordering::Release);
     }
 
@@ -215,15 +219,11 @@ impl<T> RingBuffer<T> {
         self.tail.load(Ordering::Acquire)
     }
 
-    pub(super) fn set_tail(&self, value: usize) {
+    pub(super) unsafe fn set_tail(&self, value: usize) {
         self.tail.store(value, Ordering::Release);
     }
 
-    pub(super) fn is_abandoned(&self) -> bool {
-        self.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
-    }
-
-    pub(super) fn abandon(&self) -> bool {
+    pub(super) unsafe fn abandon(&self) -> bool {
         // The "store" part of `fetch_or()` has to use `Release` to make sure that any previous writes
         // to the ring buffer happen before it (in the thread that drops first).
         // The "load" part can be `Relaxed` for the first thread,
@@ -247,5 +247,9 @@ impl<T> RingBuffer<T> {
             let _ = self.flags.load(Ordering::Acquire);
             true
         }
+    }
+
+    pub(super) fn is_abandoned(&self) -> bool {
+        self.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
     }
 }

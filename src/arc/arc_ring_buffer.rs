@@ -21,7 +21,8 @@ impl<T> ArcRingBuffer<T> {
     //     Producer and Consumer are ever created.
     #[allow(clippy::new_ret_no_self)]
     pub fn new(rb: Box<RingBuffer<T>>) -> (Producer<T>, Consumer<T>) {
-        // NB: These reads wouldn't need Acquire, Relaxed would be enough:
+        // NB: the following loads don't need Acquire (Relaxed would be enough),
+        // but it's easier to reuse the helper functions.
         debug_assert!(!rb.is_abandoned());
         let head = rb.head();
         let tail = rb.tail();

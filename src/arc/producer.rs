@@ -7,7 +7,7 @@ use core::cell::Cell;
 use super::arc_ring_buffer::ArcRingBuffer;
 use super::{
     chunks::{WriteChunk, WriteChunkUninit},
-    ChunkError, CopyToUninit, PushError, RingBuffer,
+    ChunkError, CopyToUninit as _, PushError, RingBuffer,
 };
 
 // Only used in documentation:
