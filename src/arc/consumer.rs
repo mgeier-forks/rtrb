@@ -309,7 +309,7 @@ impl<T> Consumer<T> {
     }
 
     /// Returns a read-only reference to the ring buffer.
-    pub fn buffer(&self) -> &RingBuffer<T> {
+    pub(super) fn buffer(&self) -> &RingBuffer<T> {
         &self.buffer
     }
 
