@@ -2,7 +2,6 @@ use core::cell::Cell;
 use core::mem::MaybeUninit;
 
 use super::arc_ring_buffer::ArcRingBuffer;
-
 use super::{chunks::ReadChunk, ChunkError, CopyToUninit as _, PeekError, PopError, RingBuffer};
 
 // Only used in documentation:
@@ -347,9 +346,7 @@ impl<T> Consumer<T> {
         }
         self.cached_head.set(head);
     }
-}
 
-impl<T: Copy> Consumer<T> {
     /// Copies as many items as possible from the ring buffer to the given `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
@@ -386,7 +383,10 @@ impl<T: Copy> Consumer<T> {
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
     #[must_use]
-    pub fn pop_partial_slice<'a>(&mut self, slice: &'a mut [T]) -> (&'a mut [T], &'a mut [T]) {
+    pub fn pop_partial_slice<'a>(&mut self, slice: &'a mut [T]) -> (&'a mut [T], &'a mut [T])
+    where
+        T: Copy,
+    {
         // SAFETY: Transmuting &mut [T] to &mut [MaybeUninit<T>] is generally unsafe!
         // However, since we can guarantee that only valid T values will ever be written,
         // and the reference never leaves our control, it should be fine.
@@ -473,7 +473,10 @@ impl<T: Copy> Consumer<T> {
     pub fn pop_partial_slice_uninit<'a>(
         &mut self,
         slice: &'a mut [MaybeUninit<T>],
-    ) -> (&'a mut [T], &'a mut [MaybeUninit<T>]) {
+    ) -> (&'a mut [T], &'a mut [MaybeUninit<T>])
+    where
+        T: Copy,
+    {
         let slots = if self.cached_slots() < slice.len() {
             slice.len().min(self.slots())
         } else {
@@ -500,7 +503,10 @@ impl<T: Copy> Consumer<T> {
     ///
     /// To copy only the available slots, [`Consumer::pop_partial_slice()`] can be used.
     /// To copy into an uninitialized slice, [`Consumer::pop_entire_slice_uninit()`] can be used.
-    pub fn pop_entire_slice(&mut self, slice: &mut [T]) -> Result<(), ChunkError> {
+    pub fn pop_entire_slice(&mut self, slice: &mut [T]) -> Result<(), ChunkError>
+    where
+        T: Copy,
+    {
         // SAFETY: Transmuting &mut [T] to &mut [MaybeUninit<T>] is generally unsafe!
         // However, since we can guarantee that only valid T values will ever be written,
         // and the reference never leaves our control, it should be fine.
@@ -524,7 +530,10 @@ impl<T: Copy> Consumer<T> {
     pub fn pop_entire_slice_uninit<'a>(
         &mut self,
         slice: &'a mut [MaybeUninit<T>],
-    ) -> Result<&'a mut [T], ChunkError> {
+    ) -> Result<&'a mut [T], ChunkError>
+    where
+        T: Copy,
+    {
         let chunk = self.read_chunk(slice.len())?;
         let (one, two) = chunk.as_slices();
         let mid = one.len();

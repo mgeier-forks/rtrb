@@ -1,8 +1,7 @@
 use core::cell::Cell;
 
-use super::arc_ring_buffer::ArcRingBuffer;
-
 use super::{
+    arc_ring_buffer::ArcRingBuffer,
     chunks::{WriteChunk, WriteChunkUninit},
     ChunkError, CopyToUninit as _, PushError, RingBuffer,
 };
@@ -338,9 +337,7 @@ impl<T> Producer<T> {
         }
         self.cached_tail.set(tail);
     }
-}
 
-impl<T: Copy> Producer<T> {
     /// Copies as many items as possible from the given `slice` into the ring buffer.
     ///
     /// The written slots are automatically made available to be read by the [`Consumer`].
@@ -376,7 +373,10 @@ impl<T: Copy> Producer<T> {
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
     #[must_use]
-    pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
+    pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T])
+    where
+        T: Copy,
+    {
         let slots = if self.cached_slots() < slice.len() {
             slice.len().min(self.slots())
         } else {
@@ -402,7 +402,10 @@ impl<T: Copy> Producer<T> {
     ///
     /// If not enough free space is available in the ring buffer,
     /// a [`ChunkError`] with the available slots is returned.
-    pub fn push_entire_slice(&mut self, slice: &[T]) -> Result<(), ChunkError> {
+    pub fn push_entire_slice(&mut self, slice: &[T]) -> Result<(), ChunkError>
+    where
+        T: Copy,
+    {
         let mut chunk = self.write_chunk_uninit(slice.len())?;
         let (one, two) = chunk.as_mut_slices();
         let mid = one.len();
