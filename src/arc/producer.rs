@@ -4,8 +4,8 @@
 
 use core::cell::Cell;
 
-use super::arc_ring_buffer::ArcRingBuffer;
 use super::{
+    arc_ring_buffer::ArcRingBuffer,
     chunks::{WriteChunk, WriteChunkUninit},
     ChunkError, CopyToUninit as _, PushError, RingBuffer,
 };
@@ -39,19 +39,20 @@ use super::Consumer;
 /// will be deallocated.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Producer<T> {
-    pub(super) buffer: ArcRingBuffer<T>,
+    /// A reference to the ring buffer.
+    buffer: ArcRingBuffer<T>,
 
     /// A copy of `buffer.head` for quick access.
     ///
     /// This value can be stale and sometimes needs to be resynchronized with `buffer.head`.
-    pub(super) cached_head: Cell<usize>,
+    cached_head: Cell<usize>,
 
     /// A copy of `buffer.tail` for quick access.
     ///
     /// This value is always in sync with `buffer.tail`.
     // NB: Caching the tail seems to have little effect on Intel CPUs, but it seems to
     //     improve performance on AMD CPUs, see https://github.com/mgeier/rtrb/pull/132
-    pub(super) cached_tail: Cell<usize>,
+    cached_tail: Cell<usize>,
 }
 
 /// It can be moved ...
@@ -71,6 +72,14 @@ pub struct Producer<T> {
 unsafe impl<T: Send> Send for Producer<T> where RingBuffer<T>: Sync {}
 
 impl<T> Producer<T> {
+    pub(super) unsafe fn new(buffer: ArcRingBuffer<T>, head: usize, tail: usize) -> Self {
+        Self {
+            buffer,
+            cached_head: Cell::new(head),
+            cached_tail: Cell::new(tail),
+        }
+    }
+
     /// Attempts to push an element into the queue.
     ///
     /// The element is *moved* into the ring buffer and its slot
@@ -94,9 +103,14 @@ impl<T> Producer<T> {
         if let Some(tail) = self.next_tail() {
             let b = &self.buffer;
             // SAFETY: tail points to an empty slot.
-            unsafe { b.slot_ptr(tail).write(value) };
+            unsafe {
+                b.slot_ptr(tail).write(value);
+            }
             let tail = b.increment1(tail);
-            b.set_tail(tail);
+            // SAFETY: The new `tail` has been calculated correctly.
+            unsafe {
+                b.set_tail(tail);
+            }
             self.cached_tail.set(tail);
             Ok(())
         } else {
@@ -212,11 +226,10 @@ impl<T> Producer<T> {
 
     /// Returns `true` if the corresponding [`Consumer`] has been destroyed.
     ///
-    /// TODO: update this note:
-    ///
-    /// Note that since Rust version 1.74.0, this is not synchronizing with the consumer thread
-    /// anymore, see <https://github.com/mgeier/rtrb/issues/114>.
-    /// In a future version of `rtrb`, the synchronizing behavior might be restored.
+    /// Note that since Rust version 1.74.0 and before `rtrb` version 0.4,
+    /// this was not synchronizing with the consumer thread anymore,
+    /// see [issue #114](https://github.com/mgeier/rtrb/issues/114).
+    /// In `rtrb` version 0.4, the synchronizing behavior has been restored.
     ///
     /// # Examples
     ///
@@ -371,6 +384,15 @@ impl<T> Producer<T> {
         Ok(unsafe { WriteChunkUninit::new(self, n, offset) })
     }
 
+    pub(super) unsafe fn advance_unchecked(&self, n: usize) {
+        let tail = self.buffer.increment(self.cached_tail.get(), n);
+        // SAFETY: The user must make sure that `n` slots have been written.
+        unsafe {
+            self.buffer.set_tail(tail);
+        }
+        self.cached_tail.set(tail);
+    }
+
     /// Copies as many items as possible from the given `slice` into the ring buffer.
     ///
     /// The written slots are automatically made available to be read by the [`Consumer`].
@@ -405,6 +427,7 @@ impl<T> Producer<T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
+    #[must_use]
     pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T])
     where
         T: Copy,

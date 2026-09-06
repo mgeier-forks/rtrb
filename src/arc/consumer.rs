@@ -6,7 +6,7 @@ use core::cell::Cell;
 use core::mem::MaybeUninit;
 
 use super::arc_ring_buffer::ArcRingBuffer;
-use super::{chunks::ReadChunk, ChunkError, CopyToUninit, PeekError, PopError, RingBuffer};
+use super::{chunks::ReadChunk, ChunkError, CopyToUninit as _, PeekError, PopError, RingBuffer};
 
 // Only used in documentation:
 #[allow(unused_imports)]
@@ -36,19 +36,20 @@ use super::Producer;
 /// will be deallocated.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<T> {
-    pub(super) buffer: ArcRingBuffer<T>,
+    /// A reference to the ring buffer.
+    buffer: ArcRingBuffer<T>,
 
     /// A copy of `buffer.head` for quick access.
     ///
     /// This value is always in sync with `buffer.head`.
     // NB: Caching the head seems to have little effect on Intel CPUs, but it seems to
     //     improve performance on AMD CPUs, see https://github.com/mgeier/rtrb/pull/132
-    pub(super) cached_head: Cell<usize>,
+    cached_head: Cell<usize>,
 
     /// A copy of `buffer.tail` for quick access.
     ///
     /// This value can be stale and sometimes needs to be resynchronized with `buffer.tail`.
-    pub(super) cached_tail: Cell<usize>,
+    cached_tail: Cell<usize>,
 }
 
 /// It can be moved ...
@@ -68,6 +69,14 @@ pub struct Consumer<T> {
 unsafe impl<T: Send> Send for Consumer<T> where RingBuffer<T>: Sync {}
 
 impl<T> Consumer<T> {
+    pub(super) unsafe fn new(buffer: ArcRingBuffer<T>, head: usize, tail: usize) -> Self {
+        Self {
+            buffer,
+            cached_head: Cell::new(head),
+            cached_tail: Cell::new(tail),
+        }
+    }
+
     /// Attempts to pop the next element from the queue.
     ///
     /// The element is *moved* out of the ring buffer and its slot
@@ -103,7 +112,10 @@ impl<T> Consumer<T> {
             // SAFETY: head points to an initialized slot.
             let value = unsafe { b.slot_ptr(head).read() };
             let head = b.increment1(head);
-            b.set_head(head);
+            // SAFETY: `head` has been calculated correctly.
+            unsafe {
+                b.set_head(head);
+            }
             self.cached_head.set(head);
             Ok(value)
         } else {
@@ -362,6 +374,15 @@ impl<T> Consumer<T> {
         Ok(unsafe { ReadChunk::new(self, n, offset) })
     }
 
+    pub(super) unsafe fn advance_unchecked(&self, n: usize) {
+        let head = self.buffer.increment(self.cached_head.get(), n);
+        // SAFETY: The user must make sure that `n` slots have been read.
+        unsafe {
+            self.buffer.set_head(head);
+        }
+        self.cached_head.set(head);
+    }
+
     /// Copies as many items as possible from the ring buffer to the given `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
@@ -397,6 +418,7 @@ impl<T> Consumer<T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
+    #[must_use]
     pub fn pop_partial_slice<'a>(&mut self, slice: &'a mut [T]) -> (&'a mut [T], &'a mut [T])
     where
         T: Copy,
@@ -483,6 +505,7 @@ impl<T> Consumer<T> {
     /// assert_eq!(buffer, [-42, 2, 3, 99]);
     /// ```
     #[inline]
+    #[must_use]
     pub fn pop_partial_slice_uninit<'a>(
         &mut self,
         slice: &'a mut [MaybeUninit<T>],
