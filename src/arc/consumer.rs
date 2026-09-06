@@ -308,6 +308,11 @@ impl<T> Consumer<T> {
         self.buffer.is_abandoned()
     }
 
+    /// Returns a read-only reference to the ring buffer.
+    pub fn buffer(&self) -> &RingBuffer<T> {
+        &self.buffer
+    }
+
     /// Get the `head` position for reading the next slot, if available.
     ///
     /// This is a strict subset of the functionality implemented in `read_chunk()`.
