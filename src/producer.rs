@@ -1,12 +1,10 @@
 use core::cell::Cell;
 
-use super::RingBuffer;
-
 use super::arc_ring_buffer::ArcRingBuffer;
 
 use super::{
     chunks::{WriteChunk, WriteChunkUninit},
-    ChunkError, CopyToUninit as _, PushError,
+    ChunkError, CopyToUninit as _, PushError, RingBuffer,
 };
 
 // Only used in documentation:

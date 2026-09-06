@@ -72,13 +72,10 @@ use core::mem::MaybeUninit;
 
 mod ring_buffer;
 pub use ring_buffer::RingBuffer;
-
 mod producer;
 pub use producer::Producer;
-
 mod consumer;
 pub use consumer::Consumer;
-
 mod arc_ring_buffer;
 pub mod chunks;
 

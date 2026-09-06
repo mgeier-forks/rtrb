@@ -41,6 +41,46 @@ pub struct RingBuffer<T> {
     _marker: PhantomData<T>,
 }
 
+impl<T> Drop for RingBuffer<T> {
+    /// Drops all non-empty slots.
+    fn drop(&mut self) {
+        let mut head = self.head.load(Ordering::Relaxed);
+        let tail = self.tail.load(Ordering::Relaxed);
+
+        // Loop over all slots that hold a value and drop them.
+        while head != tail {
+            // SAFETY: All slots between head and tail have been initialized.
+            unsafe { self.slot_ptr(head).drop_in_place() };
+            head = self.increment1(head);
+        }
+
+        // Finally, deallocate the buffer, but don't run any destructors.
+        // SAFETY: data_ptr and capacity are still valid from the original initialization.
+        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.capacity()) };
+    }
+}
+
+impl<T> PartialEq for RingBuffer<T> {
+    /// This method tests for `self` and `other` values to be equal, and is used by `==`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (p1, c1) = RingBuffer::<f32>::new(1000);
+    /// assert_eq!(p1.buffer(), c1.buffer());
+    ///
+    /// let (p2, c2) = RingBuffer::<f32>::new(1000);
+    /// assert_ne!(p1.buffer(), p2.buffer());
+    /// ```
+    fn eq(&self, other: &Self) -> bool {
+        core::ptr::eq(self, other)
+    }
+}
+
+impl<T> Eq for RingBuffer<T> {}
+
 impl<T> RingBuffer<T> {
     /// Creates a `RingBuffer` with the given `capacity` and returns [`Producer`] and [`Consumer`].
     ///
@@ -206,43 +246,3 @@ impl<T> RingBuffer<T> {
         self.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
     }
 }
-
-impl<T> Drop for RingBuffer<T> {
-    /// Drops all non-empty slots.
-    fn drop(&mut self) {
-        let mut head = self.head.load(Ordering::Relaxed);
-        let tail = self.tail.load(Ordering::Relaxed);
-
-        // Loop over all slots that hold a value and drop them.
-        while head != tail {
-            // SAFETY: All slots between head and tail have been initialized.
-            unsafe { self.slot_ptr(head).drop_in_place() };
-            head = self.increment1(head);
-        }
-
-        // Finally, deallocate the buffer, but don't run any destructors.
-        // SAFETY: data_ptr and capacity are still valid from the original initialization.
-        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.capacity()) };
-    }
-}
-
-impl<T> PartialEq for RingBuffer<T> {
-    /// This method tests for `self` and `other` values to be equal, and is used by `==`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rtrb::RingBuffer;
-    ///
-    /// let (p1, c1) = RingBuffer::<f32>::new(1000);
-    /// assert_eq!(p1.buffer(), c1.buffer());
-    ///
-    /// let (p2, c2) = RingBuffer::<f32>::new(1000);
-    /// assert_ne!(p1.buffer(), p2.buffer());
-    /// ```
-    fn eq(&self, other: &Self) -> bool {
-        core::ptr::eq(self, other)
-    }
-}
-
-impl<T> Eq for RingBuffer<T> {}
