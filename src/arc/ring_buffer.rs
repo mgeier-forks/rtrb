@@ -2,6 +2,7 @@
 // It has been auto-generated from `codegen/templates/src/ring_buffer.rs.jinja`
 // using the configuration file `codegen/configs/arc.toml`.
 
+use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
 use super::arc_ring_buffer::ArcRingBuffer;
@@ -118,6 +119,10 @@ impl<T> RingBuffer<T> {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
         let capacity = Self::update_capacity(capacity);
+        assert!(
+            capacity.checked_mul(2).is_some(),
+            "capacity exceeds usize::MAX / 2"
+        );
         ArcRingBuffer::new(Self::construct(capacity))
     }
 

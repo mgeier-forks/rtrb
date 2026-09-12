@@ -357,7 +357,7 @@ impl<T> WriteChunkUninit<'_, T> {
         let capped_n = n.min(self.len());
         // SAFETY: Delegated to the caller.
         unsafe {
-            self.producer.advance_unchecked(capped_n);
+            self.producer.advance(capped_n);
         }
     }
 
@@ -370,7 +370,7 @@ impl<T> WriteChunkUninit<'_, T> {
         let slots = self.len();
         // SAFETY: Delegated to the caller.
         unsafe {
-            self.producer.advance_unchecked(slots);
+            self.producer.advance(slots);
         }
     }
 
@@ -441,7 +441,7 @@ impl<T> WriteChunkUninit<'_, T> {
         }
         // SAFETY: iterated slots have been initialized above.
         unsafe {
-            self.producer.advance_unchecked(iterated);
+            self.producer.advance(iterated);
         }
         iterated
     }
@@ -621,17 +621,19 @@ impl<T> ReadChunk<'_, T> {
         debug_assert!(n <= self.len(), "cannot commit more than chunk size");
         let capped_n = n.min(self.len());
         // SAFETY: self.len() initialized elements have been obtained in read_chunk().
-        unsafe { self.commit_unchecked(capped_n) };
+        unsafe {
+            self.drop_and_advance(capped_n);
+        }
     }
 
     /// Drops all slots of the chunk, making the space available for writing again.
     pub fn commit_all(self) {
         let slots = self.len();
         // SAFETY: self.len() initialized elements have been obtained in read_chunk().
-        unsafe { self.commit_unchecked(slots) };
+        unsafe { self.drop_and_advance(slots) };
     }
 
-    unsafe fn commit_unchecked(self, n: usize) -> usize {
+    unsafe fn drop_and_advance(self, n: usize) -> usize {
         struct PanicGuard<'a, T> {
             consumer: &'a Consumer<T>,
             dropped: usize,
@@ -641,7 +643,7 @@ impl<T> ReadChunk<'_, T> {
             fn drop(&mut self) {
                 // SAFETY: `self.dropped` slots have been dropped, the last one might have panicked.
                 unsafe {
-                    self.consumer.advance_unchecked(self.dropped);
+                    self.consumer.advance(self.dropped);
                 }
             }
         }
@@ -751,7 +753,7 @@ impl<T> Drop for ReadChunkIntoIter<'_, T> {
     fn drop(&mut self) {
         // SAFETY: Iterated items have been moved out and are *not* dropped here.
         unsafe {
-            self.chunk.consumer.advance_unchecked(self.iterated);
+            self.chunk.consumer.advance(self.iterated);
         }
     }
 }

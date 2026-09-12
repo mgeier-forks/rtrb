@@ -426,11 +426,22 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
 {% endif %}
     ///
 {% endif %}
+{% if N %}
+    /// `N` cannot be larger than `usize::MAX / 2`.
+    ///
+{% endif %}
 {% if not arc %}
     /// A (single) [`Producer`] for writing into the ring buffer can be created with
     /// [`RingBuffer::producer()`].
     /// A (single) [`Consumer`] for reading from the ring buffer can be created with
     /// [`RingBuffer::consumer()`].
+    ///
+{% endif %}
+{% if not N %}
+    /// # Panics
+    ///
+    /// Panics if `capacity * size_of::<T>()` exceeds `isize::MAX` bytes or,
+    /// when `T` is a zero-sized type, if `capacity` is larger than `usize::MAX / 2`.
     ///
 {% endif %}
     /// # Examples
@@ -470,10 +481,15 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     pub const fn new() -> Self {
         const {
             assert!(Self::update_capacity(N) == N, "`N` must be a power of two");
+            assert!(
+                N.checked_mul(2).is_some(),
+                "`N` exceeds usize::MAX / 2"
+            );
         }
         Self::construct()
     }
 {% endif %}{% else %}{% if arc %}
+    {# TODO: Combine arc and non-arc implementation, only signature differs? #}
     /// ```
     /// use {{ module_path }}::RingBuffer;
     ///
@@ -483,6 +499,10 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
         let capacity = Self::update_capacity(capacity);
+        assert!(
+            capacity.checked_mul(2).is_some(),
+            "capacity exceeds usize::MAX / 2"
+        );
         ArcRingBuffer::new(Self::construct(capacity))
     }
 {% else %}
@@ -500,6 +520,10 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     pub fn new(capacity: usize) -> Self {
     {% endif %}
         let capacity = Self::update_capacity(capacity);
+        assert!(
+            capacity.checked_mul(2).is_some(),
+            "capacity exceeds usize::MAX / 2"
+        );
         Self::construct(capacity)
     }
 {% endif %}{% endif %}
@@ -528,16 +552,12 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     /// assert_eq!(consumer.pop(), Ok(20));
     /// ```
     pub fn producer(&self) -> Option<Producer<'_, T>> {
-        use core::cell::Cell;
         let old_flags = {{ N_self }}.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
         if old_flags & HAS_PRODUCER == 0 {
             let head = {{ N_self }}.head.load(Ordering::Relaxed);
             let tail = {{ N_self }}.tail.load(Ordering::Relaxed);
-            Some(Producer {
-                buffer: {% if N %}&self.0{% else %}self{% endif %},
-                cached_head: Cell::new(head),
-                cached_tail: Cell::new(tail),
-            })
+            // SAFETY: There is no producer yet, `head` and `tail` are valid.
+            Some(unsafe { Producer::new({% if N %}&self.0{% else %}self{% endif %}, head, tail) })
         } else {
             None
         }
@@ -566,16 +586,12 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     /// assert_eq!(consumer.pop(), Ok(20));
     /// ```
     pub fn consumer(&self) -> Option<Consumer<'_, T>> {
-        use core::cell::Cell;
         let old_flags = {{ N_self }}.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
         if old_flags & HAS_CONSUMER == 0 {
             let head = {{ N_self }}.head.load(Ordering::Relaxed);
             let tail = {{ N_self }}.tail.load(Ordering::Relaxed);
-            Some(Consumer {
-                buffer: {% if N %}&self.0{% else %}self{% endif %},
-                cached_head: Cell::new(head),
-                cached_tail: Cell::new(tail),
-            })
+            // SAFETY: There is no consumer yet, `head` and `tail` are valid.
+            Some(unsafe { Consumer::new({% if N %}&self.0{% else %}self{% endif %}, head, tail) })
         } else {
             None
         }
@@ -803,7 +819,7 @@ impl<T> RingBufferUnsized<T> {
         self.head.load(Ordering::Acquire)
     }
 
-    pub(super) fn set_head(&self, value: usize) {
+    pub(super) unsafe fn set_head(&self, value: usize) {
         self.head.store(value, Ordering::Release);
     }
 
@@ -811,7 +827,7 @@ impl<T> RingBufferUnsized<T> {
         self.tail.load(Ordering::Acquire)
     }
 
-    pub(super) fn set_tail(&self, value: usize) {
+    pub(super) unsafe fn set_tail(&self, value: usize) {
         self.tail.store(value, Ordering::Release);
     }
 {% if bip %}
@@ -820,17 +836,13 @@ impl<T> RingBufferUnsized<T> {
         self.skip.load(Ordering::Relaxed)
     }
 
-    pub(super) fn set_skip(&self, value: usize) {
+    pub(super) unsafe fn set_skip(&self, value: usize) {
         self.skip.store(value, Ordering::Relaxed);
     }
 {% endif %}
 {% if arc %}
 
-    pub(super) fn is_abandoned(&self) -> bool {
-        self.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
-    }
-
-    pub(super) fn abandon(&self) -> bool {
+    pub(super) unsafe fn abandon(&self) -> bool {
         // The "store" part of `fetch_or()` has to use `Release` to make sure that any previous writes
         // to the ring buffer happen before it (in the thread that drops first).
         // The "load" part can be `Relaxed` for the first thread,
@@ -854,6 +866,10 @@ impl<T> RingBufferUnsized<T> {
             let _ = self.flags.load(Ordering::Acquire);
             true
         }
+    }
+
+    pub(super) fn is_abandoned(&self) -> bool {
+        self.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
     }
 {% else %}
 

@@ -6,7 +6,7 @@ use core::cell::Cell;
 use core::mem::MaybeUninit;
 
 use super::ring_buffer::RingBufferUnsized;
-use super::{chunks::ReadChunk, ChunkError, CopyToUninit, PeekError, PopError};
+use super::{chunks::ReadChunk, ChunkError, CopyToUninit as _, PeekError, PopError};
 
 // Only used in documentation:
 #[allow(unused_imports)]
@@ -28,9 +28,9 @@ use super::{Producer, RingBuffer};
 /// A `Consumer` can only be created with [`RingBuffer::consumer()`].
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<'a, T> {
-    pub(super) buffer: &'a RingBufferUnsized<T>,
-    pub(super) cached_head: Cell<usize>,
-    pub(super) cached_tail: Cell<usize>,
+    buffer: &'a RingBufferUnsized<T>,
+    cached_head: Cell<usize>,
+    cached_tail: Cell<usize>,
 }
 
 impl<T> Drop for Consumer<'_, T> {
@@ -54,6 +54,16 @@ impl<T> Drop for Consumer<'_, T> {
 // SAFETY: After moving the consumer to another thread, there is still only a single thread
 // that can access the consumer side of the queue.
 unsafe impl<T: Send> Send for Consumer<'_, T> where RingBufferUnsized<T>: Sync {}
+
+impl<'a, T> Consumer<'a, T> {
+    pub(super) unsafe fn new(buffer: &'a RingBufferUnsized<T>, head: usize, tail: usize) -> Self {
+        Self {
+            buffer,
+            cached_head: Cell::new(head),
+            cached_tail: Cell::new(tail),
+        }
+    }
+}
 
 impl<T> Consumer<'_, T> {
     /// Attempts to pop the next element from the queue.
@@ -95,7 +105,10 @@ impl<T> Consumer<'_, T> {
             // SAFETY: head points to an initialized slot.
             let value = unsafe { b.slot_ptr(head).read() };
             let head = b.increment1(head);
-            b.set_head(head);
+            // SAFETY: `head` has been calculated correctly.
+            unsafe {
+                b.set_head(head);
+            }
             self.cached_head.set(head);
             Ok(value)
         } else {
@@ -220,12 +233,18 @@ impl<T> Consumer<'_, T> {
 
         macro_rules! reset_skip {
             () => {
-                // `skip` is never read in the producer thread, only written. Storing it before
-                // `head` makes sure that we don't overwrite the producer's value prematurely.
-                b.set_skip(b.capacity());
+                // SAFETY: There are no readable slots before `skip`.
+                unsafe {
+                    // `skip` is never read in the producer thread, only written. Storing it before
+                    // `head` makes sure that we don't overwrite the producer's value prematurely.
+                    b.set_skip(b.capacity());
+                }
                 head = b.increment(head, b.capacity() - collapsed_head);
-                // Using `Release` here makes sure that storing `skip` "happens before".
-                b.set_head(head);
+                // SAFETY: We have read everything before `skip` and can skip the remaining slots.
+                unsafe {
+                    // Using `Release` here makes sure that storing `skip` "happens before".
+                    b.set_head(head);
+                }
                 self.cached_head.set(head);
                 collapsed_head = b.collapse_position(head);
                 debug_assert_eq!(collapsed_head, 0);
@@ -387,6 +406,11 @@ impl<T> Consumer<'_, T> {
         self.buffer.has_producer()
     }
 
+    /// Returns a read-only reference to the ring buffer.
+    pub(super) fn buffer(&self) -> &RingBufferUnsized<T> {
+        &self.buffer
+    }
+
     /// Get the `head` position for reading the next slot, if available.
     fn next_head(&self) -> Option<usize> {
         let (slots, _, _) = self.slots_contiguous_helper();
@@ -433,6 +457,15 @@ impl<T> Consumer<'_, T> {
         }
     }
 
+    pub(super) unsafe fn advance(&self, n: usize) {
+        let head = self.buffer.increment(self.cached_head.get(), n);
+        // SAFETY: The user must make sure that `n` slots have been read.
+        unsafe {
+            self.buffer.set_head(head);
+        }
+        self.cached_head.set(head);
+    }
+
     /// Copies as many items as possible from the ring buffer to the given `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
@@ -468,6 +501,7 @@ impl<T> Consumer<'_, T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
+    #[must_use]
     pub fn pop_partial_slice<'a>(&mut self, slice: &'a mut [T]) -> (&'a mut [T], &'a mut [T])
     where
         T: Copy,
@@ -554,6 +588,7 @@ impl<T> Consumer<'_, T> {
     /// assert_eq!(buffer, [-42, 2, 3, 99]);
     /// ```
     #[inline]
+    #[must_use]
     pub fn pop_partial_slice_uninit<'a>(
         &mut self,
         slice: &'a mut [MaybeUninit<T>],

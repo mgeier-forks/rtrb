@@ -3,7 +3,7 @@
 // using the configuration file `codegen/configs/bip_arc.toml`.
 
 use alloc::boxed::Box;
-use core::{cell::Cell, ptr::NonNull};
+use core::ptr::NonNull;
 
 use super::{Consumer, Producer, RingBuffer};
 
@@ -21,7 +21,8 @@ impl<T> ArcRingBuffer<T> {
     //     Producer and Consumer are ever created.
     #[allow(clippy::new_ret_no_self)]
     pub fn new(rb: Box<RingBuffer<T>>) -> (Producer<T>, Consumer<T>) {
-        // NB: These reads wouldn't need Acquire, Relaxed would be enough:
+        // NB: the following loads don't need Acquire (Relaxed would be enough),
+        // but it's easier to reuse the helper functions.
         debug_assert!(!rb.is_abandoned());
         let head = rb.head();
         let tail = rb.tail();
@@ -32,16 +33,10 @@ impl<T> ArcRingBuffer<T> {
         // SAFETY: Pointer from `Box` is always non-null.
         let ptr = unsafe { NonNull::new_unchecked(ptr) };
 
-        let p = Producer {
-            buffer: Self { ptr },
-            cached_head: Cell::new(head),
-            cached_tail: Cell::new(tail),
-        };
-        let c = Consumer {
-            buffer: Self { ptr },
-            cached_head: Cell::new(head),
-            cached_tail: Cell::new(tail),
-        };
+        // SAFETY: `ptr` is valid, `head` and `tail` are correct.
+        let p = unsafe { Producer::new(Self { ptr }, head, tail) };
+        // SAFETY: `ptr` is valid, `head` and `tail` are correct.
+        let c = unsafe { Consumer::new(Self { ptr }, head, tail) };
         (p, c)
     }
 }

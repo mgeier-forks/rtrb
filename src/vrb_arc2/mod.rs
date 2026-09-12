@@ -33,10 +33,9 @@ pub use producer::Producer;
 mod consumer;
 pub use consumer::Consumer;
 mod arc_ring_buffer;
-
 pub mod chunks;
 
-// Only used in documentation:
+// This is used in the documentation.
 #[allow(unused_imports)]
 use chunks::WriteChunkUninit;
 

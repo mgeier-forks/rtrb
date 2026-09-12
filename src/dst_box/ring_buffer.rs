@@ -97,6 +97,11 @@ impl<T> RingBuffer<T> {
     /// A (single) [`Consumer`] for reading from the ring buffer can be created with
     /// [`RingBuffer::consumer()`].
     ///
+    /// # Panics
+    ///
+    /// Panics if `capacity * size_of::<T>()` exceeds `isize::MAX` bytes or,
+    /// when `T` is a zero-sized type, if `capacity` is larger than `usize::MAX / 2`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -118,6 +123,10 @@ impl<T> RingBuffer<T> {
     /// ```
     pub fn new(capacity: usize) -> Box<Self> {
         let capacity = Self::update_capacity(capacity);
+        assert!(
+            capacity.checked_mul(2).is_some(),
+            "capacity exceeds usize::MAX / 2"
+        );
         Self::construct(capacity)
     }
 
@@ -146,16 +155,12 @@ impl<T> RingBuffer<T> {
     /// assert_eq!(consumer.pop(), Ok(20));
     /// ```
     pub fn producer(&self) -> Option<Producer<'_, T>> {
-        use core::cell::Cell;
         let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
         if old_flags & HAS_PRODUCER == 0 {
             let head = self.head.load(Ordering::Relaxed);
             let tail = self.tail.load(Ordering::Relaxed);
-            Some(Producer {
-                buffer: self,
-                cached_head: Cell::new(head),
-                cached_tail: Cell::new(tail),
-            })
+            // SAFETY: There is no producer yet, `head` and `tail` are valid.
+            Some(unsafe { Producer::new(self, head, tail) })
         } else {
             None
         }
@@ -186,16 +191,12 @@ impl<T> RingBuffer<T> {
     /// assert_eq!(consumer.pop(), Ok(20));
     /// ```
     pub fn consumer(&self) -> Option<Consumer<'_, T>> {
-        use core::cell::Cell;
         let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
         if old_flags & HAS_CONSUMER == 0 {
             let head = self.head.load(Ordering::Relaxed);
             let tail = self.tail.load(Ordering::Relaxed);
-            Some(Consumer {
-                buffer: self,
-                cached_head: Cell::new(head),
-                cached_tail: Cell::new(tail),
-            })
+            // SAFETY: There is no consumer yet, `head` and `tail` are valid.
+            Some(unsafe { Consumer::new(self, head, tail) })
         } else {
             None
         }
@@ -374,7 +375,7 @@ impl<T> RingBuffer<T> {
         self.head.load(Ordering::Acquire)
     }
 
-    pub(super) fn set_head(&self, value: usize) {
+    pub(super) unsafe fn set_head(&self, value: usize) {
         self.head.store(value, Ordering::Release);
     }
 
@@ -382,7 +383,7 @@ impl<T> RingBuffer<T> {
         self.tail.load(Ordering::Acquire)
     }
 
-    pub(super) fn set_tail(&self, value: usize) {
+    pub(super) unsafe fn set_tail(&self, value: usize) {
         self.tail.store(value, Ordering::Release);
     }
 

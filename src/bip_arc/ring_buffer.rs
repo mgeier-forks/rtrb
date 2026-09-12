@@ -96,6 +96,11 @@ impl<T> RingBuffer<T> {
     /// Creates a ring buffer with the given `capacity`
     /// and returns [`Producer`] and [`Consumer`].
     ///
+    /// # Panics
+    ///
+    /// Panics if `capacity * size_of::<T>()` exceeds `isize::MAX` bytes or,
+    /// when `T` is a zero-sized type, if `capacity` is larger than `usize::MAX / 2`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -117,6 +122,10 @@ impl<T> RingBuffer<T> {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
         let capacity = Self::update_capacity(capacity);
+        assert!(
+            capacity.checked_mul(2).is_some(),
+            "capacity exceeds usize::MAX / 2"
+        );
         ArcRingBuffer::new(Self::construct(capacity))
     }
 
@@ -214,7 +223,7 @@ impl<T> RingBuffer<T> {
         self.head.load(Ordering::Acquire)
     }
 
-    pub(super) fn set_head(&self, value: usize) {
+    pub(super) unsafe fn set_head(&self, value: usize) {
         self.head.store(value, Ordering::Release);
     }
 
@@ -222,7 +231,7 @@ impl<T> RingBuffer<T> {
         self.tail.load(Ordering::Acquire)
     }
 
-    pub(super) fn set_tail(&self, value: usize) {
+    pub(super) unsafe fn set_tail(&self, value: usize) {
         self.tail.store(value, Ordering::Release);
     }
 
@@ -230,15 +239,11 @@ impl<T> RingBuffer<T> {
         self.skip.load(Ordering::Relaxed)
     }
 
-    pub(super) fn set_skip(&self, value: usize) {
+    pub(super) unsafe fn set_skip(&self, value: usize) {
         self.skip.store(value, Ordering::Relaxed);
     }
 
-    pub(super) fn is_abandoned(&self) -> bool {
-        self.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
-    }
-
-    pub(super) fn abandon(&self) -> bool {
+    pub(super) unsafe fn abandon(&self) -> bool {
         // The "store" part of `fetch_or()` has to use `Release` to make sure that any previous writes
         // to the ring buffer happen before it (in the thread that drops first).
         // The "load" part can be `Relaxed` for the first thread,
@@ -262,5 +267,9 @@ impl<T> RingBuffer<T> {
             let _ = self.flags.load(Ordering::Acquire);
             true
         }
+    }
+
+    pub(super) fn is_abandoned(&self) -> bool {
+        self.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
     }
 }

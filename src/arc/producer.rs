@@ -79,7 +79,9 @@ impl<T> Producer<T> {
             cached_tail: Cell::new(tail),
         }
     }
+}
 
+impl<T> Producer<T> {
     /// Attempts to push an element into the queue.
     ///
     /// The element is *moved* into the ring buffer and its slot
@@ -389,7 +391,7 @@ impl<T> Producer<T> {
         Ok(unsafe { WriteChunkUninit::new(self, n, offset) })
     }
 
-    pub(super) unsafe fn advance_unchecked(&self, n: usize) {
+    pub(super) unsafe fn advance(&self, n: usize) {
         let tail = self.buffer.increment(self.cached_tail.get(), n);
         // SAFETY: The user must make sure that `n` slots have been written.
         unsafe {

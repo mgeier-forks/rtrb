@@ -4,10 +4,10 @@
 
 use core::cell::Cell;
 
-use super::ring_buffer::RingBufferUnsized;
 use super::{
     chunks::{WriteChunk, WriteChunkUninit},
-    ChunkError, CopyToUninit, PushError,
+    ring_buffer::RingBufferUnsized,
+    ChunkError, CopyToUninit as _, PushError,
 };
 
 // Only used in documentation:
@@ -31,9 +31,9 @@ use super::{Consumer, RingBuffer};
 /// A `Producer` can only be created with [`RingBuffer::producer()`].
 #[derive(Debug, PartialEq, Eq)]
 pub struct Producer<'a, T> {
-    pub(super) buffer: &'a RingBufferUnsized<T>,
-    pub(super) cached_head: Cell<usize>,
-    pub(super) cached_tail: Cell<usize>,
+    buffer: &'a RingBufferUnsized<T>,
+    cached_head: Cell<usize>,
+    cached_tail: Cell<usize>,
 }
 
 impl<T> Drop for Producer<'_, T> {
@@ -57,6 +57,16 @@ impl<T> Drop for Producer<'_, T> {
 // SAFETY: After moving the producer to another thread, there is still only a single thread
 // that can access the producer side of the queue.
 unsafe impl<T: Send> Send for Producer<'_, T> where RingBufferUnsized<T>: Sync {}
+
+impl<'a, T> Producer<'a, T> {
+    pub(super) unsafe fn new(buffer: &'a RingBufferUnsized<T>, head: usize, tail: usize) -> Self {
+        Self {
+            buffer,
+            cached_head: Cell::new(head),
+            cached_tail: Cell::new(tail),
+        }
+    }
+}
 
 impl<T> Producer<'_, T> {
     /// Attempts to push an element into the queue.
@@ -84,9 +94,14 @@ impl<T> Producer<'_, T> {
         if let Some(tail) = self.next_tail() {
             let b = &self.buffer;
             // SAFETY: tail points to an empty slot.
-            unsafe { b.slot_ptr(tail).write(value) };
+            unsafe {
+                b.slot_ptr(tail).write(value);
+            }
             let tail = b.increment1(tail);
-            b.set_tail(tail);
+            // SAFETY: The new `tail` has been calculated correctly.
+            unsafe {
+                b.set_tail(tail);
+            }
             self.cached_tail.set(tail);
             Ok(())
         } else {
@@ -312,6 +327,7 @@ impl<T> Producer<'_, T> {
     /// [`Producer::slots()`] available for writing and
     /// [`Consumer::slots()`] available for
     /// reading, as well as potentially some slots that have been skipped in
+    /// [`Producer::push_partial_slice()`], [`Producer::push_entire_slice()`],
     /// [`Producer::write_chunk()`] or [`Producer::write_chunk_uninit()`].
     ///
     /// # Examples
@@ -341,6 +357,11 @@ impl<T> Producer<'_, T> {
     /// See also [`RingBuffer::has_consumer()`].
     pub fn has_consumer(&self) -> bool {
         self.buffer.has_consumer()
+    }
+
+    /// Returns a read-only reference to the ring buffer.
+    pub(super) fn buffer(&self) -> &RingBufferUnsized<T> {
+        &self.buffer
     }
 
     /// Get the tail position for writing the next slot, if available.
@@ -464,6 +485,43 @@ impl<T> Producer<'_, T> {
         Err(ChunkError::TooFewSlots(slots))
     }
 
+    pub(super) unsafe fn advance(&self, n: usize, chunk_ptr: *mut T) {
+        if n == 0 {
+            // NB: No slots will be skipped, both `tail` and `skip` remain unchanged.
+            // This is the same as if the function wasn't called at all.
+            return;
+        }
+        let b = &self.buffer;
+        let mut tail = self.cached_tail.get();
+        let collapsed_tail = b.collapse_position(tail);
+        if chunk_ptr == b.data_ptr() && collapsed_tail != 0 {
+            // We are writing a chunk at the beginning of the buffer
+            // but the write index is not at the beginning!
+            // This means we have skipped some slots and have to
+            // set `skip` and fast-forward `tail`.
+
+            // SAFETY: The collapsed tail has been calculated correctly.
+            unsafe {
+                // NB: Storing `skip` needs no synchronization, as long as it
+                // "happens before" `tail` is stored.
+                // Storing `tail` before `skip` would be problematic, because
+                // the consumer would see new data at the beginning of the buffer,
+                // but wouldn't know that the end has to be skipped.
+                b.set_skip(collapsed_tail);
+            }
+            tail = b.increment(tail, b.capacity() - collapsed_tail + n);
+            debug_assert_eq!(b.collapse_position(tail), n);
+        } else {
+            tail = b.increment(tail, n);
+        }
+        // SAFETY: The user must make sure that `n` slots have been written.
+        unsafe {
+            // Using `Release` here makes sure that storing `skip` "happens before".
+            self.buffer.set_tail(tail);
+        }
+        self.cached_tail.set(tail);
+    }
+
     /// Copies as many items as possible from the given `slice` into the ring buffer.
     ///
     /// The written slots are automatically made available to be read by the [`Consumer`].
@@ -498,6 +556,7 @@ impl<T> Producer<'_, T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
+    #[must_use]
     pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T])
     where
         T: Copy,

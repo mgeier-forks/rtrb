@@ -76,7 +76,9 @@ impl<T> Consumer<T> {
             cached_tail: Cell::new(tail),
         }
     }
+}
 
+impl<T> Consumer<T> {
     /// Attempts to pop the next element from the queue.
     ///
     /// The element is *moved* out of the ring buffer and its slot
@@ -261,11 +263,10 @@ impl<T> Consumer<T> {
 
     /// Returns `true` if the corresponding [`Producer`] has been destroyed.
     ///
-    /// TODO: update this note:
-    ///
-    /// Note that since Rust version 1.74.0, this is not synchronizing with the producer thread
-    /// anymore, see <https://github.com/mgeier/rtrb/issues/114>.
-    /// In a future version of `rtrb`, the synchronizing behavior might be restored.
+    /// Note that since Rust version 1.74.0 and before `rtrb` version 0.4,
+    /// this was not synchronizing with the producer thread anymore,
+    /// see [issue #114](https://github.com/mgeier/rtrb/issues/114).
+    /// In `rtrb` version 0.4, the synchronizing behavior has been restored.
     ///
     /// # Examples
     ///
@@ -379,7 +380,7 @@ impl<T> Consumer<T> {
         Ok(unsafe { ReadChunk::new(self, n, offset) })
     }
 
-    pub(super) unsafe fn advance_unchecked(&self, n: usize) {
+    pub(super) unsafe fn advance(&self, n: usize) {
         let head = self.buffer.increment(self.cached_head.get(), n);
         // SAFETY: The user must make sure that `n` slots have been read.
         unsafe {

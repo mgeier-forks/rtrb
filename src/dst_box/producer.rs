@@ -6,7 +6,7 @@ use core::cell::Cell;
 
 use super::{
     chunks::{WriteChunk, WriteChunkUninit},
-    ChunkError, CopyToUninit, PushError, RingBuffer,
+    ChunkError, CopyToUninit as _, PushError, RingBuffer,
 };
 
 // Only used in documentation:
@@ -30,9 +30,9 @@ use super::Consumer;
 /// A `Producer` can only be created with [`RingBuffer::producer()`].
 #[derive(Debug, PartialEq, Eq)]
 pub struct Producer<'a, T> {
-    pub(super) buffer: &'a RingBuffer<T>,
-    pub(super) cached_head: Cell<usize>,
-    pub(super) cached_tail: Cell<usize>,
+    buffer: &'a RingBuffer<T>,
+    cached_head: Cell<usize>,
+    cached_tail: Cell<usize>,
 }
 
 impl<T> Drop for Producer<'_, T> {
@@ -56,6 +56,16 @@ impl<T> Drop for Producer<'_, T> {
 // SAFETY: After moving the producer to another thread, there is still only a single thread
 // that can access the producer side of the queue.
 unsafe impl<T: Send> Send for Producer<'_, T> where RingBuffer<T>: Sync {}
+
+impl<'a, T> Producer<'a, T> {
+    pub(super) unsafe fn new(buffer: &'a RingBuffer<T>, head: usize, tail: usize) -> Self {
+        Self {
+            buffer,
+            cached_head: Cell::new(head),
+            cached_tail: Cell::new(tail),
+        }
+    }
+}
 
 impl<T> Producer<'_, T> {
     /// Attempts to push an element into the queue.
@@ -83,9 +93,14 @@ impl<T> Producer<'_, T> {
         if let Some(tail) = self.next_tail() {
             let b = &self.buffer;
             // SAFETY: tail points to an empty slot.
-            unsafe { b.slot_ptr(tail).write(value) };
+            unsafe {
+                b.slot_ptr(tail).write(value);
+            }
             let tail = b.increment1(tail);
-            b.set_tail(tail);
+            // SAFETY: The new `tail` has been calculated correctly.
+            unsafe {
+                b.set_tail(tail);
+            }
             self.cached_tail.set(tail);
             Ok(())
         } else {
@@ -219,6 +234,11 @@ impl<T> Producer<'_, T> {
         self.buffer.has_consumer()
     }
 
+    /// Returns a read-only reference to the ring buffer.
+    pub(super) fn buffer(&self) -> &RingBuffer<T> {
+        &self.buffer
+    }
+
     /// Get the tail position for writing the next slot, if available.
     ///
     /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
@@ -330,6 +350,15 @@ impl<T> Producer<'_, T> {
         Ok(unsafe { WriteChunkUninit::new(self, n, offset) })
     }
 
+    pub(super) unsafe fn advance(&self, n: usize) {
+        let tail = self.buffer.increment(self.cached_tail.get(), n);
+        // SAFETY: The user must make sure that `n` slots have been written.
+        unsafe {
+            self.buffer.set_tail(tail);
+        }
+        self.cached_tail.set(tail);
+    }
+
     /// Copies as many items as possible from the given `slice` into the ring buffer.
     ///
     /// The written slots are automatically made available to be read by the [`Consumer`].
@@ -364,6 +393,7 @@ impl<T> Producer<'_, T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
+    #[must_use]
     pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T])
     where
         T: Copy,

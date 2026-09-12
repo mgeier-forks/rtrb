@@ -88,10 +88,9 @@ mod producer;
 pub use producer::Producer;
 mod consumer;
 pub use consumer::Consumer;
-
 pub mod chunks;
 
-// Only used in documentation:
+// This is used in the documentation.
 #[allow(unused_imports)]
 use chunks::WriteChunkUninit;
 
