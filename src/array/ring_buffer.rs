@@ -149,10 +149,7 @@ impl<T, const N: usize> RingBuffer<T, N> {
     pub const fn new() -> Self {
         const {
             assert!(Self::update_capacity(N) == N, "`N` must be a power of two");
-            assert!(
-                N.checked_mul(2).is_some(),
-                "`N` exceeds usize::MAX / 2"
-            );
+            assert!(N.checked_mul(2).is_some(), "`N` exceeds usize::MAX / 2");
         }
         Self::construct()
     }
