@@ -275,7 +275,7 @@ impl<T> Consumer<'_, T> {
 
     /// Returns a read-only reference to the ring buffer.
     pub(super) fn buffer(&self) -> &RingBuffer<T> {
-        &self.buffer
+        self.buffer
     }
 
     /// Get the `head` position for reading the next slot, if available.

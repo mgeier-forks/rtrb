@@ -453,7 +453,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
 
     /// Returns a read-only reference to the ring buffer.
     pub(super) fn buffer(&self) -> &RingBuffer{% if N %}Unsized{% endif %}<T> {
-        &self.buffer
+        {%+ if arc %}&{% endif %}self.buffer
     }
 
     /// Get the tail position for writing the next slot, if available.

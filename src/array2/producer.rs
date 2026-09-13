@@ -237,7 +237,7 @@ impl<T> Producer<'_, T> {
 
     /// Returns a read-only reference to the ring buffer.
     pub(super) fn buffer(&self) -> &RingBufferUnsized<T> {
-        &self.buffer
+        self.buffer
     }
 
     /// Get the tail position for writing the next slot, if available.
