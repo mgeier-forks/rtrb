@@ -2,8 +2,13 @@
 /src/arc/** linguist-generated
 /src/arc2/** linguist-generated
 /src/array/** linguist-generated
+/src/array2/** linguist-generated
 /src/bip_arc/** linguist-generated
 /src/bip_arc2/** linguist-generated
 /src/bip_array/** linguist-generated
+/src/bip_dst_arc/** linguist-generated
+/src/dst_arc/** linguist-generated
+/src/dst_arc2/** linguist-generated
+/src/dst_box/** linguist-generated
 /src/embedded/** linguist-generated
 /src/vrb_arc2/** linguist-generated
