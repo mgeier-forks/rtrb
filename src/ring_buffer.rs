@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
-use core::mem::ManuallyDrop;
+use core::mem::{needs_drop, ManuallyDrop};
 use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 use crate::cache_padded::CachePadded;
@@ -44,14 +44,18 @@ pub struct RingBuffer<T> {
 impl<T> Drop for RingBuffer<T> {
     /// Drops all non-empty slots.
     fn drop(&mut self) {
-        let mut head = self.head.load(Ordering::Relaxed);
-        let tail = self.tail.load(Ordering::Relaxed);
+        // The wrapping index loop may not be optimized away even when dropping T
+        // does nothing. Skip the traversal entirely for those types.
+        if needs_drop::<T>() {
+            let mut head = self.head.load(Ordering::Relaxed);
+            let tail = self.tail.load(Ordering::Relaxed);
 
-        // Loop over all slots that hold a value and drop them.
-        while head != tail {
-            // SAFETY: All slots between head and tail have been initialized.
-            unsafe { self.slot_ptr(head).drop_in_place() };
-            head = self.increment1(head);
+            // Loop over all slots that hold a value and drop them.
+            while head != tail {
+                // SAFETY: All slots between head and tail have been initialized.
+                unsafe { self.slot_ptr(head).drop_in_place() };
+                head = self.increment1(head);
+            }
         }
 
         // Finally, deallocate the buffer, but don't run any destructors.
