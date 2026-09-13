@@ -323,7 +323,7 @@ impl<T> Consumer<T> {
     /// # Examples
     ///
     /// ```
-    /// use rtrb::Consumer;
+    /// use rtrb::arc::Consumer;
     ///
     /// fn pop_at_least_one_element<'a>(
     ///     c: &mut Consumer<i32>,
@@ -379,7 +379,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use std::mem::MaybeUninit;
     ///
-    /// use rtrb::Consumer;
+    /// use rtrb::arc::Consumer;
     ///
     /// fn pop_at_least_one_element_uninit<'a>(
     ///     c: &mut Consumer<i32>,
@@ -408,7 +408,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use std::mem::MaybeUninit;
     ///
-    /// use rtrb::RingBuffer;
+    /// use rtrb::arc::RingBuffer;
     ///
     /// let (mut producer, mut consumer) = RingBuffer::new(4);
     /// let (_, remainder) = producer.push_partial_slice(&[1, 2, 3]);

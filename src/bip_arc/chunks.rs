@@ -627,13 +627,15 @@ impl<T> ReadChunkIntoIter<'_, T> {
     /// # Examples
     ///
     /// ```
-    /// let (mut tx, mut rx) = rtrb::RingBuffer::new(10);
+    /// use rtrb::bip_arc::RingBuffer;
     ///
-    /// for i in 0..10 {
-    ///     tx.push(i).unwrap();
+    /// let (mut producer, mut consumer) = RingBuffer::new(16);
+    ///
+    /// for i in 0..16 {
+    ///     producer.push(i).unwrap();
     /// }
     ///
-    /// let mut chunk = rx.read_chunk(10).unwrap();
+    /// let mut chunk = consumer.read_chunk(16).unwrap();
     /// let mut iter = chunk.into_iter();
     ///
     /// assert_eq!(iter.iterated(), 0);
@@ -644,7 +646,7 @@ impl<T> ReadChunkIntoIter<'_, T> {
     ///
     /// for _ in iter.by_ref() {}
     ///
-    /// assert_eq!(iter.iterated(), 10);
+    /// assert_eq!(iter.iterated(), 16);
     /// ```
     #[inline]
     pub fn iterated(&self) -> usize {

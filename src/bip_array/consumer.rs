@@ -420,7 +420,7 @@ impl<T> Consumer<'_, T> {
     /// # Examples
     ///
     /// ```
-    /// use rtrb::Consumer;
+    /// use rtrb::bip_array::Consumer;
     ///
     /// fn pop_at_least_one_element<'a>(
     ///     c: &mut Consumer<i32>,
@@ -476,7 +476,7 @@ impl<T> Consumer<'_, T> {
     /// ```
     /// use std::mem::MaybeUninit;
     ///
-    /// use rtrb::Consumer;
+    /// use rtrb::bip_array::Consumer;
     ///
     /// fn pop_at_least_one_element_uninit<'a>(
     ///     c: &mut Consumer<i32>,
@@ -505,9 +505,11 @@ impl<T> Consumer<'_, T> {
     /// ```
     /// use std::mem::MaybeUninit;
     ///
-    /// use rtrb::RingBuffer;
+    /// use rtrb::bip_array::RingBuffer;
     ///
-    /// let (mut producer, mut consumer) = RingBuffer::new(4);
+    /// let rb = RingBuffer::<_, 4>::new();
+    /// let mut producer = rb.producer().unwrap();
+    /// let mut consumer = rb.consumer().unwrap();
     /// let (_, remainder) = producer.push_partial_slice(&[1, 2, 3]);
     /// assert!(remainder.is_empty());
     /// let mut buffer = Vec::with_capacity(5);

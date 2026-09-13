@@ -521,7 +521,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// # Examples
     ///
     /// ```
-    /// use rtrb::Consumer;
+    /// use {{ module_path }}::Consumer;
     ///
     /// fn pop_at_least_one_element<'a>(
     ///     c: &mut Consumer<i32>,
@@ -577,7 +577,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// ```
     /// use std::mem::MaybeUninit;
     ///
-    /// use rtrb::Consumer;
+    /// use {{ module_path }}::Consumer;
     ///
     /// fn pop_at_least_one_element_uninit<'a>(
     ///     c: &mut Consumer<i32>,
@@ -606,9 +606,9 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// ```
     /// use std::mem::MaybeUninit;
     ///
-    /// use rtrb::RingBuffer;
+    /// use {{ module_path }}::RingBuffer;
     ///
-    /// let (mut producer, mut consumer) = RingBuffer::new(4);
+{{ doctest_create_ring_buffer(4) }}
     /// let (_, remainder) = producer.push_partial_slice(&[1, 2, 3]);
     /// assert!(remainder.is_empty());
     /// let mut buffer = Vec::with_capacity(5);

@@ -248,7 +248,7 @@ impl<T> Producer<'_, T> {
     /// # Examples
     ///
     /// ```
-    /// use rtrb::Producer;
+    /// use rtrb::embedded::Producer;
     ///
     /// fn push_at_least_one_element<'a>(
     ///     p: &mut Producer<i32>,

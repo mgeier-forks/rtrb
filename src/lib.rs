@@ -38,6 +38,7 @@
 //! # A Quick Example
 //!
 //! ```no_run
+#![cfg(feature = "alloc")]
 #![allow(clippy::needless_doctest_main)]
 #![doc = include_str!("../examples/quick.rs")]
 //! ```

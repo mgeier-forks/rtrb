@@ -241,7 +241,7 @@ impl<T> Producer<T> {
     /// # Examples
     ///
     /// ```
-    /// use rtrb::Producer;
+    /// use rtrb::vrb_arc2::Producer;
     ///
     /// fn push_at_least_one_element<'a>(
     ///     p: &mut Producer<i32>,
