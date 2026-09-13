@@ -303,16 +303,16 @@ impl<T> Producer<T> {
     /// fewer items than its [`Producer::capacity()`].
     ///
     /// ```
-    /// use std::io::{Read, Write};
     /// use rtrb::bip_dst_arc::RingBuffer;
     ///
     /// let (mut producer, mut consumer) = RingBuffer::new(8);
-    /// assert_eq!(producer.write(&[1, 2, 3, 4, 5]).unwrap(), 5);
+    /// assert!(producer.push_entire_slice(&[10, 20, 30, 40, 50]).is_ok());
     /// let mut a = [0; 4];
-    /// assert_eq!(consumer.read(&mut a).unwrap(), 4);
-    /// assert_eq!(a, [1, 2, 3, 4]);
+    /// assert!(consumer.pop_entire_slice(&mut a).is_ok());
+    /// assert_eq!(a, [10, 20, 30, 40]);
+    /// assert_eq!(producer.slots_contiguous(), (3, 4));
     /// // This will skip 3 slots:
-    /// assert_eq!(producer.write(&[4, 3, 2, 1]).unwrap(), 4);
+    /// assert!(producer.push_entire_slice(&[40, 30, 20, 10]).is_ok());
     /// assert!(producer.is_full());
     /// assert_eq!(producer.capacity(), 8);
     /// assert_eq!(producer.slots(), 0);
