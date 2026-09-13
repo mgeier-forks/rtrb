@@ -235,31 +235,85 @@ impl<T> Producer<'_, T> {
         self.buffer.has_consumer()
     }
 
-    /// Returns a read-only reference to the ring buffer.
-    pub(super) fn buffer(&self) -> &RingBufferUnsized<T> {
-        self.buffer
+    /// Copies as many items as possible from the given `slice` into the ring buffer.
+    ///
+    /// The written slots are automatically made available to be read by the [`Consumer`].
+    ///
+    /// Returns two sub-slices of `slice`:
+    /// - The part that has been copied into the ring buffer (possibly empty).
+    /// - The unused remainder (possibly empty).
+    ///
+    /// To copy an entire slice (and fail otherwise), [`Producer::push_entire_slice()`] can be used.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::Producer;
+    ///
+    /// fn push_at_least_one_element<'a>(
+    ///     p: &mut Producer<i32>,
+    ///     s: &'a [i32],
+    /// ) -> Result<&'a [i32], &'a [i32]> {
+    ///     match p.push_partial_slice(s) {
+    ///         ([], remainder) => Err(remainder),
+    ///         (_, remainder) => Ok(remainder),
+    ///     }
+    /// }
+    ///
+    /// fn block_while_pushing_entire_slice(p: &mut Producer<i32>, mut s: &[i32]) {
+    ///     while let (_, remainder @ [_, ..]) = p.push_partial_slice(s) {
+    ///         std::thread::yield_now();
+    ///         s = remainder;
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
+    #[must_use]
+    pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T])
+    where
+        T: Copy,
+    {
+        let slots = if self.cached_slots() < slice.len() {
+            slice.len().min(self.slots())
+        } else {
+            slice.len()
+        };
+        let (pushed, remainder) = slice.split_at(slots);
+        // With MSRV 1.58, unwrap_unchecked() can be used.
+        match self.push_entire_slice(pushed) {
+            Ok(()) => {}
+            // SAFETY: The requested slots are available.
+            Err(_) => unsafe { core::hint::unreachable_unchecked() },
+        };
+        (pushed, remainder)
     }
 
-    /// Get the tail position for writing the next slot, if available.
+    /// Copies all items from the given `slice` into the ring buffer.
     ///
-    /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
-    /// For performance, this special case is implemented separately.
-    fn next_tail(&self) -> Option<usize> {
-        let mut head = self.cached_head.get();
-        let tail = self.cached_tail.get();
-        let b = &self.buffer;
-        // Check if the queue is *possibly* full.
-        if b.distance(head, tail) == b.capacity() {
-            // Refresh the head ...
-            head = b.head();
-            self.cached_head.set(head);
-            // ... and check if it's *really* full.
-            if b.distance(head, tail) == b.capacity() {
-                // `head` didn't change, the buffer is definitely full.
-                return None;
-            }
+    /// The written slots are automatically made available to be read by the [`Consumer`].
+    ///
+    /// To copy only into the available slots, [`Producer::push_partial_slice()`] can be used.
+    ///
+    /// # Errors
+    ///
+    /// If not enough free space is available in the ring buffer,
+    /// a [`ChunkError`] with the available slots is returned.
+    pub fn push_entire_slice(&mut self, slice: &[T]) -> Result<(), ChunkError>
+    where
+        T: Copy,
+    {
+        let mut chunk = self.write_chunk_uninit(slice.len())?;
+        let (one, two) = chunk.as_mut_slices();
+        let mid = one.len();
+        // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
+        slice[..mid].copy_to_uninit(one);
+        slice[mid..].copy_to_uninit(two);
+        // SAFETY: All slots have been initialized
+        unsafe {
+            chunk.commit_all();
         }
-        Some(tail)
+        Ok(())
     }
 
     /// Prepares a chunk of `n` slots (initially containing their [`Default`] value)
@@ -351,6 +405,33 @@ impl<T> Producer<'_, T> {
         Ok(unsafe { WriteChunkUninit::new(self, n, offset) })
     }
 
+    /// Returns a read-only reference to the ring buffer.
+    pub(super) fn buffer(&self) -> &RingBufferUnsized<T> {
+        self.buffer
+    }
+
+    /// Get the tail position for writing the next slot, if available.
+    ///
+    /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
+    /// For performance, this special case is implemented separately.
+    fn next_tail(&self) -> Option<usize> {
+        let mut head = self.cached_head.get();
+        let tail = self.cached_tail.get();
+        let b = &self.buffer;
+        // Check if the queue is *possibly* full.
+        if b.distance(head, tail) == b.capacity() {
+            // Refresh the head ...
+            head = b.head();
+            self.cached_head.set(head);
+            // ... and check if it's *really* full.
+            if b.distance(head, tail) == b.capacity() {
+                // `head` didn't change, the buffer is definitely full.
+                return None;
+            }
+        }
+        Some(tail)
+    }
+
     pub(super) unsafe fn advance(&self, n: usize) {
         let tail = self.buffer.increment(self.cached_tail.get(), n);
         // SAFETY: The user must make sure that `n` slots have been written.
@@ -358,86 +439,5 @@ impl<T> Producer<'_, T> {
             self.buffer.set_tail(tail);
         }
         self.cached_tail.set(tail);
-    }
-
-    /// Copies as many items as possible from the given `slice` into the ring buffer.
-    ///
-    /// The written slots are automatically made available to be read by the [`Consumer`].
-    ///
-    /// Returns two sub-slices of `slice`:
-    /// - The part that has been copied into the ring buffer (possibly empty).
-    /// - The unused remainder (possibly empty).
-    ///
-    /// To copy an entire slice (and fail otherwise), [`Producer::push_entire_slice()`] can be used.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rtrb::Producer;
-    ///
-    /// fn push_at_least_one_element<'a>(
-    ///     p: &mut Producer<i32>,
-    ///     s: &'a [i32],
-    /// ) -> Result<&'a [i32], &'a [i32]> {
-    ///     match p.push_partial_slice(s) {
-    ///         ([], remainder) => Err(remainder),
-    ///         (_, remainder) => Ok(remainder),
-    ///     }
-    /// }
-    ///
-    /// fn block_while_pushing_entire_slice(p: &mut Producer<i32>, mut s: &[i32]) {
-    ///     while let (_, remainder @ [_, ..]) = p.push_partial_slice(s) {
-    ///         std::thread::yield_now();
-    ///         s = remainder;
-    ///     }
-    /// }
-    /// ```
-    ///
-    /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
-    #[must_use]
-    pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T])
-    where
-        T: Copy,
-    {
-        let slots = if self.cached_slots() < slice.len() {
-            slice.len().min(self.slots())
-        } else {
-            slice.len()
-        };
-        let (pushed, remainder) = slice.split_at(slots);
-        // With MSRV 1.58, unwrap_unchecked() can be used.
-        match self.push_entire_slice(pushed) {
-            Ok(()) => {}
-            // SAFETY: The requested slots are available.
-            Err(_) => unsafe { core::hint::unreachable_unchecked() },
-        };
-        (pushed, remainder)
-    }
-
-    /// Copies all items from the given `slice` into the ring buffer.
-    ///
-    /// The written slots are automatically made available to be read by the [`Consumer`].
-    ///
-    /// To copy only into the available slots, [`Producer::push_partial_slice()`] can be used.
-    ///
-    /// # Errors
-    ///
-    /// If not enough free space is available in the ring buffer,
-    /// a [`ChunkError`] with the available slots is returned.
-    pub fn push_entire_slice(&mut self, slice: &[T]) -> Result<(), ChunkError>
-    where
-        T: Copy,
-    {
-        let mut chunk = self.write_chunk_uninit(slice.len())?;
-        let (one, two) = chunk.as_mut_slices();
-        let mid = one.len();
-        // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
-        slice[..mid].copy_to_uninit(one);
-        slice[mid..].copy_to_uninit(two);
-        // SAFETY: All slots have been initialized
-        unsafe {
-            chunk.commit_all();
-        }
-        Ok(())
     }
 }

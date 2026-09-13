@@ -274,86 +274,6 @@ impl<T> Consumer<'_, T> {
         self.buffer.has_producer()
     }
 
-    /// Returns a read-only reference to the ring buffer.
-    pub(super) fn buffer(&self) -> &RingBufferUnsized<T> {
-        self.buffer
-    }
-
-    /// Get the `head` position for reading the next slot, if available.
-    ///
-    /// This is a strict subset of the functionality implemented in `read_chunk()`.
-    /// For performance, this special case is implemented separately.
-    fn next_head(&self) -> Option<usize> {
-        let head = self.cached_head.get();
-        let tail = self.cached_tail.get();
-
-        // Check if the queue is *possibly* empty.
-        if head == tail {
-            // Refresh the tail ...
-            let tail = self.buffer.tail();
-            self.cached_tail.set(tail);
-            // ... and check if it's *really* empty.
-            if head == tail {
-                // `tail` didn't change, queue is empty.
-                return None;
-            }
-        }
-        Some(head)
-    }
-
-    /// Prepares a chunk of `n` slots for reading.
-    ///
-    /// [`ReadChunk::as_slices()`]
-    /// provides immutable access to the slots.
-    /// After reading from those slots, they explicitly have to be made available
-    /// to be written again by the [`Producer`] by calling [`ReadChunk::commit()`]
-    /// or [`ReadChunk::commit_all()`].
-    ///
-    /// Alternatively, items can be moved out of the [`ReadChunk`] using iteration
-    /// because it implements [`IntoIterator`]
-    /// ([`ReadChunk::into_iter()`] can be used to explicitly turn it into an [`Iterator`]).
-    /// All moved items are automatically made available to be written again by the [`Producer`].
-    ///
-    /// # Errors
-    ///
-    /// If not enough slots are available, an error
-    /// (containing the number of available slots) is returned.
-    /// Use
-    /// [`Consumer::slots()`]
-    /// to obtain the number of available slots beforehand.
-    ///
-    /// # Examples
-    ///
-    /// See the documentation of the [`chunks`](super::chunks#examples) module.
-    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
-        let head = self.cached_head.get();
-        let tail = self.cached_tail.get();
-        let b = &self.buffer;
-        // Check if the queue has *possibly* not enough slots.
-        if b.distance(head, tail) < n {
-            // Refresh the tail ...
-            let tail = b.tail();
-            self.cached_tail.set(tail);
-            // ... and check if there *really* are not enough slots.
-            let slots = b.distance(head, tail);
-            if slots < n {
-                return Err(ChunkError::TooFewSlots(slots));
-            }
-        }
-        let offset = b.collapse_position(head);
-        // SAFETY: `offset` has been set to a valid position.
-        Ok(unsafe { ReadChunk::new(self, n, offset) })
-    }
-
-    pub(super) unsafe fn advance(&self, n: usize) {
-        let head = self.buffer.increment(self.cached_head.get(), n);
-        // SAFETY: The user must make sure that `n` slots have been read.
-        unsafe {
-            self.buffer.set_head(head);
-        }
-        self.cached_head.set(head);
-    }
-
     /// Copies as many items as possible from the ring buffer to the given `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
@@ -551,5 +471,85 @@ impl<T> Consumer<'_, T> {
         // NB: This can be replaced by `assume_init_mut()` once stabilized:
         // SAFETY: The entire `slice` has been initialized above.
         Ok(unsafe { &mut *(slice as *mut _ as *mut [_]) })
+    }
+
+    /// Returns a read-only reference to the ring buffer.
+    pub(super) fn buffer(&self) -> &RingBufferUnsized<T> {
+        self.buffer
+    }
+
+    /// Prepares a chunk of `n` slots for reading.
+    ///
+    /// [`ReadChunk::as_slices()`]
+    /// provides immutable access to the slots.
+    /// After reading from those slots, they explicitly have to be made available
+    /// to be written again by the [`Producer`] by calling [`ReadChunk::commit()`]
+    /// or [`ReadChunk::commit_all()`].
+    ///
+    /// Alternatively, items can be moved out of the [`ReadChunk`] using iteration
+    /// because it implements [`IntoIterator`]
+    /// ([`ReadChunk::into_iter()`] can be used to explicitly turn it into an [`Iterator`]).
+    /// All moved items are automatically made available to be written again by the [`Producer`].
+    ///
+    /// # Errors
+    ///
+    /// If not enough slots are available, an error
+    /// (containing the number of available slots) is returned.
+    /// Use
+    /// [`Consumer::slots()`]
+    /// to obtain the number of available slots beforehand.
+    ///
+    /// # Examples
+    ///
+    /// See the documentation of the [`chunks`](super::chunks#examples) module.
+    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
+        let head = self.cached_head.get();
+        let tail = self.cached_tail.get();
+        let b = &self.buffer;
+        // Check if the queue has *possibly* not enough slots.
+        if b.distance(head, tail) < n {
+            // Refresh the tail ...
+            let tail = b.tail();
+            self.cached_tail.set(tail);
+            // ... and check if there *really* are not enough slots.
+            let slots = b.distance(head, tail);
+            if slots < n {
+                return Err(ChunkError::TooFewSlots(slots));
+            }
+        }
+        let offset = b.collapse_position(head);
+        // SAFETY: `offset` has been set to a valid position.
+        Ok(unsafe { ReadChunk::new(self, n, offset) })
+    }
+
+    /// Get the `head` position for reading the next slot, if available.
+    ///
+    /// This is a strict subset of the functionality implemented in `read_chunk()`.
+    /// For performance, this special case is implemented separately.
+    fn next_head(&self) -> Option<usize> {
+        let head = self.cached_head.get();
+        let tail = self.cached_tail.get();
+
+        // Check if the queue is *possibly* empty.
+        if head == tail {
+            // Refresh the tail ...
+            let tail = self.buffer.tail();
+            self.cached_tail.set(tail);
+            // ... and check if it's *really* empty.
+            if head == tail {
+                // `tail` didn't change, queue is empty.
+                return None;
+            }
+        }
+        Some(head)
+    }
+
+    pub(super) unsafe fn advance(&self, n: usize) {
+        let head = self.buffer.increment(self.cached_head.get(), n);
+        // SAFETY: The user must make sure that `n` slots have been read.
+        unsafe {
+            self.buffer.set_head(head);
+        }
+        self.cached_head.set(head);
     }
 }

@@ -441,66 +441,6 @@ impl<T> Consumer<T> {
         self.buffer.is_abandoned()
     }
 
-    /// Returns a read-only reference to the ring buffer.
-    pub(super) fn buffer(&self) -> &RingBuffer<T> {
-        &self.buffer
-    }
-
-    /// Get the `head` position for reading the next slot, if available.
-    fn next_head(&self) -> Option<usize> {
-        let (slots, _, _) = self.slots_contiguous_helper();
-        if slots == 0 {
-            None
-        } else {
-            Some(self.cached_head.get())
-        }
-    }
-
-    /// Prepares a chunk of `n` slots for reading.
-    ///
-    /// [`ReadChunk::as_slice()`]
-    /// provides immutable access to the slots.
-    /// After reading from those slots, they explicitly have to be made available
-    /// to be written again by the [`Producer`] by calling [`ReadChunk::commit()`]
-    /// or [`ReadChunk::commit_all()`].
-    ///
-    /// Alternatively, items can be moved out of the [`ReadChunk`] using iteration
-    /// because it implements [`IntoIterator`]
-    /// ([`ReadChunk::into_iter()`] can be used to explicitly turn it into an [`Iterator`]).
-    /// All moved items are automatically made available to be written again by the [`Producer`].
-    ///
-    /// # Errors
-    ///
-    /// If not enough slots are available, an error
-    /// (containing the number of available slots) is returned.
-    /// Use
-    /// [`Consumer::slots_contiguous_first()`]
-    /// to obtain the number of available slots beforehand.
-    ///
-    /// # Examples
-    ///
-    /// See the documentation of the [`chunks`](super::chunks#examples) module.
-    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
-        let b = &self.buffer;
-        let (slots, _, _) = self.slots_contiguous_helper();
-        if slots >= n {
-            let offset = b.collapse_position(self.cached_head.get());
-            // SAFETY: `offset` has been set to a valid position.
-            Ok(unsafe { ReadChunk::new(self, n, offset) })
-        } else {
-            Err(ChunkError::TooFewSlots(slots))
-        }
-    }
-
-    pub(super) unsafe fn advance(&self, n: usize) {
-        let head = self.buffer.increment(self.cached_head.get(), n);
-        // SAFETY: The user must make sure that `n` slots have been read.
-        unsafe {
-            self.buffer.set_head(head);
-        }
-        self.cached_head.set(head);
-    }
-
     /// Copies as many items as possible from the ring buffer to the given `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
@@ -696,5 +636,65 @@ impl<T> Consumer<T> {
         // NB: This can be replaced by `assume_init_mut()` once stabilized:
         // SAFETY: The entire `slice` has been initialized above.
         Ok(unsafe { &mut *(slice as *mut _ as *mut [_]) })
+    }
+
+    /// Returns a read-only reference to the ring buffer.
+    pub(super) fn buffer(&self) -> &RingBuffer<T> {
+        &self.buffer
+    }
+
+    /// Prepares a chunk of `n` slots for reading.
+    ///
+    /// [`ReadChunk::as_slice()`]
+    /// provides immutable access to the slots.
+    /// After reading from those slots, they explicitly have to be made available
+    /// to be written again by the [`Producer`] by calling [`ReadChunk::commit()`]
+    /// or [`ReadChunk::commit_all()`].
+    ///
+    /// Alternatively, items can be moved out of the [`ReadChunk`] using iteration
+    /// because it implements [`IntoIterator`]
+    /// ([`ReadChunk::into_iter()`] can be used to explicitly turn it into an [`Iterator`]).
+    /// All moved items are automatically made available to be written again by the [`Producer`].
+    ///
+    /// # Errors
+    ///
+    /// If not enough slots are available, an error
+    /// (containing the number of available slots) is returned.
+    /// Use
+    /// [`Consumer::slots_contiguous_first()`]
+    /// to obtain the number of available slots beforehand.
+    ///
+    /// # Examples
+    ///
+    /// See the documentation of the [`chunks`](super::chunks#examples) module.
+    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
+        let b = &self.buffer;
+        let (slots, _, _) = self.slots_contiguous_helper();
+        if slots >= n {
+            let offset = b.collapse_position(self.cached_head.get());
+            // SAFETY: `offset` has been set to a valid position.
+            Ok(unsafe { ReadChunk::new(self, n, offset) })
+        } else {
+            Err(ChunkError::TooFewSlots(slots))
+        }
+    }
+
+    /// Get the `head` position for reading the next slot, if available.
+    fn next_head(&self) -> Option<usize> {
+        let (slots, _, _) = self.slots_contiguous_helper();
+        if slots == 0 {
+            None
+        } else {
+            Some(self.cached_head.get())
+        }
+    }
+
+    pub(super) unsafe fn advance(&self, n: usize) {
+        let head = self.buffer.increment(self.cached_head.get(), n);
+        // SAFETY: The user must make sure that `n` slots have been read.
+        unsafe {
+            self.buffer.set_head(head);
+        }
+        self.cached_head.set(head);
     }
 }
