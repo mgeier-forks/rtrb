@@ -62,6 +62,10 @@ bench = false # Don't disturb criterion command line parsing
 name = "quick"
 required-features = ["alloc"]
 
+[[example]]
+name = "shared-memory-dst"
+required-features = ["alloc"]
+
 [[bench]]
 name = "single_thread_single_byte"
 harness = false
