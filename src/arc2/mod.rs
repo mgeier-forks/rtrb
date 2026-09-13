@@ -79,8 +79,9 @@ pub use crate::PopError;
 #[doc(inline)]
 pub use crate::PushError;
 
-/// Error type for [`Producer::write_chunk()`], [`Producer::write_chunk_uninit()`]
-/// and [`Consumer::read_chunk()`].
+/// Error type for [`Producer::push_entire_slice()`], [`Consumer::pop_entire_slice()`],
+/// [`Consumer::pop_entire_slice_uninit()`], [`Producer::write_chunk()`],
+/// [`Producer::write_chunk_uninit()`] and [`Consumer::read_chunk()`].
 ///
 /// To get the maximum number of available slots beforehand
 /// (and therefore avoid this error), use
