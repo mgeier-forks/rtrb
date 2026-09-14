@@ -26,7 +26,7 @@ use super::arc_ring_buffer::ArcRingBuffer;
 use crate::atomic::*;
 {% if padded %}
 // Padded indices to avoid false sharing.
-use crate::CachePadded;
+use crate::cache_padded::CachePadded;
 {% endif %}
 
 use super::{Consumer, Producer};

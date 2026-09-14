@@ -221,9 +221,6 @@ mod cache_padded;
 mod cache_padded {
     pub struct CachePadded;
 }
-/// Re-export from [`crossbeam_utils::CachePadded`](https://docs.rs/crossbeam-utils/).
-#[doc(inline)]
-pub use cache_padded::CachePadded;
 
 // TODO: feature "portable-atomic"?
 mod atomic {

@@ -8,7 +8,7 @@ use core::mem::MaybeUninit;
 use super::arc_ring_buffer::ArcRingBuffer;
 use crate::atomic::*;
 // Padded indices to avoid false sharing.
-use crate::CachePadded;
+use crate::cache_padded::CachePadded;
 
 use super::{Consumer, Producer};
 
