@@ -115,7 +115,7 @@ fn render(dir: &Path, name: &Path, contexts: &[(String, Value)]) {
         }
         let path = dir.join(subdir).join(name).join(&rest);
         fs::write(&path, rendered)
-            .unwrap_or_else(|err| panic!("unable to write {:?}: {}", &path, err));
+            .unwrap_or_else(|err| panic!("unable to write {:?}: {}", path, err));
     }
     println!("Rendered {name:?}.");
 }
