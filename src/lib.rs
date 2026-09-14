@@ -117,9 +117,7 @@
 //! are using the built-in
 //! [`prim@array`] type for storing ring buffer elements.
 //! This means that the capacity must be known at compile time.
-//! No dynamic memory is ever allocated
-//! (except in `Display` impls of some error messages,
-//! but only when the `alloc` feature is enabled).
+//! No dynamic memory is ever allocated.
 //!
 //! TODO: example with and without N
 //!
@@ -154,7 +152,7 @@
 //!
 //! After that, no more memory is allocated (unless the type `T` does that internally).
 //!
-//! ... no other memory allocations ... (TODO: except for `Display` impls of some error messages?)
+//! ... no other memory allocations ...
 //!
 //!
 //! # Reference Counted
@@ -344,11 +342,6 @@ impl std::error::Error for ChunkError {}
 impl fmt::Display for ChunkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            #[cfg(feature = "alloc")]
-            ChunkError::TooFewSlots(n) => {
-                alloc::format!("only {n} slots available in ring buffer").fmt(f)
-            }
-            #[cfg(not(feature = "alloc"))]
             ChunkError::TooFewSlots(_) => "too few slots available in ring buffer".fmt(f),
         }
     }
