@@ -524,6 +524,15 @@ impl<T> Consumer<'_, T> {
         Ok(unsafe { ReadChunk::new(self, n, offset) })
     }
 
+    pub(super) unsafe fn advance(&self, n: usize) {
+        let head = self.buffer.increment(self.cached_head.get(), n);
+        // SAFETY: The user must make sure that `n` slots have been read.
+        unsafe {
+            self.buffer.set_head(head);
+        }
+        self.cached_head.set(head);
+    }
+
     /// Get the `head` position for reading the next slot, if available.
     ///
     /// This is a strict subset of the functionality implemented in `read_chunk()`.
@@ -544,14 +553,5 @@ impl<T> Consumer<'_, T> {
             }
         }
         Some(head)
-    }
-
-    pub(super) unsafe fn advance(&self, n: usize) {
-        let head = self.buffer.increment(self.cached_head.get(), n);
-        // SAFETY: The user must make sure that `n` slots have been read.
-        unsafe {
-            self.buffer.set_head(head);
-        }
-        self.cached_head.set(head);
     }
 }

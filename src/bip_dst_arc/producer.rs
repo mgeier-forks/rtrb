@@ -580,28 +580,6 @@ impl<T> Producer<T> {
         &self.buffer
     }
 
-    /// Get the tail position for writing the next slot, if available.
-    ///
-    /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
-    /// For performance, this special case is implemented separately.
-    fn next_tail(&self) -> Option<usize> {
-        let mut head = self.cached_head.get();
-        let tail = self.cached_tail.get();
-        let b = &self.buffer;
-        // Check if the queue is *possibly* full.
-        if b.distance(head, tail) == b.capacity() {
-            // Refresh the head ...
-            head = b.head();
-            self.cached_head.set(head);
-            // ... and check if it's *really* full.
-            if b.distance(head, tail) == b.capacity() {
-                // `head` didn't change, the buffer is definitely full.
-                return None;
-            }
-        }
-        Some(tail)
-    }
-
     pub(super) unsafe fn advance(&self, n: usize, chunk_ptr: *mut T) {
         if n == 0 {
             // NB: No slots will be skipped, both `tail` and `skip` remain unchanged.
@@ -637,5 +615,27 @@ impl<T> Producer<T> {
             self.buffer.set_tail(tail);
         }
         self.cached_tail.set(tail);
+    }
+
+    /// Get the tail position for writing the next slot, if available.
+    ///
+    /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
+    /// For performance, this special case is implemented separately.
+    fn next_tail(&self) -> Option<usize> {
+        let mut head = self.cached_head.get();
+        let tail = self.cached_tail.get();
+        let b = &self.buffer;
+        // Check if the queue is *possibly* full.
+        if b.distance(head, tail) == b.capacity() {
+            // Refresh the head ...
+            head = b.head();
+            self.cached_head.set(head);
+            // ... and check if it's *really* full.
+            if b.distance(head, tail) == b.capacity() {
+                // `head` didn't change, the buffer is definitely full.
+                return None;
+            }
+        }
+        Some(tail)
     }
 }

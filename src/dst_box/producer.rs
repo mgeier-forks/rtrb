@@ -409,6 +409,15 @@ impl<T> Producer<'_, T> {
         self.buffer
     }
 
+    pub(super) unsafe fn advance(&self, n: usize) {
+        let tail = self.buffer.increment(self.cached_tail.get(), n);
+        // SAFETY: The user must make sure that `n` slots have been written.
+        unsafe {
+            self.buffer.set_tail(tail);
+        }
+        self.cached_tail.set(tail);
+    }
+
     /// Get the tail position for writing the next slot, if available.
     ///
     /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
@@ -429,14 +438,5 @@ impl<T> Producer<'_, T> {
             }
         }
         Some(tail)
-    }
-
-    pub(super) unsafe fn advance(&self, n: usize) {
-        let tail = self.buffer.increment(self.cached_tail.get(), n);
-        // SAFETY: The user must make sure that `n` slots have been written.
-        unsafe {
-            self.buffer.set_tail(tail);
-        }
-        self.cached_tail.set(tail);
     }
 }

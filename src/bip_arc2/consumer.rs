@@ -679,6 +679,15 @@ impl<T> Consumer<T> {
         }
     }
 
+    pub(super) unsafe fn advance(&self, n: usize) {
+        let head = self.buffer.increment(self.cached_head.get(), n);
+        // SAFETY: The user must make sure that `n` slots have been read.
+        unsafe {
+            self.buffer.set_head(head);
+        }
+        self.cached_head.set(head);
+    }
+
     /// Get the `head` position for reading the next slot, if available.
     fn next_head(&self) -> Option<usize> {
         let (slots, _, _) = self.slots_contiguous_helper();
@@ -687,14 +696,5 @@ impl<T> Consumer<T> {
         } else {
             Some(self.cached_head.get())
         }
-    }
-
-    pub(super) unsafe fn advance(&self, n: usize) {
-        let head = self.buffer.increment(self.cached_head.get(), n);
-        // SAFETY: The user must make sure that `n` slots have been read.
-        unsafe {
-            self.buffer.set_head(head);
-        }
-        self.cached_head.set(head);
     }
 }
