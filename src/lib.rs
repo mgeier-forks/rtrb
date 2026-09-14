@@ -37,9 +37,8 @@
 //!
 //! # A Quick Example
 //!
-//! ```no_run
-#![cfg(feature = "alloc")]
-#![allow(clippy::needless_doctest_main)]
+#![cfg_attr(feature = "alloc", doc = "```no_run")]
+#![cfg_attr(not(feature = "alloc"), doc = "```no_run,ignore")]
 #![doc = include_str!("../examples/quick.rs")]
 //! ```
 //!
