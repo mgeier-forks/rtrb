@@ -16,8 +16,13 @@ module_docstring = """
 //!
 //! code available here (as part of LIBH): <https://web.archive.org/web/20140625200016/http://libh.slashusr.org/>
 //!
-//! Potential Windows solution:
-//! <https://fgiesen.wordpress.com/2012/07/21/the-magic-ring-buffer/>
+//! Potential Windows implementations:
+//! * <https://fgiesen.wordpress.com/2012/07/21/the-magic-ring-buffer/>
+//! * <https://github.com/LiquidityC/slice_ring_buffer/tree/master/src/mirrored>
+//! * <https://github.com/OpenTritium/sliceable_ring_buffer/tree/master/src/mirrored>
+//! * <https://github.com/sklose/magic-buffer/tree/main/src>
+//!
+//! macOS/iOS: <https://github.com/skilvingr/rust-oneringbuf/blob/master/src/ring_buffer/storage_components/alloc/vmem/vmem_helper.rs>
 //!
 //! ... `capacity` will be rounded up to page size ... (TODO: add this in constructor docs?)
 """
