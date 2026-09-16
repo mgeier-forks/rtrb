@@ -58,7 +58,7 @@ macro_rules! dst_ring_buffer_instantiation {
             $last_field_name: $last_field_type,
         }
 
-        use alloc::alloc::Layout;
+        use core::alloc::Layout;
 
         impl<T> RingBuffer<T> {
             /// Calculate memory layout using the given `capacity`.
