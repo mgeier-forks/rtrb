@@ -224,7 +224,6 @@ mod atomic {
     pub use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 }
 
-#[cfg(feature = "alloc")]
 #[macro_use]
 mod dst_instantiation;
 

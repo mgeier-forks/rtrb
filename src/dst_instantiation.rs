@@ -101,6 +101,7 @@ macro_rules! dst_ring_buffer_instantiation {
             /// Allocates memory and Default-initializes the fixed-size fields.
             ///
             /// The dynamically-sized part remains uninitialized.
+            #[cfg(feature = "alloc")]
             fn instantiate(capacity: usize) -> Box<Self> {
                 let layout = Self::layout_helper(capacity);
                 // SAFETY: `layout` has non-zero size.
