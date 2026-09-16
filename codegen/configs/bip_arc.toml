@@ -2,7 +2,7 @@ arc = true
 bip = true
 padded = true
 pow2 = false
-storage = "vec"
+storage = "dst"
 
 module_docstring = """
 //! A bi-partite ring buffer.

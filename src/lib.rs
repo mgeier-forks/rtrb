@@ -10,7 +10,7 @@
 //! |-|-|-|-|-|
 //! | [`arc`]/[`arc2`] | heap | ✔️ | ✔️ ||
 //! | [`mod@array`] | array || ✔️ ||
-//! | [`dst_box`] | heap || ✔️ ||
+//! | [`mod@slice`] | heap (or not?) || ✔️ ||
 //! | [`bip_arc`]/[`bip_arc2`] | heap | ✔️ | ✔️ | ✔️ |
 //! | [`bip_array`] | array || ✔️ | ✔️ |
 //! | [`vrb_arc2`] | mmap | ✔️ | ✔️ | ✔️ |
@@ -184,7 +184,7 @@
 //! cargo run --example shared-memory-array
 //! ```
 //!
-//! ... [`shared-memory-dst` example application](https://github.com/mgeier/rtrb/blob/main/examples/shared-memory-dst.rs) ...
+//! ... [`shared-memory-slice` example application](https://github.com/mgeier/rtrb/blob/main/examples/shared-memory-slice.rs) ...
 //!
 //! ```text
 //! cargo run --example shared-memory-dst
@@ -220,7 +220,6 @@ mod cache_padded {
     pub struct CachePadded;
 }
 
-// TODO: feature "portable-atomic"?
 mod atomic {
     pub use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 }
@@ -242,12 +241,7 @@ pub mod bip_arc2;
 pub mod bip_array;
 #[cfg(feature = "alloc")]
 pub mod bip_dst_arc;
-#[cfg(feature = "alloc")]
-pub mod dst_arc;
-#[cfg(feature = "alloc")]
-pub mod dst_arc2;
-#[cfg(feature = "alloc")]
-pub mod dst_box;
+pub mod slice;
 pub mod embedded;
 #[cfg(feature = "vrb")]
 pub mod vrb_arc2;

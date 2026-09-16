@@ -5,9 +5,7 @@
 //! Storage on the heap with reference-counted producer and consumer.
 //! Use this if you can't decide!
 //!
-//! TODO: for now, this uses `Vec` storage, but if it turns out to be performant enough,
-//! it could be replaced by DST storage,
-//! making a separate [`rtrb::dst_arc`](crate::dst_arc) variant obsolete.
+//! TODO: DST
 //!
 //! *See the [crate-level documentation](crate) for information about the available options.*
 //!

@@ -1,7 +1,7 @@
 use std::io::Write as _;
 use std::time::Duration;
 
-use rtrb::dst_box::{Consumer, Producer, RingBuffer};
+use rtrb::slice::{Consumer, Producer, RingBuffer};
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 
 type Buffer = RingBuffer<i32>;

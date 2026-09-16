@@ -1,7 +1,7 @@
 arc = true
 padded = true
 pow2 = true
-storage = "vec"
+storage = "dst"
 
 module_docstring = """
 //! Same as [`rtrb::arc`](crate::arc), but with a capacity that is a power of two.

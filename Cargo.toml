@@ -63,8 +63,7 @@ name = "quick"
 required-features = ["alloc"]
 
 [[example]]
-name = "shared-memory-dst"
-required-features = ["alloc"]
+name = "shared-memory-slice"
 
 [[bench]]
 name = "single_thread_single_byte"

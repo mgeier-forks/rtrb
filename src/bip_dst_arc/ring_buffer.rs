@@ -2,6 +2,8 @@
 // It has been auto-generated from `codegen/templates/src/ring_buffer.rs.jinja`
 // using the configuration file `codegen/configs/bip_dst_arc.toml`.
 
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 
@@ -41,6 +43,7 @@ pub struct RingBuffer<T> {
 unsafe impl<T: Send> Send for RingBuffer<T> {}
 
 impl<T> RingBuffer<T> {
+    #[cfg(feature = "alloc")]
     fn construct(capacity: usize) -> Box<Self> {
         let rb = Self::instantiate(capacity);
         rb.skip.store(rb.capacity(), Ordering::Relaxed);

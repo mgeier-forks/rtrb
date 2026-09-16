@@ -2,7 +2,7 @@ arc = true
 bip = true
 padded = true
 pow2 = true
-storage = "vec"
+storage = "dst"
 
 module_docstring = """
 //! A bi-partite ring buffer whose capacity is a power of two.

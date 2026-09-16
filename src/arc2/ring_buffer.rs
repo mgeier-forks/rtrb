@@ -2,8 +2,10 @@
 // It has been auto-generated from `codegen/templates/src/ring_buffer.rs.jinja`
 // using the configuration file `codegen/configs/arc2.toml`.
 
-use alloc::vec::Vec;
-use core::mem::ManuallyDrop;
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
+use core::cell::UnsafeCell;
+use core::mem::MaybeUninit;
 
 use super::arc_ring_buffer::ArcRingBuffer;
 use crate::atomic::*;
@@ -14,6 +16,7 @@ use super::{Consumer, Producer};
 
 const IS_ABANDONED: u8 = 0b10000000;
 
+dst_ring_buffer_instantiation! {
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
 /// Elements can be written with a [`Producer`] and read with a [`Consumer`],
@@ -25,43 +28,39 @@ pub struct RingBuffer<T> {
     head: CachePadded<AtomicUsize>,
     tail: CachePadded<AtomicUsize>,
     flags: AtomicU8,
-    /// The buffer holding slots.
-    data_ptr: *mut T,
-    capacity: usize,
+    /// Storage for the ring buffer elements (dynamically sized).
+    ///
+    /// This must be in an `UnsafeCell` because both producer and consumer
+    /// have a (non-mutable) reference to the ring buffer and they use
+    /// *interior mutability* to modify it.
+    slots: UnsafeCell<[MaybeUninit<T>]>,
+}
 }
 
 // SAFETY: If T can be moved between threads, RingBuffer can as well.
 unsafe impl<T: Send> Send for RingBuffer<T> {}
 
 impl<T> RingBuffer<T> {
+    #[cfg(feature = "alloc")]
     fn construct(capacity: usize) -> Box<Self> {
-        Box::new(Self {
-            head: CachePadded::new(AtomicUsize::new(0)),
-            tail: CachePadded::new(AtomicUsize::new(0)),
-            flags: AtomicU8::new(0),
-            data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
-            capacity,
-        })
+        Self::instantiate(capacity)
     }
 
     pub(super) fn capacity(&self) -> usize {
-        self.capacity
+        self.slots.get().len()
     }
 
     pub(super) fn data_ptr(&self) -> *mut T {
-        self.data_ptr
+        self.slots.get().cast()
     }
 }
 
 impl<T> Drop for RingBuffer<T> {
-    /// Drops all non-empty slots and deallocates the storage.
+    /// Drops all non-empty slots.
     fn drop(&mut self) {
         // SAFETY: this is called exactly once, no references to any elements exist anymore.
         unsafe { self.drop_all_elements() };
-
-        // Finally, deallocate the buffer, but don't run any destructors.
-        // SAFETY: data_ptr and capacity are still valid from the original initialization.
-        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.capacity()) };
+        // The memory will be deallocated when the containing `ArcRingBuffer` is dropped.
     }
 }
 
@@ -71,7 +70,7 @@ impl<T> Drop for RingBuffer<T> {
 /// For example, [`std::cell::Cell`] is `Send` but not `Sync`:
 ///
 /// ```
-/// fn assert_sync<X: Sync>() {}
+/// fn assert_sync<X: Sync + ?Sized>() {}
 /// assert_sync::<rtrb::arc2::RingBuffer<std::cell::Cell<u8>>>();
 /// ```
 // SAFETY: RingBuffer is only mutated (using *interior mutablility*)
