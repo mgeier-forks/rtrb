@@ -1,0 +1,13 @@
+arc = false
+padded = false
+pow2 = true
+storage = "array"
+
+module_docstring = """
+//! `array` storage, no cacheline padding, power-of-2 capacity.
+//!
+//! Same as [`rtrb::array_unpadded`](crate::array_unpadded),
+//! but with a capacity that is a power of two.
+//!
+//! If cacheline padding is desired, use [`rtrb::array`](crate::array).
+"""

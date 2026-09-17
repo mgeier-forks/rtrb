@@ -6,6 +6,4 @@ storage = "dst"
 module_docstring = """
 //! Storage on the heap with reference-counted producer and consumer.
 //! Use this if you can't decide!
-//!
-//! TODO: DST
 """

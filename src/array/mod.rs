@@ -4,6 +4,14 @@
 
 //! Storage in an `array` (i.e. with a compile-time capacity).
 //!
+//! This module uses cacheline padding to avoid false sharing,
+//! which is relevant if producer and consumer live on different coherent-cached cores.
+//!
+//! If the cores are not cache-coherent (e.g. on a STM32H7 microcontroller)
+//! or if there are no multiple cores in the first place (e.g. on a single-core MCU), use
+//! [`rtrb::array_unpadded2`](crate::array_unpadded2) (with a capacity that is a power of two)
+//! or [`rtrb::array_unpadded`](crate::array_unpadded).
+//!
 //! *See the [crate-level documentation](crate) for information about the available options.*
 //!
 //! # Usage

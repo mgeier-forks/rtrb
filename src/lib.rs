@@ -10,16 +10,13 @@
 //! |-|-|-|-|-|
 //! | [`arc`]/[`arc2`] | heap | ✔️ | ✔️ ||
 //! | [`mod@array`] | array || ✔️ ||
-//! | [`mod@slice`] | heap (or not?) || ✔️ ||
+//! | [`mod@slice`] | heap (or wherever) || ✔️ ||
 //! | [`bip_arc`]/[`bip_arc2`] | heap | ✔️ | ✔️ | ✔️ |
 //! | [`bip_array`] | array || ✔️ | ✔️ |
 //! | [`vrb_arc2`] | mmap | ✔️ | ✔️ | ✔️ |
 //!
 //! TODO: this is only a subset of possibilities. See the list of modules for more options
 //! (but still not an exhaustive list).
-//!
-//! TODO: provide power-of-two [`array2`] (and variants)?
-//! So far, this has not shown any performance advantages.
 //!
 //! TODO: provide "reference counted" versions for `array` variants?
 //! If you can use the heap, you might as well use [`arc`].
@@ -231,7 +228,8 @@ pub mod arc;
 #[cfg(feature = "alloc")]
 pub mod arc2;
 pub mod array;
-pub mod array2;
+pub mod array_unpadded;
+pub mod array_unpadded2;
 #[cfg(feature = "alloc")]
 pub mod bip_arc;
 #[cfg(feature = "alloc")]
