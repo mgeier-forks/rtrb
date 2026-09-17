@@ -30,7 +30,7 @@ impl Owner<'_> {
     unsafe fn new(shmem: &Shmem, capacity: usize) -> Self {
         let ptr = validate_ptr(shmem, capacity);
         // SAFETY: see docstring.
-        Self(unsafe { Buffer::new_at(ptr, capacity) })
+        Self(unsafe { Buffer::new_at_unchecked(ptr, capacity) })
     }
 
     fn buffer(&self) -> &Buffer {
@@ -58,7 +58,7 @@ impl Drop for Owner<'_> {
 /// # Safety
 ///
 /// `shmem` must point to correctly initialized memory.
-/// `capacity` must be the same as the one used in Buffer::new_at().
+/// `capacity` must be the same as the one used in Buffer::new_at_unchecked().
 unsafe fn get_consumer(shmem: &Shmem, capacity: usize) -> Option<Consumer<'_, i32>> {
     let ptr = validate_ptr(shmem, capacity);
     // SAFETY: see docstring.

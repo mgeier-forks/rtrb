@@ -24,7 +24,8 @@ dst_ring_buffer_instantiation! {
 /// and [`RingBuffer::consumer()`], respectively.
 ///
 /// [`RingBuffer::new()`] automatically allocates memory on the heap.
-/// To work with pre-allocated memory, [`RingBuffer::new_at()`] can be used.
+/// To work with pre-allocated memory, [`RingBuffer::new_at()`] and
+/// [`RingBuffer::new_at_unchecked()`] can be used.
 ///
 /// *See also the [module-level documentation](crate::slice).*
 #[derive(Debug)]
@@ -227,7 +228,8 @@ impl<T> RingBuffer<T> {
     /// Calculates memory layout using the given `capacity`.
     ///
     /// This can be used to allocate (e.g. with [`alloc::alloc::alloc()`])
-    /// the right amount of properly aligned memory to be used with [`RingBuffer::new_at()`].
+    /// the right amount of properly aligned memory to be used with [`RingBuffer::new_at()`]
+    /// and [`RingBuffer::new_at_unchecked()`].
     /// It is *not* needed when using [`RingBuffer::new()`].
     pub fn layout(capacity: usize) -> Layout {
         let capacity = Self::update_capacity(capacity);
@@ -258,7 +260,7 @@ impl<T> RingBuffer<T> {
     /// it must exist at least as long as the returned reference
     /// and can only be accessed via the `&RingBuffer` returned from this method
     /// or from [`RingBuffer::from_raw_parts()`].
-    pub unsafe fn new_at<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {
+    pub unsafe fn new_at_unchecked<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {
         let capacity = Self::update_capacity(capacity);
         let ptr = Self::coerce(ptr, capacity);
         // SAFETY: Pointer is valid and no other reference exists.
@@ -271,15 +273,15 @@ impl<T> RingBuffer<T> {
 
     /// Provides access to an existing `RingBuffer` at a given memory address.
     ///
-    /// [`RingBuffer::new_at()`] creates a `RingBuffer` at some
-    /// (allocated but uninitialized) memory location.
+    /// [`RingBuffer::new_at()`] and [`RingBuffer::new_at_unchecked()`]
+    /// create a `RingBuffer` at some (allocated but uninitialized) memory location.
     /// `RingBuffer::from_raw_parts()` provides access to an already
     /// existing `RingBuffer` at the given address. Both are extremely unsafe!
     ///
     /// # Safety
     ///
     /// The provided memory must have been initialized by [`RingBuffer::new_at()`]
-    /// (using the same `capacity`)
+    /// or [`RingBuffer::new_at_unchecked()`] (using the same `capacity`)
     /// and the memory allocation must exist at least as long as the returned reference.
     /// There are no ABI stability guarantees.
     pub unsafe fn from_raw_parts<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {

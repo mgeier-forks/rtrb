@@ -20,7 +20,8 @@
 //! and a (single) [`Consumer`] for reading from the ring buffer can be created with
 //! [`RingBuffer::consumer()`].
 //!
-//! [`RingBuffer::new_at()`] can be used to create a `RingBuffer` in pre-allocated memory.
+//! [`RingBuffer::new_at()`] and [`RingBuffer::new_at_unchecked()`] can be used
+//! to create a `RingBuffer` in pre-allocated memory.
 //! [`RingBuffer::from_raw_parts()`] can be used to get access to a `RingBuffer`
 //! that has been created at a given memory address.
 //! These functions allow usage with dynamic capacity in combination with shared memory
