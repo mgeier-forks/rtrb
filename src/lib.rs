@@ -37,8 +37,7 @@
 //!
 //! # A Quick Example
 //!
-#![cfg_attr(feature = "alloc", doc = "```no_run")]
-#![cfg_attr(not(feature = "alloc"), doc = "```no_run,ignore")]
+//! ```no_run
 #![doc = include_str!("../examples/quick.rs")]
 //! ```
 //!
