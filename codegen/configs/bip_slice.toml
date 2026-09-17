@@ -1,0 +1,9 @@
+arc = false
+bip = true
+padded = true
+pow2 = false
+storage = "dst"
+
+module_docstring = """
+//! A bi-partite ring buffer, "slice" variant.
+"""
