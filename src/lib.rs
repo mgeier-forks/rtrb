@@ -240,8 +240,8 @@ pub mod bip_arc2;
 pub mod bip_array;
 #[cfg(feature = "alloc")]
 pub mod bip_dst_arc;
-pub mod slice;
 pub mod embedded;
+pub mod slice;
 #[cfg(feature = "vrb")]
 pub mod vrb_arc2;
 
