@@ -198,6 +198,9 @@ impl<T> RingBuffer<T> {
     /// assert!(producer.push(10.0f32).is_ok());
     ///
     /// // NB: The ring buffer is not dropped, the memory is leaked.
+    /// # // Don't actually leak memory, so that Miri doesn't complain:
+    /// # drop(producer);
+    /// # unsafe { std::alloc::dealloc(storage.as_mut_ptr().cast(), RingBufferF32::layout(128)); }
     /// ```
     pub fn new_at(storage: &mut [MaybeUninit<u8>], capacity: usize) -> Option<&Self> {
         let layout = Self::layout(capacity);
