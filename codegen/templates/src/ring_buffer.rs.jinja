@@ -499,6 +499,37 @@ impl<T{{ N_param }}> RingBuffer<T{{ N_arg }}> {
     /// If you don't need control over the memory location, you can simply use
     /// [`RingBuffer::new()`], which will automatically allocate the required memory
     /// on the heap.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::mem::MaybeUninit;
+    ///
+    /// type RingBufferF32 = rtrb::slice::RingBuffer<f32>;
+    ///
+    /// fn somehow_create_storage(capacity: usize) -> &'static mut [MaybeUninit<u8>] {
+    ///     let layout = RingBufferF32::layout(capacity);
+    ///     // SAFETY: `layout` has non-zero size
+    ///     let ptr = unsafe { std::alloc::alloc(layout) };
+    ///     if ptr.is_null() {
+    ///         std::alloc::handle_alloc_error(layout);
+    ///     }
+    ///     // SAFETY: The allocated memory is a valid (uninitialized) slice.
+    ///     unsafe { std::slice::from_raw_parts_mut(ptr.cast(), layout.size()) }
+    /// }
+    ///
+    /// let storage = somehow_create_storage(128);
+    ///
+    /// // From here on, no more `unsafe` in user code.
+    ///
+    /// assert!(RingBufferF32::new_at(storage, 64).is_none());
+    ///
+    /// let rb = RingBufferF32::new_at(storage, 128).unwrap();
+    /// let mut producer = rb.producer().unwrap();
+    /// assert!(producer.push(10.0f32).is_ok());
+    ///
+    /// // NB: The ring buffer is not dropped, the memory is leaked.
+    /// ```
     pub fn new_at(storage: &mut [MaybeUninit<u8>], capacity: usize) -> Option<&Self> {
         let layout = Self::layout(capacity);
         if storage.len() == layout.size() && (storage.as_ptr() as usize) % layout.align() == 0 {
