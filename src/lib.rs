@@ -15,22 +15,6 @@
 //! | [`bip_array`] | array || ✔️ | ✔️ |
 //! | [`vrb_arc2`] | mmap | ✔️ | ✔️ | ✔️ |
 //!
-//! TODO: this is only a subset of possibilities. See the list of modules for more options
-//! (but still not an exhaustive list).
-//!
-//! TODO: provide "reference counted" versions for `array` variants?
-//! If you can use the heap, you might as well use [`arc`].
-//! So far, no performance advantages have been observed for `array`, their main advantage
-//! is the ability to be stored on the stack. And they can easily be used with `static`.
-//! But none of this is relevant for the "reference counted" variety.
-//!
-//! TODO: should there be an [`embedded`] variant (i.e. `array` storage + no cache padding + ...)?
-//! Or should this be a Cargo feature (maybe named `cache-padded`)?
-//! This would reduce the amount of auto-generated code as well as the number of available modules
-//! to choose from.
-//! However, it might be surprising that a Cargo feature changes the performance
-//! (and memory layout). Or isn't it?
-//!
 //!
 //! # A Quick Example
 //!
@@ -236,7 +220,6 @@ pub mod bip_arc;
 pub mod bip_arc2;
 pub mod bip_array;
 pub mod bip_slice;
-pub mod embedded;
 pub mod slice;
 #[cfg(feature = "vrb")]
 pub mod vrb_arc2;
