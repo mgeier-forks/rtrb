@@ -139,9 +139,9 @@ impl<T> RingBuffer<T> {
         Self::construct(capacity)
     }
 
-    /// Calculates the required memory layout using the given `capacity`.
+    /// Calculates the required memory layout using type `T` and the given `capacity`.
     ///
-    /// This can be used to allocate (e.g. with [`alloc::alloc::alloc()`])
+    /// This can be used to allocate (e.g. with [`std::alloc::alloc()`])
     /// the right amount of properly aligned memory to be used with [`RingBuffer::new_at()`]
     /// and [`RingBuffer::new_at_unchecked()`].
     /// It is *not* needed when using [`RingBuffer::new()`].
@@ -186,7 +186,8 @@ impl<T> RingBuffer<T> {
     /// # Safety
     ///
     /// The provided memory must be [valid] for writes,
-    /// must have the required size and alignment (see [`RingBuffer::layout()`]),
+    /// must have the required size and alignment for type `T` and the given `capacity`
+    /// (see [`RingBuffer::<T>::layout()`]),
     /// it must exist at least as long as the returned reference
     /// and can only be accessed via the `&RingBuffer` returned from this method
     /// or from [`RingBuffer::from_raw_parts()`].
