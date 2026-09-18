@@ -14,15 +14,6 @@ create_two_threads_const_benchmark!(
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::
-    "rtrb::embedded",
-    { ($N:expr) => {{
-        use rtrb::embedded::RingBuffer;
-        let rb = Box::leak(Box::new(RingBuffer::<u8, $N>::new()));
-        (rb.producer().unwrap(), rb.consumer().unwrap())
-    }}},
-    |p, i| p.push(i).is_ok(),
-    |c| c.pop().ok(),
-    ::
     "rtrb::arc",
     { ($N:expr) => {
         rtrb::arc::RingBuffer::<u8>::new($N)
