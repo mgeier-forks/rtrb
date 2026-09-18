@@ -236,9 +236,11 @@ impl<T> RingBuffer<T> {
         Self::layout_helper(capacity)
     }
 
-    /// Creates a new `RingBuffer` at the given memory address.
+    /// Creates a new `RingBuffer` in the given slice of memory, if size and alignment are correct.
     ///
-    /// To access an already existing `RingBuffer` at a given address,
+    /// See also [`RingBuffer::new_at_unchecked()`].
+    ///
+    /// To access an already existing `RingBuffer` at a given memory location,
     /// use [`RingBuffer::from_raw_parts()`].
     /// This can be used, for example, to communicate between two processes
     /// via shared memory.
@@ -252,14 +254,30 @@ impl<T> RingBuffer<T> {
     /// If you don't need control over the memory location, you can simply use
     /// [`RingBuffer::new()`], which will automatically allocate the required memory
     /// on the heap.
+    pub fn new_at(storage: &mut [MaybeUninit<u8>], capacity: usize) -> Option<&Self> {
+        let layout = Self::layout(capacity);
+        if storage.len() == layout.size() && (storage.as_ptr() as usize) % layout.align() == 0 {
+            // SAFETY: Size and alignment match, lifetime and exclusivity are guaranteed by &mut.
+            Some(unsafe { Self::new_at_unchecked(storage.as_mut_ptr() as *mut u8, capacity) })
+        } else {
+            None
+        }
+    }
+
+    /// Creates a new `RingBuffer` at the given memory address.
+    ///
+    /// Same as [`RingBuffer::new_at()`], except without checking size and alignment,
+    /// and without the lifetime and exclusivity guarantees provided by the type system.
     ///
     /// # Safety
     ///
-    /// The provided memory must be uninitialized,
+    /// The provided memory must be [valid] for writes,
     /// must have the required size and alignment (see [`RingBuffer::layout()`]),
     /// it must exist at least as long as the returned reference
     /// and can only be accessed via the `&RingBuffer` returned from this method
     /// or from [`RingBuffer::from_raw_parts()`].
+    ///
+    /// [valid]: std::ptr#safety
     pub unsafe fn new_at_unchecked<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {
         let capacity = Self::update_capacity(capacity);
         let ptr = Self::coerce(ptr, capacity);
@@ -276,7 +294,7 @@ impl<T> RingBuffer<T> {
     /// [`RingBuffer::new_at()`] and [`RingBuffer::new_at_unchecked()`]
     /// create a `RingBuffer` at some (allocated but uninitialized) memory location.
     /// `RingBuffer::from_raw_parts()` provides access to an already
-    /// existing `RingBuffer` at the given address. Both are extremely unsafe!
+    /// existing `RingBuffer` at the given address. This is extremely unsafe!
     ///
     /// # Safety
     ///
