@@ -13,9 +13,6 @@ use crate::cache_padded::CachePadded;
 
 use super::{Consumer, Producer};
 
-const HAS_PRODUCER: u8 = 0b10000000;
-const HAS_CONSUMER: u8 = 0b01000000;
-
 dst_ring_buffer_instantiation! {
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
@@ -34,7 +31,8 @@ pub struct RingBuffer<T> {
     tail: CachePadded<AtomicUsize>,
     // TODO: measure whether CachePadded helps
     skip: CachePadded<AtomicUsize>,
-    flags: AtomicU8,
+    has_producer: AtomicBool,
+    has_consumer: AtomicBool,
     /// Storage for the ring buffer elements (dynamically sized).
     ///
     /// This must be in an `UnsafeCell` because both producer and consumer
@@ -282,16 +280,38 @@ impl<T> RingBuffer<T> {
     /// assert_eq!(consumer.pop(), Ok(10));
     /// assert_eq!(consumer.pop(), Ok(20));
     /// ```
+    #[cfg(target_has_atomic = "8")]
     pub fn producer(&self) -> Option<Producer<'_, T>> {
-        let old_flags = self.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
-        if old_flags & HAS_PRODUCER == 0 {
-            let head = self.head.load(Ordering::Relaxed);
-            let tail = self.tail.load(Ordering::Relaxed);
-            // SAFETY: There is no producer yet, `head` and `tail` are valid.
-            Some(unsafe { Producer::new(self, head, tail) })
+        if self
+            .has_producer
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            // SAFETY: There is no producer yet.
+            Some(unsafe { self.producer_unchecked() })
         } else {
             None
         }
+    }
+
+    /// Creates a [`Producer`], assuming it doesn't exist yet.
+    ///
+    /// This is only provided for some bare-metal targets that don't support
+    /// atomic compare-and-swap (CAS) operations, e.g. `thumbv6m-none-eabi`.
+    /// In most cases, you should use [`RingBuffer::producer()`] instead.
+    ///
+    /// # Safety
+    ///
+    /// This is only allowed if no producer exists yet.
+    pub unsafe fn producer_unchecked(&self) -> Producer<'_, T> {
+        let head = self.head.load(Ordering::Relaxed);
+        let tail = self.tail.load(Ordering::Relaxed);
+
+        // NB: If this is called from producer(), this is already set.
+        self.has_producer.store(true, Ordering::SeqCst);
+
+        // SAFETY: Callers must ensure that this is the only producer.
+        unsafe { Producer::new(self, head, tail) }
     }
 
     /// Creates a [`Consumer`] (if it doesn't exist yet) for reading from the `RingBuffer`.
@@ -318,16 +338,36 @@ impl<T> RingBuffer<T> {
     /// assert!(rb.has_consumer());
     /// assert_eq!(consumer.pop(), Ok(20));
     /// ```
+    #[cfg(target_has_atomic = "8")]
     pub fn consumer(&self) -> Option<Consumer<'_, T>> {
-        let old_flags = self.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
-        if old_flags & HAS_CONSUMER == 0 {
-            let head = self.head.load(Ordering::Relaxed);
-            let tail = self.tail.load(Ordering::Relaxed);
-            // SAFETY: There is no consumer yet, `head` and `tail` are valid.
-            Some(unsafe { Consumer::new(self, head, tail) })
+        if self
+            .has_consumer
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            // SAFETY: There is no consumer yet.
+            Some(unsafe { self.consumer_unchecked() })
         } else {
             None
         }
+    }
+
+    /// Creates a [`Consumer`], assuming it doesn't exist yet.
+    ///
+    /// See [`RingBuffer::producer_unchecked()`].
+    ///
+    /// # Safety
+    ///
+    /// This is only allowed if no consumer exists yet.
+    pub unsafe fn consumer_unchecked(&self) -> Consumer<'_, T> {
+        let head = self.head.load(Ordering::Relaxed);
+        let tail = self.tail.load(Ordering::Relaxed);
+
+        // NB: If this is called from consumer(), this is already set.
+        self.has_consumer.store(true, Ordering::SeqCst);
+
+        // SAFETY: Callers must ensure that this is the only consumer.
+        unsafe { Consumer::new(self, head, tail) }
     }
 
     /// Returns `true` if a [`Producer`] exists for this `RingBuffer`.
@@ -336,7 +376,7 @@ impl<T> RingBuffer<T> {
     ///
     /// See also [`Consumer::has_producer()`].
     pub fn has_producer(&self) -> bool {
-        self.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
+        self.has_producer.load(Ordering::SeqCst)
     }
 
     /// Returns `true` if a [`Consumer`] exists for this `RingBuffer`.
@@ -345,7 +385,7 @@ impl<T> RingBuffer<T> {
     ///
     /// See also [`Producer::has_consumer()`].
     pub fn has_consumer(&self) -> bool {
-        self.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
+        self.has_consumer.load(Ordering::SeqCst)
     }
 
     const fn update_capacity(capacity: usize) -> usize {
@@ -463,10 +503,10 @@ impl<T> RingBuffer<T> {
     }
 
     pub(super) fn drop_producer(&self) {
-        let _ = self.flags.fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
+        self.has_producer.store(false, Ordering::SeqCst);
     }
 
     pub(super) fn drop_consumer(&self) {
-        let _ = self.flags.fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
+        self.has_consumer.store(false, Ordering::SeqCst);
     }
 }
