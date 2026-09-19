@@ -9,9 +9,6 @@ use crate::atomic::*;
 
 use super::{Consumer, Producer};
 
-const HAS_PRODUCER: u8 = 0b10000000;
-const HAS_CONSUMER: u8 = 0b01000000;
-
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
 /// Elements can be written with a [`Producer`] and read with a [`Consumer`],
@@ -27,7 +24,8 @@ pub struct RingBuffer<T, const N: usize>(RingBufferInner<[MaybeUninit<T>; N]>);
 pub(super) struct RingBufferInner<Container: ?Sized> {
     head: AtomicUsize,
     tail: AtomicUsize,
-    flags: AtomicU8,
+    has_producer: AtomicBool,
+    has_consumer: AtomicBool,
     /// The possibly unsized container holding slots.
     ///
     /// This must be in an `UnsafeCell` because both producer and consumer
@@ -49,7 +47,8 @@ impl<T, const N: usize> RingBuffer<T, N> {
         RingBuffer(RingBufferInner {
             head: AtomicUsize::new(0),
             tail: AtomicUsize::new(0),
-            flags: AtomicU8::new(0),
+            has_producer: AtomicBool::new(false),
+            has_consumer: AtomicBool::new(false),
             slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
         })
     }
@@ -81,12 +80,12 @@ impl<T> RingBufferUnsized<T> {
 
     pub(super) fn has_producer(&self) -> bool {
         // TODO: Avoid code duplication with RingBuffer<T, N>::has_producer()?
-        self.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
+        self.has_producer.load(Ordering::SeqCst)
     }
 
     pub(super) fn has_consumer(&self) -> bool {
         // TODO: Avoid code duplication with RingBuffer<T, N>::has_consumer()?
-        self.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
+        self.has_consumer.load(Ordering::SeqCst)
     }
 }
 
@@ -176,16 +175,37 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// assert_eq!(consumer.pop(), Ok(10));
     /// assert_eq!(consumer.pop(), Ok(20));
     /// ```
+    #[cfg(target_has_atomic = "8")]
     pub fn producer(&self) -> Option<Producer<'_, T>> {
-        let old_flags = self.0.flags.fetch_or(HAS_PRODUCER, Ordering::SeqCst);
-        if old_flags & HAS_PRODUCER == 0 {
-            let head = self.0.head.load(Ordering::Relaxed);
-            let tail = self.0.tail.load(Ordering::Relaxed);
-            // SAFETY: There is no producer yet, `head` and `tail` are valid.
-            Some(unsafe { Producer::new(&self.0, head, tail) })
+        if self
+            .0
+            .has_producer
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            // SAFETY: There is no producer yet.
+            Some(unsafe { self.producer_unchecked() })
         } else {
             None
         }
+    }
+
+    /// Creates a [`Producer`], assuming it doesn't exist yet.
+    ///
+    /// ... this can be used on targets without ..., e.g. ...
+    ///
+    /// # Safety
+    ///
+    /// This is only allowed if no producer exists yet.
+    pub unsafe fn producer_unchecked(&self) -> Producer<'_, T> {
+        let head = self.0.head.load(Ordering::Relaxed);
+        let tail = self.0.tail.load(Ordering::Relaxed);
+
+        // NB: If this is called from producer(), this is already set.
+        self.0.has_producer.store(true, Ordering::SeqCst);
+
+        // SAFETY: Callers must ensure that this is the only producer.
+        unsafe { Producer::new(&self.0, head, tail) }
     }
 
     /// Creates a [`Consumer`] (if it doesn't exist yet) for reading from the `RingBuffer`.
@@ -212,16 +232,37 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// assert!(rb.has_consumer());
     /// assert_eq!(consumer.pop(), Ok(20));
     /// ```
+    #[cfg(target_has_atomic = "8")]
     pub fn consumer(&self) -> Option<Consumer<'_, T>> {
-        let old_flags = self.0.flags.fetch_or(HAS_CONSUMER, Ordering::SeqCst);
-        if old_flags & HAS_CONSUMER == 0 {
-            let head = self.0.head.load(Ordering::Relaxed);
-            let tail = self.0.tail.load(Ordering::Relaxed);
-            // SAFETY: There is no consumer yet, `head` and `tail` are valid.
-            Some(unsafe { Consumer::new(&self.0, head, tail) })
+        if self
+            .0
+            .has_consumer
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            // SAFETY: There is no consumer yet.
+            Some(unsafe { self.consumer_unchecked() })
         } else {
             None
         }
+    }
+
+    /// Creates a [`Consumer`], assuming it doesn't exist yet.
+    ///
+    /// See [`RingBuffer::producer_unchecked()`].
+    ///
+    /// # Safety
+    ///
+    /// This is only allowed if no consumer exists yet.
+    pub unsafe fn consumer_unchecked(&self) -> Consumer<'_, T> {
+        let head = self.0.head.load(Ordering::Relaxed);
+        let tail = self.0.tail.load(Ordering::Relaxed);
+
+        // NB: If this is called from consumer(), this is already set.
+        self.0.has_consumer.store(true, Ordering::SeqCst);
+
+        // SAFETY: Callers must ensure that this is the only consumer.
+        unsafe { Consumer::new(&self.0, head, tail) }
     }
 
     /// Returns `true` if a [`Producer`] exists for this `RingBuffer`.
@@ -230,7 +271,7 @@ impl<T, const N: usize> RingBuffer<T, N> {
     ///
     /// See also [`Consumer::has_producer()`].
     pub fn has_producer(&self) -> bool {
-        self.0.flags.load(Ordering::SeqCst) & HAS_PRODUCER != 0
+        self.0.has_producer.load(Ordering::SeqCst)
     }
 
     /// Returns `true` if a [`Consumer`] exists for this `RingBuffer`.
@@ -239,7 +280,7 @@ impl<T, const N: usize> RingBuffer<T, N> {
     ///
     /// See also [`Producer::has_consumer()`].
     pub fn has_consumer(&self) -> bool {
-        self.0.flags.load(Ordering::SeqCst) & HAS_CONSUMER != 0
+        self.0.has_consumer.load(Ordering::SeqCst)
     }
 
     const fn update_capacity(capacity: usize) -> usize {
@@ -347,10 +388,10 @@ impl<T> RingBufferUnsized<T> {
     }
 
     pub(super) fn drop_producer(&self) {
-        let _ = self.flags.fetch_and(!HAS_PRODUCER, Ordering::SeqCst);
+        self.has_producer.store(false, Ordering::SeqCst);
     }
 
     pub(super) fn drop_consumer(&self) {
-        let _ = self.flags.fetch_and(!HAS_CONSUMER, Ordering::SeqCst);
+        self.has_consumer.store(false, Ordering::SeqCst);
     }
 }
