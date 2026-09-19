@@ -6,15 +6,18 @@
 //! The following table gives an overview about the available types of ring buffer.
 //! Further details are explained in the sections below.
 //!
-//! | module | storage | reference counted | cache padded | contiguous chunks |
+//! | module | storage | reference counted | cacheline padded | contiguous chunks |
 //! |-|-|-|-|-|
-//! | [`arc`]/[`arc2`] | heap | ✔️ | ✔️ ||
+//! | [`arc`], [`arc2`] | heap | ✔️ | ✔️ ||
 //! | [`mod@array`] | array || ✔️ ||
 //! | [`mod@slice`] | heap (or wherever) || ✔️ ||
-//! | [`bip_arc`]/[`bip_arc2`] | heap | ✔️ | ✔️ | ✔️ |
+//! | [`array_unpadded`], [`array_unpadded2`] | array ||||
+//! | [`bip_arc`], [`bip_arc2`] | heap | ✔️ | ✔️ | ✔️ |
 //! | [`bip_array`] | array || ✔️ | ✔️ |
+//! | [`bip_slice`] | heap (or wherever) || ✔️ | ✔️ |
 //! | [`vrb_arc2`] | mmap | ✔️ | ✔️ | ✔️ |
 //!
+//! Modules ending with `2` use capacities that are powers of two.
 //!
 //! # A Quick Example
 //!
@@ -158,16 +161,22 @@
 //!
 //! # Usage with Shared Memory
 //!
-//! ... [`shared-memory-array` example application](https://github.com/mgeier/rtrb/blob/main/examples/shared-memory-array.rs) ...
+//! If you are willing to use some `unsafe` code,
+//! you can use the `*array*` and `*slice*` modules
+//! to communicate between processes via shared memory.
+//!
+//! Have a look at the [`shared-memory-array` example application](https://github.com/mgeier/rtrb/blob/main/examples/shared-memory-array.rs),
+//! which you can run with:
 //!
 //! ```text
 //! cargo run --example shared-memory-array
 //! ```
 //!
-//! ... [`shared-memory-slice` example application](https://github.com/mgeier/rtrb/blob/main/examples/shared-memory-slice.rs) ...
+//! ... and the [`shared-memory-slice` example application](https://github.com/mgeier/rtrb/blob/main/examples/shared-memory-slice.rs),
+//! which you can run with:
 //!
 //! ```text
-//! cargo run --example shared-memory-dst
+//! cargo run --example shared-memory-slice
 //! ```
 //!
 //!
@@ -178,8 +187,6 @@
 //! ... even though the documentation uses the term "thread" ...
 //! a single CPU core in a microcontrollers ... no OS threads ...
 //! communicate between "main code" and "interrupt handler" ...
-//!
-//! TODO: DMA? use "bip" variants.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(missing_docs, missing_debug_implementations)]

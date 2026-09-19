@@ -15,7 +15,6 @@ use super::{Consumer, Producer};
 /// both of which can be obtained with [`RingBuffer::new()`].
 ///
 /// *See also the [module-level documentation](crate::vrb_arc2).*
-// TODO: reuse from storage_vec, disabling "skip"?
 #[derive(Debug)]
 pub struct RingBuffer<T> {
     head: CachePadded<AtomicUsize>,
@@ -99,7 +98,6 @@ impl<T> RingBuffer<T> {
         };
         // Alignments larger than the page size are not supported.
         assert!(data_ptr.is_aligned());
-        // TODO: reuse from storage_vec, disabling "skip"?
         Box::new(Self {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
@@ -108,8 +106,6 @@ impl<T> RingBuffer<T> {
             capacity,
         })
     }
-
-    // TODO: reuse capacity() and data_ptr() from storage_vec?
 
     pub(super) fn capacity(&self) -> usize {
         self.capacity
