@@ -70,7 +70,6 @@ impl<T, const N: usize> Default for RingBuffer<T, N> {
 
 impl<T> RingBufferUnsized<T> {
     pub(super) fn data_ptr(&self) -> *mut T {
-        // TODO: what happens if N == 0?
         self.slots.get().cast()
     }
 

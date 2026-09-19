@@ -183,11 +183,31 @@
 //!
 //! # Usage in Embedded Systems
 //!
+//! ... still wait-free, no critical sections
+//!
 //! ... no cache padding ...
+//!
+//! Cortex-M0 or M7?
+//! Cortex-M0/M0+
+//!
+//! `thumbv7em`, `riscv32imac`
+//!
+//! `thumbv6m`
+//! `riscv32imc` (RP2040, STM32F0/L0, nRF51)
+//!
+//! ... padding only on different cores with coherent caches, e.g. STM32H7 (M7+M4), i.MX RT1170, ESP32.
+//!
+//! ... for example STM32H7 is a dual-core MCU, but those cores are not cache-coherent,
+//! so the ring buffer should live in a non-cacheable MPU region
+//! and doesn't need cacheline padding.
+//!
+//! ... the non-`arc` modules don't need `target_has_atomic`
 //!
 //! ... even though the documentation uses the term "thread" ...
 //! a single CPU core in a microcontrollers ... no OS threads ...
 //! communicate between "main code" and "interrupt handler" ...
+//!
+//! main loop ↔ ISR
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(missing_docs, missing_debug_implementations)]
