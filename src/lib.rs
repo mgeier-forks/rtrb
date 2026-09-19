@@ -1,7 +1,8 @@
 //! A collection of realtime-safe single-producer single-consumer (SPSC) ring buffers.
 //!
 //! *If you are looking for the ring buffer formerly plainly known as `rtrb::RingBuffer`,
-//! this is now available as [`rtrb::arc::RingBuffer`](arc::RingBuffer).*
+//! this is now available as [`rtrb::arc::RingBuffer`](arc::RingBuffer).
+//! Use this if you can't decide!*
 //!
 //! The following table gives an overview about the available types of ring buffer.
 //! Further details are explained in the sections below.
@@ -9,12 +10,12 @@
 //! | module | storage | reference counted | cacheline padded | contiguous chunks |
 //! |-|-|-|-|-|
 //! | [`arc`], [`arc2`] | heap | ✔️ | ✔️ ||
-//! | [`mod@array`] | array || ✔️ ||
 //! | [`mod@slice`] | heap (or wherever) || ✔️ ||
+//! | [`mod@array`] | array || ✔️ ||
 //! | [`array_unpadded`], [`array_unpadded2`] | array ||||
 //! | [`bip_arc`], [`bip_arc2`] | heap | ✔️ | ✔️ | ✔️ |
-//! | [`bip_array`] | array || ✔️ | ✔️ |
 //! | [`bip_slice`] | heap (or wherever) || ✔️ | ✔️ |
+//! | [`bip_array`] | array || ✔️ | ✔️ |
 //! | [`vrb_arc2`] | mmap | ✔️ | ✔️ | ✔️ |
 //!
 //! Modules ending with `2` use capacities that are powers of two.
