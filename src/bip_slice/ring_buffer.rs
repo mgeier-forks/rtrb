@@ -282,15 +282,11 @@ impl<T> RingBuffer<T> {
     /// ```
     #[cfg(target_has_atomic = "8")]
     pub fn producer(&self) -> Option<Producer<'_, T>> {
-        if self
-            .has_producer
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-        {
+        if self.has_producer.swap(true, Ordering::SeqCst) {
+            None
+        } else {
             // SAFETY: There is no producer yet.
             Some(unsafe { self.producer_unchecked() })
-        } else {
-            None
         }
     }
 
@@ -340,15 +336,11 @@ impl<T> RingBuffer<T> {
     /// ```
     #[cfg(target_has_atomic = "8")]
     pub fn consumer(&self) -> Option<Consumer<'_, T>> {
-        if self
-            .has_consumer
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-        {
+        if self.has_consumer.swap(true, Ordering::SeqCst) {
+            None
+        } else {
             // SAFETY: There is no consumer yet.
             Some(unsafe { self.consumer_unchecked() })
-        } else {
-            None
         }
     }
 
