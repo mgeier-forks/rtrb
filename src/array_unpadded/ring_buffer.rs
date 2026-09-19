@@ -299,8 +299,6 @@ impl<T> RingBufferUnsized<T> {
     /// # Safety
     ///
     /// This can only be called in the `Drop` implementation of the ring buffer.
-    ///
-    /// The threads must have been synchronized before via `self.flags`.
     #[inline(never)]
     unsafe fn drop_all_elements(&mut self) {
         // These atomic variables are *not* used for synchronizing the threads

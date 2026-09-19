@@ -14,8 +14,6 @@ use crate::cache_padded::CachePadded;
 
 use super::{Consumer, Producer};
 
-const IS_ABANDONED: u8 = 0b10000000;
-
 dst_ring_buffer_instantiation! {
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
@@ -27,7 +25,7 @@ dst_ring_buffer_instantiation! {
 pub struct RingBuffer<T> {
     head: CachePadded<AtomicUsize>,
     tail: CachePadded<AtomicUsize>,
-    flags: AtomicU8,
+    is_abandoned: AtomicBool,
     /// Storage for the ring buffer elements (dynamically sized).
     ///
     /// This must be in an `UnsafeCell` because both producer and consumer
@@ -139,7 +137,7 @@ impl<T> RingBuffer<T> {
     ///
     /// This can only be called in the `Drop` implementation of the ring buffer.
     ///
-    /// The threads must have been synchronized before via `self.flags`.
+    /// The threads must have been synchronized before via `self.is_abandoned`.
     #[inline(never)]
     unsafe fn drop_all_elements(&mut self) {
         // These atomic variables are *not* used for synchronizing the threads
@@ -206,15 +204,11 @@ impl<T> RingBuffer<T> {
     }
 
     pub(super) unsafe fn abandon(&self) -> bool {
-        // The "store" part of `fetch_or()` has to use `Release` to make sure that any previous writes
+        // The "store" part of `swap()` has to use `Release` to make sure that any previous writes
         // to the ring buffer happen before it (in the thread that drops first).
         // The "load" part can be `Relaxed` for the first thread,
         // but it must be `Acquire` for the second one (see below).
-        if self.flags.fetch_or(IS_ABANDONED, Ordering::Release) & IS_ABANDONED == 0 {
-            // The flag wasn't set before, so we are the first to drop our
-            // producer/consumer and it should not be dropped yet.
-            false
-        } else {
+        if self.is_abandoned.swap(true, Ordering::Release) {
             // The flag was already set, i.e. the other thread has already dropped its
             // consumer/producer and it can be dropped now.
 
@@ -226,12 +220,16 @@ impl<T> RingBuffer<T> {
             //core::sync::atomic::fence(Ordering::Acquire);
             // ... but as long as ThreadSanitizer doesn't support fences,
             // we use load(Acquire) as a work-around to avoid false positives:
-            let _ = self.flags.load(Ordering::Acquire);
+            let _ = self.is_abandoned.load(Ordering::Acquire);
             true
+        } else {
+            // The flag wasn't set before, so we are the first to drop our
+            // producer/consumer and it should not be dropped yet.
+            false
         }
     }
 
     pub(super) fn is_abandoned(&self) -> bool {
-        self.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
+        self.is_abandoned.load(Ordering::Acquire)
     }
 }

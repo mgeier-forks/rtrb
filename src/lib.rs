@@ -201,7 +201,7 @@ mod cache_padded {
 }
 
 mod atomic {
-    pub use core::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+    pub use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 }
 
 #[macro_use]
