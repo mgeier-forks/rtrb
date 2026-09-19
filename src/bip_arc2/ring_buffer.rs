@@ -98,8 +98,7 @@ impl<T> RingBuffer<T> {
     ///
     /// # Panics
     ///
-    /// Panics if `capacity * size_of::<T>()` exceeds `isize::MAX` bytes or,
-    /// when `T` is a zero-sized type, if `capacity` is larger than `usize::MAX / 2`.
+    /// Panics if `capacity` is larger than `usize::MAX / 2`.
     ///
     /// # Examples
     ///

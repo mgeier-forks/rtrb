@@ -105,8 +105,7 @@ impl<T> RingBuffer<T> {
     ///
     /// # Panics
     ///
-    /// Panics if `capacity * size_of::<T>()` exceeds `isize::MAX` bytes or,
-    /// when `T` is a zero-sized type, if `capacity` is larger than `usize::MAX / 2`.
+    /// Panics if `capacity` is larger than `usize::MAX / 2`.
     ///
     /// # Examples
     ///
@@ -167,6 +166,10 @@ impl<T> RingBuffer<T> {
     /// [`RingBuffer::new()`], which will automatically allocate the required memory
     /// on the heap.
     ///
+    /// # Panics
+    ///
+    /// Panics if `capacity` is larger than `usize::MAX / 2`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -201,6 +204,11 @@ impl<T> RingBuffer<T> {
     /// # unsafe { std::alloc::dealloc(storage.as_mut_ptr().cast(), RingBufferF32::layout(128)); }
     /// ```
     pub fn new_at(storage: &mut [MaybeUninit<u8>], capacity: usize) -> Option<&Self> {
+        let capacity = Self::update_capacity(capacity);
+        assert!(
+            capacity.checked_mul(2).is_some(),
+            "capacity exceeds usize::MAX / 2"
+        );
         let layout = Self::layout(capacity);
         if storage.len() == layout.size() && (storage.as_ptr() as usize) % layout.align() == 0 {
             // SAFETY: Size and alignment match, lifetime and exclusivity are guaranteed by &mut.
