@@ -160,3 +160,19 @@ jobs:
         working-directory: performance-comparison
         run: |
           cargo test --benches
+
+  # compile on a target that has no atomic compare-and-swap operations
+  no-cas:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone Git repository
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv6m-none-eabi
+      - name: Check whether it compiles
+        run: |
+          cargo build --no-default-features --target thumbv6m-none-eabi --verbose
