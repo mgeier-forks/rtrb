@@ -150,6 +150,17 @@ impl<T, const N: usize> RingBuffer<T, N> {
         Self::construct()
     }
 
+    /// Create a producer and a consumer, requiring exclusive access to the `RingBuffer`.
+    ///
+    /// The exclusive access requirement can be very restrictive;
+    /// alternatively you can use [`RingBuffer::producer()`] and [`RingBuffer::consumer()`],
+    /// or, if you are adventurous, [`RingBuffer::producer_unchecked()`] and
+    /// [`RingBuffer::producer_unchecked()`].
+    pub fn split(&mut self) -> (Producer<'_, T>, Consumer<'_, T>) {
+        // SAFETY: `&mut self` guarantees that there are no other producers/consumers.
+        unsafe { (self.producer_unchecked(), self.consumer_unchecked()) }
+    }
+
     /// Creates a [`Producer`] (if it doesn't exist yet) for writing into the `RingBuffer`.
     ///
     /// # Examples
