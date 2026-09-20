@@ -132,6 +132,17 @@ impl<T> RingBuffer<T> {
         Self::construct(capacity)
     }
 
+    /// Create a producer and a consumer, requiring exclusive access to the `RingBuffer`.
+    ///
+    /// The exclusive access requirement can be very restrictive;
+    /// alternatively you can use [`RingBuffer::producer()`] and [`RingBuffer::consumer()`],
+    /// or, if you are adventurous, [`RingBuffer::producer_unchecked()`] and
+    /// [`RingBuffer::producer_unchecked()`].
+    pub fn split(&mut self) -> (Producer<'_, T>, Consumer<'_, T>) {
+        // SAFETY: `&mut self` guarantees that there are no other producers/consumers.
+        unsafe { (self.producer_unchecked(), self.consumer_unchecked()) }
+    }
+
     /// Calculates the required memory layout using type `T` and the given `capacity`.
     ///
     /// This can be used to allocate (e.g. with [`std::alloc::alloc()`])
@@ -258,6 +269,23 @@ impl<T> RingBuffer<T> {
         let ptr = Self::coerce(ptr, capacity);
         // SAFETY: `ptr` must be non-null and object must be fully initialized.
         unsafe { &*ptr }
+    }
+
+    /// Creates a new `RingBuffer` in the given slice of memory, provides producer and consumer.
+    ///
+    /// Same as [`RingBuffer::new_at()`], but returning a pair of producer and consumer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `capacity` is larger than `usize::MAX / 2`.
+    pub fn new_at_split(
+        storage: &mut [MaybeUninit<u8>],
+        capacity: usize,
+    ) -> Option<(Producer<'_, T>, Consumer<'_, T>)> {
+        Self::new_at(storage, capacity).map(|rb| {
+            // SAFETY: This is a fresh ring buffer that noone else has access to.
+            unsafe { (rb.producer_unchecked(), rb.consumer_unchecked()) }
+        })
     }
 
     /// Creates a [`Producer`] (if it doesn't exist yet) for writing into the `RingBuffer`.
