@@ -144,8 +144,8 @@
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 
-// For backwards compatibility. May be deprecated and removed in the future.
 #[doc(hidden)]
+#[deprecated(note = "Use rtrb::ChunkError instead")]
 pub use super::ChunkError;
 
 use super::{Consumer, Producer};
