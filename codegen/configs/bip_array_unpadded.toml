@@ -1,0 +1,14 @@
+arc = false
+bip = true
+padded = false
+pow2 = false
+storage = "array"
+
+module_docstring = """
+//! Bi-partite, `array` storage, no cacheline padding.
+//!
+//! Same as [`rtrb::bip_array_unpadded2`](crate::bip_array_unpadded2),
+//! but with a capacity that is not restricted to a power of two.
+//!
+//! If cacheline padding is desired, use [`rtrb::bip_array`](crate::bip_array).
+"""

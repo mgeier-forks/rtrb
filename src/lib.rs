@@ -247,6 +247,8 @@ pub mod bip_arc;
 #[cfg(feature = "alloc")]
 pub mod bip_arc2;
 pub mod bip_array;
+pub mod bip_array_unpadded;
+pub mod bip_array_unpadded2;
 pub mod bip_slice;
 pub mod slice;
 #[cfg(feature = "vrb")]
