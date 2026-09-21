@@ -86,44 +86,6 @@ use chunks::WriteChunkUninit;
 #[allow(dead_code, clippy::undocumented_unsafe_blocks)]
 mod cache_padded;
 
-/// Extension trait used to provide a [`copy_to_uninit()`](CopyToUninit::copy_to_uninit)
-/// method on built-in slices.
-///
-/// This can be used to safely copy data to the slices returned from
-/// [`WriteChunkUninit::as_mut_slices()`].
-///
-/// To use this, the trait has to be brought into scope, e.g. with:
-///
-/// ```
-/// use rtrb::CopyToUninit;
-/// ```
-pub trait CopyToUninit<T: Copy> {
-    /// Copies contents to a possibly uninitialized slice.
-    fn copy_to_uninit<'a>(&self, dst: &'a mut [MaybeUninit<T>]) -> &'a mut [T];
-}
-
-impl<T: Copy> CopyToUninit<T> for [T] {
-    /// Copies contents to a possibly uninitialized slice.
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if the two slices have different lengths.
-    fn copy_to_uninit<'a>(&self, dst: &'a mut [MaybeUninit<T>]) -> &'a mut [T] {
-        assert_eq!(
-            self.len(),
-            dst.len(),
-            "source slice length does not match destination slice length"
-        );
-        let dst_ptr = dst.as_mut_ptr().cast();
-        // SAFETY: The lengths have been checked to be equal and
-        // the mutable reference makes sure that there is no overlap.
-        unsafe {
-            self.as_ptr().copy_to_nonoverlapping(dst_ptr, self.len());
-            core::slice::from_raw_parts_mut(dst_ptr, self.len())
-        }
-    }
-}
-
 /// Error type for [`Consumer::pop()`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PopError {
@@ -204,6 +166,44 @@ impl fmt::Display for ChunkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ChunkError::TooFewSlots(_) => "too few slots available in ring buffer".fmt(f),
+        }
+    }
+}
+
+/// Extension trait used to provide a [`copy_to_uninit()`](CopyToUninit::copy_to_uninit)
+/// method on built-in slices.
+///
+/// This can be used to safely copy data to the slices returned from
+/// [`WriteChunkUninit::as_mut_slices()`].
+///
+/// To use this, the trait has to be brought into scope, e.g. with:
+///
+/// ```
+/// use rtrb::CopyToUninit;
+/// ```
+pub trait CopyToUninit<T: Copy> {
+    /// Copies contents to a possibly uninitialized slice.
+    fn copy_to_uninit<'a>(&self, dst: &'a mut [MaybeUninit<T>]) -> &'a mut [T];
+}
+
+impl<T: Copy> CopyToUninit<T> for [T] {
+    /// Copies contents to a possibly uninitialized slice.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the two slices have different lengths.
+    fn copy_to_uninit<'a>(&self, dst: &'a mut [MaybeUninit<T>]) -> &'a mut [T] {
+        assert_eq!(
+            self.len(),
+            dst.len(),
+            "source slice length does not match destination slice length"
+        );
+        let dst_ptr = dst.as_mut_ptr().cast();
+        // SAFETY: The lengths have been checked to be equal and
+        // the mutable reference makes sure that there is no overlap.
+        unsafe {
+            self.as_ptr().copy_to_nonoverlapping(dst_ptr, self.len());
+            core::slice::from_raw_parts_mut(dst_ptr, self.len())
         }
     }
 }
