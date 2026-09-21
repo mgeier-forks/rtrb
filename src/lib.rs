@@ -187,12 +187,9 @@
 //!
 //! ... no cache padding ...
 //!
-//! Cortex-M0 or M7?
-//! Cortex-M0/M0+
+//! `thumbv7em` (Cortex-M4/M7), `riscv32imac`
 //!
-//! `thumbv7em`, `riscv32imac`
-//!
-//! `thumbv6m`
+//! `thumbv6m` (Cortex-M0/M0+)
 //! `riscv32imc` (RP2040, STM32F0/L0, nRF51)
 //!
 //! ... padding only on different cores with coherent caches, e.g. STM32H7 (M7+M4), i.MX RT1170, ESP32.
