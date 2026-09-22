@@ -205,7 +205,12 @@
 //! communicate between "main code" and "interrupt handler" ...
 //!
 //! main loop ↔ ISR
-
+#![doc(
+    html_favicon_url = "https://raw.githubusercontent.com/mgeier/rtrb/refs/heads/main/favicon.svg"
+)]
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/mgeier/rtrb/refs/heads/main/rtrb-logo.svg"
+)]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(missing_docs, missing_debug_implementations)]
 // Add "Available on crate feature ... only." on docs.rs (where applicable).
