@@ -5,5 +5,9 @@ pow2 = false
 storage = "dst"
 
 module_docstring = """
-//! A bi-partite ring buffer, "slice" variant.
+//! Bi-partite, storage on the heap or in user-provided memory, no reference counting.
+//!
+//! In contrast to [`rtrb::bip_arc`](crate::bip_arc), this provides a [`RingBuffer`]
+//! that is *not* automatically dropped when both its [`Producer`] and its [`Consumer`]
+//! go out of scope.
 """

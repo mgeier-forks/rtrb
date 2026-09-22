@@ -2,7 +2,7 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/vrb_arc2.toml`.
 
-//! Ring buffer using a virtual memory trick.
+//! Storage using a virtual memory trick, reference-counted producer and consumer.
 //!
 //! Phil Howard is maybe the inventor (2001?):
 //! <http://web.archive.org/web/20190208212054/http://freshmeat.sourceforge.net/projects/vrb/>

@@ -2,9 +2,10 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/bip_array.toml`.
 
-//! A bi-partite ring buffer with a compile-time capacity.
+//! Bi-partite, `array` storage.
 //!
-//! See [`rtrb::bip_arc`](crate::bip_arc) for a bi-partite ring buffer with dynamic storage.
+//! See [`rtrb::bip_arc`](crate::bip_arc) and [`rtrb::bip_slice`](crate::bip_slice)
+//! for bi-partite ring buffers with dynamic storage.
 //!
 //! *See the [crate-level documentation](crate) for information about the available options.*
 //!

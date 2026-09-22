@@ -198,7 +198,7 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// Creates a [`Producer`], assuming it doesn't exist yet.
     ///
     /// This is only provided for some bare-metal targets that don't support
-    /// atomic compare-and-swap (CAS) operations, e.g. `thumbv6m-none-eabi`.
+    /// atomic read-modify-write (RMW) operations, e.g. `thumbv6m-none-eabi`.
     /// In most cases, you should use [`RingBuffer::producer()`] instead.
     ///
     /// # Safety

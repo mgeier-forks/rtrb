@@ -7,7 +7,7 @@ pow2 = true
 storage = "vrb"
 
 module_docstring = """
-//! Ring buffer using a virtual memory trick.
+//! Storage using a virtual memory trick, reference-counted producer and consumer.
 //!
 //! Phil Howard is maybe the inventor (2001?):
 //! <http://web.archive.org/web/20190208212054/http://freshmeat.sourceforge.net/projects/vrb/>

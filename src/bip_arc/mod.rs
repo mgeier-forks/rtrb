@@ -2,7 +2,7 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/bip_arc.toml`.
 
-//! A bi-partite ring buffer.
+//! Bi-partite, heap storage, reference-counted producer and consumer.
 //!
 //! Simon Cooke (2003)
 //! <https://www.codeproject.com/Articles/3479/The-Bip-Buffer-The-Circular-Buffer-with-a-Twist>

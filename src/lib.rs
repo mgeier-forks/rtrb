@@ -9,16 +9,20 @@
 //!
 //! | module | storage | reference counted | cacheline padded | contiguous chunks |
 //! |-|-|-|-|-|
-//! | [`arc`], [`arc2`] | heap | ✔️ | ✔️ ||
+//! | [`arc`]<br>[`arc2`] | heap | ✔️ | ✔️ ||
 //! | [`mod@slice`] | heap (or wherever) || ✔️ ||
 //! | [`mod@array`] | array || ✔️ ||
-//! | [`array_unpadded`], [`array_unpadded2`] | array ||||
-//! | [`bip_arc`], [`bip_arc2`] | heap | ✔️ | ✔️ | ✔️ |
+//! | [`array_unpadded`]<br>[`array_unpadded2`] | array ||||
+//! | [`bip_arc`]<br>[`bip_arc2`] | heap | ✔️ | ✔️ | ✔️ |
 //! | [`bip_slice`] | heap (or wherever) || ✔️ | ✔️ |
 //! | [`bip_array`] | array || ✔️ | ✔️ |
-//! | [`vrb_arc2`] | mmap | ✔️ | ✔️ | ✔️ |
+//! | [`bip_array_unpadded`]<br>[`bip_array_unpadded2`] | array ||| ✔️ |
+//! | [`vrb_arc2`] | virtual memory | ✔️ | ✔️ | ✔️ |
 //!
 //! Modules ending with `2` use capacities that are powers of two.
+//!
+//! Modules containing `arc` require the `alloc` feature (which is enabled by default),
+//! [`rtrb::vrb_arc2`](vrb_arc2) requires the `vrb` feature.
 //!
 //! # A Quick Example
 //!
@@ -144,9 +148,18 @@
 //! TODO
 //!
 //!
-//! # Cache Padded
+//! # Cacheline Padded
 //!
-//! TODO
+//! Unless their module name contains `unpadded`, all ring buffers use
+//! [`CachePadded`](https://docs.rs/crossbeam-utils/latest/crossbeam_utils/struct.CachePadded.html)
+//! (vendored from [crossbeam-utils](https://crates.io/crates/crossbeam-utils))
+//! around the internal atomic "read" and "write" indices.
+//! This avoids [false sharing](https://en.wikipedia.org/wiki/False_sharing)
+//! between the producer and the consumer thread.
+//!
+//! On (embedded) systems without coherent caches shared between cores
+//! (or with only one core) this is not relevant and the memory overhead can be avoided
+//! by using the `unpadded` variants, e.g. [`rtrb::array_unpadded`](array_unpadded).
 //!
 //!
 //! # Calculation of Indices
@@ -181,24 +194,29 @@
 //! ```
 //!
 //!
-//! # Usage in Embedded Systems
+//! # Usage in Bare-Metal/Embedded Systems
 //!
-//! ... still wait-free, no critical sections
+//! ... `no_std`
 //!
-//! ... no cache padding ...
+//! ... multiple aspects: `alloc` availability, support for atomic operations,
+//! cacheline padding, power-of-two indices, TODO: DMA
 //!
-//! `thumbv7em` (Cortex-M4/M7), `riscv32imac`
+//! ... padding only with producer and consumer on different cores with coherent caches ...
 //!
-//! `thumbv6m` (Cortex-M0/M0+)
-//! `riscv32imc` (RP2040, STM32F0/L0, nRF51)
+//! ... STM32MP15x: two cache-coherent Cortex-A7 cores (`armv7a-none-eabihf`),
+//! one not cache-coherent Cortex-M4 coprocessor (`thumbv7em-none-eabihf`)
 //!
-//! ... padding only on different cores with coherent caches, e.g. STM32H7 (M7+M4), i.MX RT1170, ESP32.
-//!
-//! ... for example STM32H7 is a dual-core MCU, but those cores are not cache-coherent,
+//! ... for example STM32H7 is a dual-core MCU (Cortex-M7 + Cortex-M4, both `thumbv7em`),
+//! but those cores are not cache-coherent,
 //! so the ring buffer should live in a non-cacheable MPU region
 //! and doesn't need cacheline padding.
 //!
-//! ... the non-`arc` modules don't need `target_has_atomic`
+//! ... the padded variants still work, but they will use more memory than necessary.
+//!
+//! Modules containing `arc` need `target_has_atomic`,
+//! all others work on hardware without *read-modify-write* (RMW) support,
+//! e.g. `thumbv6m` (Cortex-M0/M0+), `riscv32imc` (RP2040, STM32F0/L0, nRF51).
+//! No critical sections are used anywhere, so everything is still wait-free.
 //!
 //! ... even though the documentation uses the term "thread" ...
 //! a single CPU core in a microcontrollers ... no OS threads ...

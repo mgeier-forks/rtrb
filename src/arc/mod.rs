@@ -2,7 +2,7 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/arc.toml`.
 
-//! Storage on the heap with reference-counted producer and consumer.
+//! Heap storage, reference-counted producer and consumer.
 //! Use this if you can't decide!
 //!
 //! *See the [crate-level documentation](crate) for information about the available options.*

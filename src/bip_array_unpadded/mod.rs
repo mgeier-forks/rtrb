@@ -2,7 +2,7 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/bip_array_unpadded.toml`.
 
-//! Bi-partite, `array` storage, no cacheline padding.
+//! Same as [`rtrb::bip_array`](crate::bip_array), but without cacheline padding.
 //!
 //! Same as [`rtrb::bip_array_unpadded2`](crate::bip_array_unpadded2),
 //! but with a capacity that is not restricted to a power of two.

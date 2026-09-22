@@ -2,7 +2,7 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/slice.toml`.
 
-//! Storage on the heap or in user-provided memory.
+//! Storage on the heap or in user-provided memory, no reference counting.
 //!
 //! In contrast to [`rtrb::arc`](crate::arc), this provides a [`RingBuffer`]
 //! that is *not* automatically dropped when both its [`Producer`] and its [`Consumer`]

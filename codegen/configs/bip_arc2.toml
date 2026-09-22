@@ -5,7 +5,7 @@ pow2 = true
 storage = "dst"
 
 module_docstring = """
-//! A bi-partite ring buffer whose capacity is a power of two.
+//! Same as [`rtrb::bip_arc`](crate::bip_arc), but with a capacity that is a power of two.
 //!
 //! If you need arbitrary capacities, use [`rtrb::bip_arc`](crate::bip_arc) instead.
 """

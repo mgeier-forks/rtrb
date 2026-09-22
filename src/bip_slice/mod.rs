@@ -2,7 +2,11 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/bip_slice.toml`.
 
-//! A bi-partite ring buffer, "slice" variant.
+//! Bi-partite, storage on the heap or in user-provided memory, no reference counting.
+//!
+//! In contrast to [`rtrb::bip_arc`](crate::bip_arc), this provides a [`RingBuffer`]
+//! that is *not* automatically dropped when both its [`Producer`] and its [`Consumer`]
+//! go out of scope.
 //!
 //! *See the [crate-level documentation](crate) for information about the available options.*
 //!

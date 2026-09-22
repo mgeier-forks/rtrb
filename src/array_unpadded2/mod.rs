@@ -2,8 +2,6 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/array_unpadded2.toml`.
 
-//! `array` storage, no cacheline padding, power-of-2 capacity.
-//!
 //! Same as [`rtrb::array_unpadded`](crate::array_unpadded),
 //! but with a capacity that is a power of two.
 //!

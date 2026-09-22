@@ -2,7 +2,7 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/bip_arc2.toml`.
 
-//! A bi-partite ring buffer whose capacity is a power of two.
+//! Same as [`rtrb::bip_arc`](crate::bip_arc), but with a capacity that is a power of two.
 //!
 //! If you need arbitrary capacities, use [`rtrb::bip_arc`](crate::bip_arc) instead.
 //!

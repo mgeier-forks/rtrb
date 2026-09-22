@@ -2,7 +2,7 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/array.toml`.
 
-//! Storage in an `array` (i.e. with a compile-time capacity).
+//! `array` storage (i.e. with a compile-time capacity).
 //!
 //! This module uses cacheline padding to avoid false sharing,
 //! which is relevant if producer and consumer live on different coherent-cached cores.
@@ -11,6 +11,9 @@
 //! or if there are no multiple cores in the first place (e.g. on a single-core MCU), use
 //! [`rtrb::array_unpadded2`](crate::array_unpadded2) (with a capacity that is a power of two)
 //! or [`rtrb::array_unpadded`](crate::array_unpadded).
+//!
+//! See [`rtrb::arc`](crate::arc) and [`rtrb::slice`](crate::slice)
+//! for ring buffers with dynamic storage.
 //!
 //! *See the [crate-level documentation](crate) for information about the available options.*
 //!

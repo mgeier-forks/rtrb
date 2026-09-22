@@ -161,8 +161,8 @@ jobs:
         run: |
           cargo test --benches
 
-  # compile on a target that has no atomic compare-and-swap operations
-  no-cas:
+  # compile on a target that has no atomic read-modify-write operations
+  no-rmw:
     runs-on: ubuntu-latest
     steps:
       - name: Clone Git repository
