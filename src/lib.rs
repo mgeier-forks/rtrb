@@ -194,6 +194,11 @@
 //! ```
 //!
 //!
+//! # Contiguous Chunks
+//!
+//! TODO
+//!
+//!
 //! # Usage in Bare-Metal/Embedded Systems
 //!
 //! ... `no_std`
