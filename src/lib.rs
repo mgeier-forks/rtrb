@@ -83,20 +83,31 @@
 //!
 //! # General Properties
 //!
-//! ... SPSC ... bounded ... wrap-around ... single element vs chunks? ...
+//! With all ring buffers in this crate,
+//! only a single thread can write into the ring buffer and a single thread
+//! (typically a different one) can read from it.
+//! This setup is called *single producer single consumer* (SPSC).
+//! This is of course less flexible than allowing multiple producers and/or consumers,
+//! but on the flip side the implementation is much simpler and also faster.
 //!
-//! Reading from and writing into the ring buffer is *lock-free* and *wait-free*.
+//! ... some modules are faster than others -> power of 2
+//!
+//! Reading from and writing into the ring buffer is always *lock-free* and *wait-free*.
 //! All reading and writing functions return immediately.
 //! Attempts to write to a full buffer return an error;
 //! values inside the buffer are *not* overwritten.
 //! Attempts to read from an empty buffer return an error as well.
-//!
-//! Only a single thread can write into the ring buffer and a single thread
-//! (typically a different one) can read from the ring buffer.
-//! If the queue is empty, there is no way for the reading thread to wait
+//! This means that if the ring buffer is empty, there is no way for the reading thread to wait
 //! for new data, other than trying repeatedly until reading succeeds.
-//! Similarly, if the queue is full, there is no way for the writing thread
+//! Similarly, if the ring buffer is full, there is no way for the writing thread
 //! to wait for newly available space to write to, other than trying repeatedly.
+//!
+//! All ring buffers in this crate are *bounded*,
+//! which means that their capacity is set once and cannot grow.
+//!
+//! ... wrap-around
+//!
+//! ... single element vs chunks -> contiguous chunks
 //!
 //!
 //! # Storage
@@ -145,7 +156,23 @@
 //!
 //! # Reference Counted
 //!
-//! TODO
+//! All modules containing `arc` have a reference-counted producer and consumer.
+//! Calling this "reference-counted" is probably a bit of a stretch,
+//! since the counters for producer and consumer can both at most reach `1`,
+//! which they immediately do upon ring buffer creation,
+//! which creates and returns a producer/consumer pair
+//! (see e.g. [`rtrb::arc::RingBuffer::new()`](arc::RingBuffer::new)).
+//! The `RingBuffer` object itself is not directly accessible.
+//! Once both the producer and the consumer are being dropped
+//! (i.e. both their reference counts reach `0`), the whole `RingBuffer` is dropped.
+//!
+//! All other modules (i.e. the ones *not* containing `arc`)
+//! do provide access to the `RingBuffer` in some form,
+//! which then provides methods to create a producer and a consumer
+//! (see e.g. [`rtrb::array::RingBuffer::producer()`](array::RingBuffer::producer)).
+//! In those modules, dropping producer and consumer does *not* automatically drop the `RingBuffer`.
+//! All non-`arc` producers and consumers have a lifetime argument that
+//! (unless `'static`) infects all data structures which contain them.
 //!
 //!
 //! # Cacheline Padded

@@ -200,6 +200,8 @@ impl<T, const N: usize> RingBuffer<T, N> {
     /// This is only provided for some bare-metal targets that don't support
     /// atomic read-modify-write (RMW) operations, e.g. `thumbv6m-none-eabi`.
     /// In most cases, you should use [`RingBuffer::producer()`] instead.
+    /// If a `&mut RingBuffer` is available, [`RingBuffer::split()`] can be used,
+    /// which doesn't need RMW operations either (because the type system guarantees exclusivity).
     ///
     /// # Safety
     ///
