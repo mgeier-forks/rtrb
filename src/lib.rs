@@ -264,7 +264,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(missing_docs, missing_debug_implementations)]
 // Add "Available on crate feature ... only." on docs.rs (where applicable).
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
