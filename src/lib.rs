@@ -21,8 +21,10 @@
 //!
 //! Modules ending with `2` use capacities that are powers of two.
 //!
-//! Modules containing `arc` require the `alloc` feature (which is enabled by default),
-//! [`rtrb::vrb_arc2`](vrb_arc2) requires the `vrb` feature.
+//! Modules containing `arc` require the <span class="stab portability"><code>alloc</code></span>
+//! feature (which is enabled by default), [`rtrb::vrb_arc2`](vrb_arc2) requires the
+//! <span class="stab portability"><code>vrb</code></span> feature.
+//!
 //!
 //! # A Quick Example
 //!
@@ -243,18 +245,20 @@
 //! so the ring buffer should live in a non-cacheable MPU region
 //! and doesn't need cacheline padding.
 //!
+//! ... RP2040 is dual-core with no data cache at all
+//!
 //! ... the padded variants still work, but they will use more memory than necessary.
 //!
 //! Modules containing `arc` need `target_has_atomic`,
 //! all others work on hardware without *read-modify-write* (RMW) support,
-//! e.g. `thumbv6m` (Cortex-M0/M0+), `riscv32imc` (RP2040, STM32F0/L0, nRF51).
+//! e.g. `thumbv6m` (Cortex-M0/M0+) and `riscv32imc`.
 //! No critical sections are used anywhere, so everything is still wait-free.
 //!
 //! ... even though the documentation uses the term "thread" ...
 //! a single CPU core in a microcontrollers ... no OS threads ...
 //! communicate between "main code" and "interrupt handler" ...
 //!
-//! main loop ↔ ISR
+//! ... main loop ↔ interrupt service routine (ISR) on a single core
 #![doc(
     html_favicon_url = "https://raw.githubusercontent.com/mgeier/rtrb/refs/heads/main/favicon.svg"
 )]
