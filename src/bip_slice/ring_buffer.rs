@@ -318,7 +318,7 @@ impl<T> RingBuffer<T> {
     /// ```
     #[cfg(target_has_atomic = "8")]
     pub fn producer(&self) -> Option<Producer<'_, T>> {
-        if self.has_producer.swap(true, Ordering::SeqCst) {
+        if self.has_producer.swap(true, Ordering::AcqRel) {
             None
         } else {
             // SAFETY: There is no producer yet.
@@ -342,7 +342,7 @@ impl<T> RingBuffer<T> {
         let tail = self.tail.load(Ordering::Relaxed);
 
         // NB: If this is called from producer(), this is already set.
-        self.has_producer.store(true, Ordering::SeqCst);
+        self.has_producer.store(true, Ordering::Release);
 
         // SAFETY: Callers must ensure that this is the only producer.
         unsafe { Producer::new(self, head, tail) }
@@ -374,7 +374,7 @@ impl<T> RingBuffer<T> {
     /// ```
     #[cfg(target_has_atomic = "8")]
     pub fn consumer(&self) -> Option<Consumer<'_, T>> {
-        if self.has_consumer.swap(true, Ordering::SeqCst) {
+        if self.has_consumer.swap(true, Ordering::AcqRel) {
             None
         } else {
             // SAFETY: There is no consumer yet.
@@ -394,7 +394,7 @@ impl<T> RingBuffer<T> {
         let tail = self.tail.load(Ordering::Relaxed);
 
         // NB: If this is called from consumer(), this is already set.
-        self.has_consumer.store(true, Ordering::SeqCst);
+        self.has_consumer.store(true, Ordering::Release);
 
         // SAFETY: Callers must ensure that this is the only consumer.
         unsafe { Consumer::new(self, head, tail) }
@@ -406,7 +406,7 @@ impl<T> RingBuffer<T> {
     ///
     /// See also [`Consumer::has_producer()`].
     pub fn has_producer(&self) -> bool {
-        self.has_producer.load(Ordering::SeqCst)
+        self.has_producer.load(Ordering::Acquire)
     }
 
     /// Returns `true` if a [`Consumer`] exists for this `RingBuffer`.
@@ -415,7 +415,7 @@ impl<T> RingBuffer<T> {
     ///
     /// See also [`Producer::has_consumer()`].
     pub fn has_consumer(&self) -> bool {
-        self.has_consumer.load(Ordering::SeqCst)
+        self.has_consumer.load(Ordering::Acquire)
     }
 
     const fn update_capacity(capacity: usize) -> usize {
@@ -531,10 +531,10 @@ impl<T> RingBuffer<T> {
     }
 
     pub(super) fn drop_producer(&self) {
-        self.has_producer.store(false, Ordering::SeqCst);
+        self.has_producer.store(false, Ordering::Release);
     }
 
     pub(super) fn drop_consumer(&self) {
-        self.has_consumer.store(false, Ordering::SeqCst);
+        self.has_consumer.store(false, Ordering::Release);
     }
 }
