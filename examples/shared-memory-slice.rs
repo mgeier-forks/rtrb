@@ -171,7 +171,10 @@ fn main() -> Result<(), Error> {
             loop {
                 if let Ok(value) = c.pop() {
                     print_flush!(" {value}");
-                } else if !c.has_producer() {
+                } else if !c.has_producer() && c.is_empty() {
+                    // NB: is_empty() checks for the very unlikely case where the sender
+                    // pushes a value and drops the producer right after we called pop()
+                    // (and found an empty queue) but before our call to has_producer().
                     break;
                 }
                 // We receive slower than we are sending:
