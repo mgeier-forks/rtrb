@@ -42,12 +42,16 @@ impl Owner<'_> {
     }
 }
 
-// NB: This is not really necessary here, it is only relevant if T implements Drop.
+// NB: This is not really necessary in this example,
+// it is only relevant if the stored type needs to be dropped.
 impl Drop for Owner<'_> {
     fn drop(&mut self) {
-        let ptr = self.0 as *const _ as *mut Buffer;
-        // SAFETY: The reference self.0 will not be accessed after this.
-        unsafe { ptr.drop_in_place() };
+        if let Some(mut c) = self.buffer().consumer() {
+            // All remaining elements are dropped here.
+            c.read_chunk(c.slots()).unwrap().commit_all();
+        } else {
+            println!("Owner is dropped while consumer is still connected.");
+        }
     }
 }
 
@@ -116,19 +120,14 @@ fn main() -> Result<(), Error> {
             println!("please start the same program again (in another terminal)");
             print!("waiting for connection ...");
             let mut counter = 0;
-            loop {
-                if p.has_consumer() {
-                    break;
+            while !p.has_consumer() {
+                if counter == 100 {
+                    println!();
+                    return Err(Error::NoConnection);
                 }
                 print_flush!(".");
                 sleep();
                 counter += 1;
-                if counter < 100 {
-                    continue;
-                } else {
-                    println!();
-                    return Err(Error::NoConnection);
-                }
             }
             println!(" connected.");
             print_flush!("sending data ...");
@@ -148,11 +147,12 @@ fn main() -> Result<(), Error> {
             // before we let the ring buffer go out of scope.
             //
             // However, in this very case this is not strictly necessary
-            // because the payload type `i32` does not implement `Drop`.
+            // because the payload type `i32` does not need dropping.
             // So even if the `RingBuffer` object is dropped, the numbers in it will remain
             // in the shared memory, which will be available until the last process exits.
             //
-            // Remove the remaining lines in this clode block to try it out!
+            // Remove the remaining lines in this code block to try it out!
+            // You should see a message "Owner is dropped ...".
 
             print!("waiting for disconnection ...");
             while owner.buffer().has_consumer() {
