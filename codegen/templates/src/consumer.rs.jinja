@@ -34,7 +34,11 @@ use super::Producer;
 /// [`Consumer::pop_partial_slice()`] and [`Consumer::pop_partial_slice_uninit()`].
 ///
 /// The number of slots currently available for reading can be obtained with
+{% if bip %}
+/// [`Consumer::slots_contiguous()`].
+{% else %}
 /// [`Consumer::slots()`].
+{% endif %}
 {% if arc %}
 ///
 /// A `Consumer` can only be created with [`RingBuffer::new()`]
@@ -196,26 +200,18 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
         }
     }
 
+{% if not bip %}
     /// Returns the number of slots available for reading.
     ///
-{% if not bip %}
     /// This number will also be reported via a [`ChunkError`] when calling
     /// [`read_chunk()`](Consumer::read_chunk) with a larger number.
     ///
-{% endif %}
     /// Since items can be concurrently produced on another thread, the actual number
     /// of available slots may increase at any time (up to the [`Consumer::capacity()`]).
     ///
     /// To check for a single available slot,
     /// using [`Consumer::is_empty()`] is often quicker
     /// (because it might not have to check an atomic variable).
-    ///
-{% if bip %}
-    /// Due to wrap-around of the internal buffer, the reported slots might not be
-    /// on a contiguous segment and therefore not entirely available for reading with
-    /// [`read_chunk()`](Consumer::read_chunk). To get the number of contiguous slots,
-    /// [`slots_contiguous_first()`](Consumer::slots_contiguous_first) can be used.
-{% endif %}
     ///
     /// # Examples
     ///
@@ -228,54 +224,24 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// assert_eq!(producer.push(0.0), Ok(()));
     /// assert_eq!(consumer.slots(), 1);
     /// ```
-{% if bip %}
-    pub fn slots(&self) -> usize {
-        let (one, two) = self.slots_contiguous();
-        one + two
-    }
-{% else %}
     pub fn slots(&self) -> usize {
         let b = &self.buffer;
         let tail = b.tail();
         self.cached_tail.set(tail);
         b.distance(self.cached_head.get(), tail)
     }
-{% endif %}
 
     /// Returns the number of cached slots.
     ///
     /// In many cases, this will not provide all available slots,
     /// but it might be marginally faster than [`Consumer::slots()`]
     /// because it doesn't access the atomic write index.
-{% if bip %}
-    pub fn cached_slots(&self) -> usize {
-        let b = &self.buffer;
-        let head = self.cached_head.get();
-        let collapsed_head = b.collapse_position(head);
-        let tail = self.cached_tail.get();
-        let collapsed_tail = b.collapse_position(tail);
-        let is_empty = head == tail;
-        if !is_empty && collapsed_tail <= collapsed_head {
-            // NB: `skip` is only relevant if (collapsed) `tail < head`
-            //     (or if the buffer is full).
-
-            // `tail` has been refreshed since it last wrapped (even if `cached_tail` is outdated),
-            // therefore `skip` needs no synchronization.
-            // TODO: cache skip?
-            b.skip() - collapsed_head
-        } else {
-            collapsed_tail - collapsed_head
-        }
-    }
-{% else %}
     pub fn cached_slots(&self) -> usize {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
         self.buffer.distance(head, tail)
     }
-{% endif %}
-
-{% if bip %}
+{% else %}
     /// Returns size of first contiguous chunk and
     /// the refreshed `tail` (if it has already been refreshed) and
     /// `true` if there may be another chunk at the beginning of the buffer.
@@ -357,8 +323,6 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// wraps around, two contiguous segments might be available for reading.
     /// If the first number is `0`, the second will be `0` as well.
     ///
-    /// The sum of both numbers is returned by [`slots()`](Consumer::slots).
-    ///
     /// If you are only interested in the first number, using
     /// [`slots_contiguous_first()`](Consumer::slots_contiguous_first)
     /// should be slightly more efficient.
@@ -394,8 +358,8 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     pub fn slots_contiguous_first(&self) -> usize {
         self.slots_contiguous_helper().0
     }
-
 {% endif %}
+
     /// Returns `true` if there are currently no slots available for reading.
     ///
     /// An empty ring buffer might cease to be empty at any time
@@ -507,7 +471,11 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     }
 {% endif %}
 
-    /// Copies as many items as possible from the ring buffer to the given `slice`.
+    /// Copies as many items as possible from
+{% if bip %}
+    /// a contiguous chunk of
+{% endif %}
+    /// the ring buffer to the given `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
     ///
@@ -557,7 +525,11 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
         (popped, unsafe { &mut *(remainder as *mut _ as *mut [_]) })
     }
 
-    /// Copies as many items as possible from the ring buffer to the given uninitialized `slice`.
+    /// Copies as many items as possible from
+{% if bip %}
+    /// a contiguous chunk of
+{% endif %}
+    /// the ring buffer to the given uninitialized `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
     ///
@@ -637,11 +609,15 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     where
         T: Copy,
     {
+{% if bip %}
+        let slots = slice.len().min(self.slots_contiguous_first());
+{% else %}
         let slots = if self.cached_slots() < slice.len() {
             slice.len().min(self.slots())
         } else {
             slice.len()
         };
+{% endif %}
         let (buffer, remainder) = slice.split_at_mut(slots);
         // With MSRV 1.58, unwrap_unchecked() can be used.
         let popped = match self.pop_entire_slice_uninit(buffer) {
@@ -652,14 +628,18 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
         (popped, remainder)
     }
 
-    /// Copies as many items from the ring buffer as to fill the given `slice`.
+    /// Copies as many items from
+{% if bip %}
+    /// a contiguous chunk of
+{% endif %}
+    /// the ring buffer as to fill the given `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
     ///
     /// # Errors
     ///
-    /// If not enough data is available in the ring buffer, no items are copied and
-    /// a [`ChunkError`] with the available items is returned.
+    /// If not enough data is available in {% if bip %}a contiguous chunk of {% endif %}the ring buffer,
+    /// no items are copied and a [`ChunkError`] with the available items is returned.
     ///
     /// To copy only the available slots, [`Consumer::pop_partial_slice()`] can be used.
     /// To copy into an uninitialized slice, [`Consumer::pop_entire_slice_uninit()`] can be used.
@@ -674,7 +654,11 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
         Ok(())
     }
 
-    /// Copies as many items from the ring buffer as to fill the given uninitialized `slice`.
+    /// Copies as many items from
+{% if bip %}
+    /// a contiguous chunk of
+{% endif %}
+    /// the ring buffer as to fill the given uninitialized `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
     ///
@@ -682,8 +666,8 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     ///
     /// # Errors
     ///
-    /// If not enough data is available in the ring buffer, no items are copied and
-    /// a [`ChunkError`] with the available items is returned.
+    /// If not enough data is available in {% if bip %}a contiguous chunk of {% endif %}the ring buffer,
+    /// no items are copied and a [`ChunkError`] with the available items is returned.
     ///
     /// To copy only the available slots, [`Consumer::pop_partial_slice_uninit()`] can be used.
     /// To copy into an initialized slice, [`Consumer::pop_entire_slice()`] can be used.

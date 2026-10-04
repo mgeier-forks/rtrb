@@ -27,7 +27,6 @@ macro_rules! assert_eq_stringify {
 fn slots(
     // NB: None of these functions will reset `skip`:
     #[values(
-        |p: P, x, y| assert_eq_stringify!(p.slots(), x + y),
         |p: P, x, y| assert_eq_stringify!(p.slots_contiguous(), (x, y)),
         |p: P, x, _| assert_eq_stringify!(p.slots_contiguous_first(), x),
         |p: P, x: usize, y| assert!(p.write_chunk(x.max(y)).is_ok()),
@@ -37,7 +36,6 @@ fn slots(
     p_slots: fn(P, usize, usize),
     // NB: All these functions are resetting `skip` if `head == skip`:
     #[values(
-        |c: C, x, y| assert_eq_stringify!(c.slots(), x + y),
         |c: C, x, y| assert_eq_stringify!(c.slots_contiguous(), (x, y)),
         |c: C, x, _| assert_eq_stringify!(c.slots_contiguous_first(), x),
         |c: C, x, _| assert!(c.read_chunk(x).is_ok()),

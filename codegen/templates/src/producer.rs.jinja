@@ -37,7 +37,11 @@ use super::Consumer;
 /// [`Producer::push_entire_slice()`].
 ///
 /// The number of free slots currently available for writing can be obtained with
+{% if bip %}
+/// [`Producer::slots_contiguous()`].
+{% else %}
 /// [`Producer::slots()`].
+{% endif %}
 {% if arc %}
 ///
 /// A `Producer` can only be created with [`RingBuffer::new()`]
@@ -150,6 +154,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
         }
     }
 
+{% if not bip %}
     /// Returns the number of slots available for writing.
     ///
     /// Since items can be concurrently consumed on another thread, the actual number
@@ -158,16 +163,6 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     /// To check for a single available slot,
     /// using [`Producer::is_full()`] is often quicker
     /// (because it might not have to check an atomic variable).
-{% if bip %}
-    ///
-    /// Due to wrap-around of the internal buffer, the reported slots might not be
-    /// on a contiguous segment and therefore not entirely available for writing with
-    /// [`Producer::write_chunk()`] or
-    /// [`Producer::write_chunk_uninit()`].
-    /// To get the number of contiguous slots,
-    /// [`Producer::slots_contiguous_first()`] or
-    /// [`Producer::slots_contiguous_max()`] can be used.
-{% endif %}
     ///
     /// # Examples
     ///
@@ -198,7 +193,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
         b.capacity() - b.distance(head, tail)
     }
 
-{% if bip %}
+{% else %}
     /// Returns size of first contiguous chunk and
     /// the refreshed `head` (if it has already been refreshed) and
     /// `true` if there may be another chunk at the beginning of the buffer.
@@ -233,7 +228,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     /// When a chunk larger than the first segment is written
     /// (assuming the second number is large enough to allow that),
     /// the first segment is skipped,
-    /// effectively reducing the maximum available [`Consumer::slots()`]
+    /// temporarily reducing the total number of available slots
     /// (until the segment is overwritten again at a later point).
     ///
     /// In many cases, the second number will be `0`, but whenever the internal buffer
@@ -244,8 +239,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     /// [`Producer::slots_contiguous_first()`]
     /// should be slightly more efficient.
     ///
-    /// The sum of both numbers is returned by [`Producer::slots()`], their maximum
-    /// is returned by [`Producer::slots_contiguous_max()`].
+    /// The maximum of both numbers is returned by [`Producer::slots_contiguous_max()`].
     ///
     /// Since items can be concurrently consumed on another thread, the actual number
     /// of available slots may increase at any time
@@ -352,8 +346,8 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     /// assert!(producer.push_entire_slice(&[40, 30, 20, 10]).is_ok());
     /// assert!(producer.is_full());
     /// assert_eq!(producer.capacity(), 8);
-    /// assert_eq!(producer.slots(), 0);
-    /// assert_eq!(consumer.slots(), 5);
+    /// assert_eq!(producer.slots_contiguous(), (0, 0));
+    /// assert_eq!(consumer.slots_contiguous(), (1, 4));
     /// ```
 {% endif %}
     pub fn is_full(&self) -> bool {
@@ -363,14 +357,15 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     /// Returns the total capacity of the queue.
     ///
     /// At any time, the capacity is subdivided into
-    /// [`Producer::slots()`] available for writing and
-    /// [`Consumer::slots()`] available for
 {% if bip %}
-    /// reading, as well as potentially some slots that have been skipped in
+    /// [`Producer::slots_contiguous()`] available for writing and
+    /// [`Consumer::slots_contiguous()`] available for reading,
+    /// as well as potentially some slots that have been skipped in
     /// [`Producer::push_partial_slice()`], [`Producer::push_entire_slice()`],
     /// [`Producer::write_chunk()`] or [`Producer::write_chunk_uninit()`].
 {% else %}
-    /// reading.
+    /// [`Producer::slots()`] available for writing and
+    /// [`Consumer::slots()`] available for reading.
 {% endif %}
     ///
     /// # Examples
@@ -381,8 +376,13 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
 {{ doctest_create_ring_buffer(4096) }}
     ///
     /// assert_eq!(producer.push(-0.7), Ok(()));
+{% if bip %}
+    /// assert_eq!(producer.slots_contiguous(), (4095, 0));
+    /// assert_eq!(consumer.slots_contiguous(), (1, 0));
+{% else %}
     /// assert_eq!(producer.slots(), 4095);
     /// assert_eq!(consumer.slots(), 1);
+{% endif %}
     /// assert_eq!(producer.capacity(), 4096);
     /// assert_eq!(consumer.capacity(), 4096);
     /// ```
@@ -451,7 +451,11 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     }
 {% endif %}
 
-    /// Copies as many items as possible from the given `slice` into the ring buffer.
+    /// Copies as many items as possible from the given `slice` into
+{% if bip %}
+    /// a contiguous chunk of
+{% endif %}
+    /// the ring buffer.
     ///
     /// The written slots are automatically made available to be read by the [`Consumer`].
     ///
@@ -490,11 +494,15 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     where
         T: Copy,
     {
+{% if bip %}
+        let slots = slice.len().min(self.slots_contiguous_max());
+{% else %}
         let slots = if self.cached_slots() < slice.len() {
             slice.len().min(self.slots())
         } else {
             slice.len()
         };
+{% endif %}
         let (pushed, remainder) = slice.split_at(slots);
         // With MSRV 1.58, unwrap_unchecked() can be used.
         match self.push_entire_slice(pushed) {
@@ -505,7 +513,11 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
         (pushed, remainder)
     }
 
-    /// Copies all items from the given `slice` into the ring buffer.
+    /// Copies all items from the given `slice` into
+{% if bip %}
+    /// a contiguous chunk of
+{% endif %}
+    /// the ring buffer.
     ///
     /// The written slots are automatically made available to be read by the [`Consumer`].
     ///

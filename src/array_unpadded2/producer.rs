@@ -203,8 +203,7 @@ impl<T> Producer<'_, T> {
     ///
     /// At any time, the capacity is subdivided into
     /// [`Producer::slots()`] available for writing and
-    /// [`Consumer::slots()`] available for
-    /// reading.
+    /// [`Consumer::slots()`] available for reading.
     ///
     /// # Examples
     ///
@@ -235,7 +234,8 @@ impl<T> Producer<'_, T> {
         self.buffer.has_consumer()
     }
 
-    /// Copies as many items as possible from the given `slice` into the ring buffer.
+    /// Copies as many items as possible from the given `slice` into
+    /// the ring buffer.
     ///
     /// The written slots are automatically made available to be read by the [`Consumer`].
     ///
@@ -289,7 +289,8 @@ impl<T> Producer<'_, T> {
         (pushed, remainder)
     }
 
-    /// Copies all items from the given `slice` into the ring buffer.
+    /// Copies all items from the given `slice` into
+    /// the ring buffer.
     ///
     /// The written slots are automatically made available to be read by the [`Consumer`].
     ///

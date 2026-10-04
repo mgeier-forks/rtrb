@@ -26,7 +26,7 @@ use super::{Consumer, RingBuffer};
 /// [`Producer::push_entire_slice()`].
 ///
 /// The number of free slots currently available for writing can be obtained with
-/// [`Producer::slots()`].
+/// [`Producer::slots_contiguous()`].
 ///
 /// A `Producer` can only be created with [`RingBuffer::producer()`].
 #[derive(Debug, PartialEq, Eq)]
@@ -109,54 +109,6 @@ impl<T> Producer<'_, T> {
         }
     }
 
-    /// Returns the number of slots available for writing.
-    ///
-    /// Since items can be concurrently consumed on another thread, the actual number
-    /// of available slots may increase at any time (up to the [`Producer::capacity()`]).
-    ///
-    /// To check for a single available slot,
-    /// using [`Producer::is_full()`] is often quicker
-    /// (because it might not have to check an atomic variable).
-    ///
-    /// Due to wrap-around of the internal buffer, the reported slots might not be
-    /// on a contiguous segment and therefore not entirely available for writing with
-    /// [`Producer::write_chunk()`] or
-    /// [`Producer::write_chunk_uninit()`].
-    /// To get the number of contiguous slots,
-    /// [`Producer::slots_contiguous_first()`] or
-    /// [`Producer::slots_contiguous_max()`] can be used.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rtrb::bip_array_unpadded2::RingBuffer;
-    ///
-    /// let rb = RingBuffer::<_, 4096>::new();
-    /// let mut producer = rb.producer().unwrap();
-    /// let mut consumer = rb.consumer().unwrap();
-    /// assert_eq!(producer.push(0.5f32), Ok(()));
-    ///
-    /// assert_eq!(producer.slots(), 4095);
-    /// ```
-    pub fn slots(&self) -> usize {
-        let b = &self.buffer;
-        let head = b.head();
-        self.cached_head.set(head);
-        b.capacity() - b.distance(head, self.cached_tail.get())
-    }
-
-    /// Returns the number of cached slots.
-    ///
-    /// In many cases, this will not provide all available slots,
-    /// but it might be marginally faster than [`Producer::slots()`]
-    /// because it doesn't access the atomic read index.
-    pub fn cached_slots(&self) -> usize {
-        let b = &self.buffer;
-        let head = self.cached_head.get();
-        let tail = self.cached_tail.get();
-        b.capacity() - b.distance(head, tail)
-    }
-
     /// Returns size of first contiguous chunk and
     /// the refreshed `head` (if it has already been refreshed) and
     /// `true` if there may be another chunk at the beginning of the buffer.
@@ -191,7 +143,7 @@ impl<T> Producer<'_, T> {
     /// When a chunk larger than the first segment is written
     /// (assuming the second number is large enough to allow that),
     /// the first segment is skipped,
-    /// effectively reducing the maximum available [`Consumer::slots()`]
+    /// temporarily reducing the total number of available slots
     /// (until the segment is overwritten again at a later point).
     ///
     /// In many cases, the second number will be `0`, but whenever the internal buffer
@@ -202,8 +154,7 @@ impl<T> Producer<'_, T> {
     /// [`Producer::slots_contiguous_first()`]
     /// should be slightly more efficient.
     ///
-    /// The sum of both numbers is returned by [`Producer::slots()`], their maximum
-    /// is returned by [`Producer::slots_contiguous_max()`].
+    /// The maximum of both numbers is returned by [`Producer::slots_contiguous_max()`].
     ///
     /// Since items can be concurrently consumed on another thread, the actual number
     /// of available slots may increase at any time
@@ -314,8 +265,8 @@ impl<T> Producer<'_, T> {
     /// assert!(producer.push_entire_slice(&[40, 30, 20, 10]).is_ok());
     /// assert!(producer.is_full());
     /// assert_eq!(producer.capacity(), 8);
-    /// assert_eq!(producer.slots(), 0);
-    /// assert_eq!(consumer.slots(), 5);
+    /// assert_eq!(producer.slots_contiguous(), (0, 0));
+    /// assert_eq!(consumer.slots_contiguous(), (1, 4));
     /// ```
     pub fn is_full(&self) -> bool {
         self.next_tail().is_none()
@@ -324,9 +275,9 @@ impl<T> Producer<'_, T> {
     /// Returns the total capacity of the queue.
     ///
     /// At any time, the capacity is subdivided into
-    /// [`Producer::slots()`] available for writing and
-    /// [`Consumer::slots()`] available for
-    /// reading, as well as potentially some slots that have been skipped in
+    /// [`Producer::slots_contiguous()`] available for writing and
+    /// [`Consumer::slots_contiguous()`] available for reading,
+    /// as well as potentially some slots that have been skipped in
     /// [`Producer::push_partial_slice()`], [`Producer::push_entire_slice()`],
     /// [`Producer::write_chunk()`] or [`Producer::write_chunk_uninit()`].
     ///
@@ -340,8 +291,8 @@ impl<T> Producer<'_, T> {
     /// let mut consumer = rb.consumer().unwrap();
     ///
     /// assert_eq!(producer.push(-0.7), Ok(()));
-    /// assert_eq!(producer.slots(), 4095);
-    /// assert_eq!(consumer.slots(), 1);
+    /// assert_eq!(producer.slots_contiguous(), (4095, 0));
+    /// assert_eq!(consumer.slots_contiguous(), (1, 0));
     /// assert_eq!(producer.capacity(), 4096);
     /// assert_eq!(consumer.capacity(), 4096);
     /// ```
@@ -359,7 +310,9 @@ impl<T> Producer<'_, T> {
         self.buffer.has_consumer()
     }
 
-    /// Copies as many items as possible from the given `slice` into the ring buffer.
+    /// Copies as many items as possible from the given `slice` into
+    /// a contiguous chunk of
+    /// the ring buffer.
     ///
     /// The written slots are automatically made available to be read by the [`Consumer`].
     ///
@@ -398,11 +351,7 @@ impl<T> Producer<'_, T> {
     where
         T: Copy,
     {
-        let slots = if self.cached_slots() < slice.len() {
-            slice.len().min(self.slots())
-        } else {
-            slice.len()
-        };
+        let slots = slice.len().min(self.slots_contiguous_max());
         let (pushed, remainder) = slice.split_at(slots);
         // With MSRV 1.58, unwrap_unchecked() can be used.
         match self.push_entire_slice(pushed) {
@@ -413,7 +362,9 @@ impl<T> Producer<'_, T> {
         (pushed, remainder)
     }
 
-    /// Copies all items from the given `slice` into the ring buffer.
+    /// Copies all items from the given `slice` into
+    /// a contiguous chunk of
+    /// the ring buffer.
     ///
     /// The written slots are automatically made available to be read by the [`Consumer`].
     ///

@@ -4,7 +4,8 @@
 
 //! Writing and reading multiple items at once into and from a [`RingBuffer`].
 //!
-//! Multiple items at once can be moved from an iterator into the ring buffer by using
+//! Multiple items at once can be moved from an iterator into
+//! the ring buffer by using
 //! [`Producer::write_chunk_uninit()`] followed by [`WriteChunkUninit::fill_from_iter()`].
 //! Alternatively, mutable access to the (uninitialized) slots of the chunk can be obtained with
 //! [`WriteChunkUninit::as_mut_slices()`],
@@ -25,6 +26,9 @@
 //! [`Consumer::pop_partial_slice()`], [`Consumer::pop_entire_slice()`],
 //! [`Consumer::pop_partial_slice_uninit()`]
 //! and [`Consumer::pop_entire_slice_uninit()`] can be used.
+//! Those convenience functions simply call [`Producer::write_chunk_uninit()`] or
+//! [`Consumer::read_chunk()`], copy the appropriate items between the appropriate slices,
+//! and commit the appropriate slots.
 //!
 //! # Examples
 //!

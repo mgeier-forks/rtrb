@@ -23,7 +23,7 @@ use super::{Producer, RingBuffer};
 /// [`Consumer::pop_partial_slice()`] and [`Consumer::pop_partial_slice_uninit()`].
 ///
 /// The number of slots currently available for reading can be obtained with
-/// [`Consumer::slots()`].
+/// [`Consumer::slots_contiguous()`].
 ///
 /// A `Consumer` can only be created with [`RingBuffer::consumer()`].
 #[derive(Debug, PartialEq, Eq)]
@@ -163,63 +163,6 @@ impl<T> Consumer<'_, T> {
         }
     }
 
-    /// Returns the number of slots available for reading.
-    ///
-    /// Since items can be concurrently produced on another thread, the actual number
-    /// of available slots may increase at any time (up to the [`Consumer::capacity()`]).
-    ///
-    /// To check for a single available slot,
-    /// using [`Consumer::is_empty()`] is often quicker
-    /// (because it might not have to check an atomic variable).
-    ///
-    /// Due to wrap-around of the internal buffer, the reported slots might not be
-    /// on a contiguous segment and therefore not entirely available for reading with
-    /// [`read_chunk()`](Consumer::read_chunk). To get the number of contiguous slots,
-    /// [`slots_contiguous_first()`](Consumer::slots_contiguous_first) can be used.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rtrb::bip_array::RingBuffer;
-    ///
-    /// let rb = RingBuffer::<_, 1024>::new();
-    /// let mut producer = rb.producer().unwrap();
-    /// let mut consumer = rb.consumer().unwrap();
-    ///
-    /// assert_eq!(consumer.slots(), 0);
-    /// assert_eq!(producer.push(0.0), Ok(()));
-    /// assert_eq!(consumer.slots(), 1);
-    /// ```
-    pub fn slots(&self) -> usize {
-        let (one, two) = self.slots_contiguous();
-        one + two
-    }
-
-    /// Returns the number of cached slots.
-    ///
-    /// In many cases, this will not provide all available slots,
-    /// but it might be marginally faster than [`Consumer::slots()`]
-    /// because it doesn't access the atomic write index.
-    pub fn cached_slots(&self) -> usize {
-        let b = &self.buffer;
-        let head = self.cached_head.get();
-        let collapsed_head = b.collapse_position(head);
-        let tail = self.cached_tail.get();
-        let collapsed_tail = b.collapse_position(tail);
-        let is_empty = head == tail;
-        if !is_empty && collapsed_tail <= collapsed_head {
-            // NB: `skip` is only relevant if (collapsed) `tail < head`
-            //     (or if the buffer is full).
-
-            // `tail` has been refreshed since it last wrapped (even if `cached_tail` is outdated),
-            // therefore `skip` needs no synchronization.
-            // TODO: cache skip?
-            b.skip() - collapsed_head
-        } else {
-            collapsed_tail - collapsed_head
-        }
-    }
-
     /// Returns size of first contiguous chunk and
     /// the refreshed `tail` (if it has already been refreshed) and
     /// `true` if there may be another chunk at the beginning of the buffer.
@@ -300,8 +243,6 @@ impl<T> Consumer<'_, T> {
     /// In many cases, the second number will be `0`, but whenever the internal buffer
     /// wraps around, two contiguous segments might be available for reading.
     /// If the first number is `0`, the second will be `0` as well.
-    ///
-    /// The sum of both numbers is returned by [`slots()`](Consumer::slots).
     ///
     /// If you are only interested in the first number, using
     /// [`slots_contiguous_first()`](Consumer::slots_contiguous_first)
@@ -406,7 +347,9 @@ impl<T> Consumer<'_, T> {
         self.buffer.has_producer()
     }
 
-    /// Copies as many items as possible from the ring buffer to the given `slice`.
+    /// Copies as many items as possible from
+    /// a contiguous chunk of
+    /// the ring buffer to the given `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
     ///
@@ -456,7 +399,9 @@ impl<T> Consumer<'_, T> {
         (popped, unsafe { &mut *(remainder as *mut _ as *mut [_]) })
     }
 
-    /// Copies as many items as possible from the ring buffer to the given uninitialized `slice`.
+    /// Copies as many items as possible from
+    /// a contiguous chunk of
+    /// the ring buffer to the given uninitialized `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
     ///
@@ -538,11 +483,7 @@ impl<T> Consumer<'_, T> {
     where
         T: Copy,
     {
-        let slots = if self.cached_slots() < slice.len() {
-            slice.len().min(self.slots())
-        } else {
-            slice.len()
-        };
+        let slots = slice.len().min(self.slots_contiguous_first());
         let (buffer, remainder) = slice.split_at_mut(slots);
         // With MSRV 1.58, unwrap_unchecked() can be used.
         let popped = match self.pop_entire_slice_uninit(buffer) {
@@ -553,14 +494,16 @@ impl<T> Consumer<'_, T> {
         (popped, remainder)
     }
 
-    /// Copies as many items from the ring buffer as to fill the given `slice`.
+    /// Copies as many items from
+    /// a contiguous chunk of
+    /// the ring buffer as to fill the given `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
     ///
     /// # Errors
     ///
-    /// If not enough data is available in the ring buffer, no items are copied and
-    /// a [`ChunkError`] with the available items is returned.
+    /// If not enough data is available in a contiguous chunk of the ring buffer,
+    /// no items are copied and a [`ChunkError`] with the available items is returned.
     ///
     /// To copy only the available slots, [`Consumer::pop_partial_slice()`] can be used.
     /// To copy into an uninitialized slice, [`Consumer::pop_entire_slice_uninit()`] can be used.
@@ -575,7 +518,9 @@ impl<T> Consumer<'_, T> {
         Ok(())
     }
 
-    /// Copies as many items from the ring buffer as to fill the given uninitialized `slice`.
+    /// Copies as many items from
+    /// a contiguous chunk of
+    /// the ring buffer as to fill the given uninitialized `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
     ///
@@ -583,8 +528,8 @@ impl<T> Consumer<'_, T> {
     ///
     /// # Errors
     ///
-    /// If not enough data is available in the ring buffer, no items are copied and
-    /// a [`ChunkError`] with the available items is returned.
+    /// If not enough data is available in a contiguous chunk of the ring buffer,
+    /// no items are copied and a [`ChunkError`] with the available items is returned.
     ///
     /// To copy only the available slots, [`Consumer::pop_partial_slice_uninit()`] can be used.
     /// To copy into an initialized slice, [`Consumer::pop_entire_slice()`] can be used.

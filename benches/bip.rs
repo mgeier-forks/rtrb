@@ -233,7 +233,8 @@ create_bip_benchmark! {
     "bip-push-pop",
     rtrb::bip_arc::RingBuffer::new,
     |p, s| {
-        if p.slots() < s.len() {
+        let (one, two) = p.slots_contiguous();
+        if one + two < s.len() {
             return false;
         }
         for x in s.iter() {
@@ -242,7 +243,8 @@ create_bip_benchmark! {
         true
     },
     |c, s| {
-        if c.slots() < s.len() {
+        let (one, two) = c.slots_contiguous();
+        if one + two < s.len() {
             return false;
         }
         for x in s.iter_mut() {

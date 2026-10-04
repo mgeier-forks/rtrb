@@ -4,7 +4,8 @@
 
 //! Writing and reading multiple items at once into and from a [`RingBuffer`].
 //!
-//! Multiple items at once can be moved from an iterator into the ring buffer by using
+//! Multiple items at once can be moved from an iterator into
+//! a contiguous chunk of the ring buffer by using
 //! [`Producer::write_chunk_uninit()`] followed by [`WriteChunkUninit::fill_from_iter()`].
 //! Alternatively, mutable access to the (uninitialized) slots of the chunk can be obtained with
 //! [`WriteChunkUninit::as_mut_slice()`],
@@ -14,11 +15,21 @@
 //! and provides mutable access by means of
 //! [`WriteChunk::as_mut_slice()`].
 //!
-//! Multiple items at once can be moved out of the ring buffer by using
+//! Multiple items at once can be moved out of a contiguous chunk of the ring buffer by using
 //! [`Consumer::read_chunk()`] and iterating over the returned [`ReadChunk`]
 //! (or by explicitly calling [`ReadChunk::into_iter()`]).
 //! Immutable access to the slots of the chunk can be obtained with
 //! [`ReadChunk::as_slice()`].
+//!
+//! If the item type `T` implements [`Copy`], the convenience functions
+//! [`Producer::push_partial_slice()`], [`Producer::push_entire_slice()`],
+//! [`Consumer::pop_partial_slice()`], [`Consumer::pop_entire_slice()`],
+//! [`Consumer::pop_partial_slice_uninit()`]
+//! and [`Consumer::pop_entire_slice_uninit()`] can be used.
+//! Those convenience functions simply call [`Producer::write_chunk_uninit()`] or
+//! [`Consumer::read_chunk()`], copy the appropriate items between the appropriate slices,
+//! and commit the appropriate slots.
+//! Each function still uses a single contiguous chunk of the ring buffer, as always.
 //!
 //! # Examples
 //!
@@ -66,8 +77,7 @@
 //!     unreachable!();
 //! }
 //!
-//! assert_eq!(producer.slots(), 1);
-//! assert_eq!(consumer.slots(), 3);
+//! assert_eq!(producer.slots_contiguous(), (1, 0));
 //! // Note that all of those slots are available in a single contiguous chunk:
 //! assert_eq!(consumer.slots_contiguous(), (3, 0));
 //!
@@ -77,7 +87,6 @@
 //!     unreachable!();
 //! }
 //!
-//! assert_eq!(producer.slots(), 3);
 //! // Those free slots are available in two contiguous chunks:
 //! assert_eq!(producer.slots_contiguous(), (1, 2));
 //! // One element is still in the queue:
@@ -94,17 +103,16 @@
 //!     unreachable!();
 //! }
 //!
-//! assert_eq!(consumer.slots(), 3);
 //! assert_eq!(consumer.slots_contiguous(), (1, 2));
 //! assert!(producer.is_full()); // The skipped slot is not available for writing (for now)!
 //! assert_eq!(consumer.pop(), Ok(12));
 //! // Popping this element has *not* reset the read index,
 //! // making only one of two empty slots available for writing:
-//! assert_eq!(producer.slots(), 1);
+//! assert_eq!(producer.slots_contiguous(), (1, 0));
 //! // Any operation on the consumer (except capacity() and is_abandoned()) ...
 //! assert_eq!(consumer.peek(), Ok(&20));
 //! // ... will reset the read index and make both slots available for writing:
-//! assert_eq!(producer.slots(), 2);
+//! assert_eq!(producer.slots_contiguous(), (2, 0));
 //!
 //! let mut v = Vec::<i32>::with_capacity(2);
 //! if let Ok(chunk) = consumer.read_chunk(2) {

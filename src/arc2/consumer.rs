@@ -180,7 +180,6 @@ impl<T> Consumer<T> {
     /// using [`Consumer::is_empty()`] is often quicker
     /// (because it might not have to check an atomic variable).
     ///
-    ///
     /// # Examples
     ///
     /// ```
@@ -309,7 +308,8 @@ impl<T> Consumer<T> {
         self.buffer.is_abandoned()
     }
 
-    /// Copies as many items as possible from the ring buffer to the given `slice`.
+    /// Copies as many items as possible from
+    /// the ring buffer to the given `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
     ///
@@ -359,7 +359,8 @@ impl<T> Consumer<T> {
         (popped, unsafe { &mut *(remainder as *mut _ as *mut [_]) })
     }
 
-    /// Copies as many items as possible from the ring buffer to the given uninitialized `slice`.
+    /// Copies as many items as possible from
+    /// the ring buffer to the given uninitialized `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
     ///
@@ -454,14 +455,15 @@ impl<T> Consumer<T> {
         (popped, remainder)
     }
 
-    /// Copies as many items from the ring buffer as to fill the given `slice`.
+    /// Copies as many items from
+    /// the ring buffer as to fill the given `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
     ///
     /// # Errors
     ///
-    /// If not enough data is available in the ring buffer, no items are copied and
-    /// a [`ChunkError`] with the available items is returned.
+    /// If not enough data is available in the ring buffer,
+    /// no items are copied and a [`ChunkError`] with the available items is returned.
     ///
     /// To copy only the available slots, [`Consumer::pop_partial_slice()`] can be used.
     /// To copy into an uninitialized slice, [`Consumer::pop_entire_slice_uninit()`] can be used.
@@ -476,7 +478,8 @@ impl<T> Consumer<T> {
         Ok(())
     }
 
-    /// Copies as many items from the ring buffer as to fill the given uninitialized `slice`.
+    /// Copies as many items from
+    /// the ring buffer as to fill the given uninitialized `slice`.
     ///
     /// The copied slots are automatically made available to be written again by the [`Producer`].
     ///
@@ -484,8 +487,8 @@ impl<T> Consumer<T> {
     ///
     /// # Errors
     ///
-    /// If not enough data is available in the ring buffer, no items are copied and
-    /// a [`ChunkError`] with the available items is returned.
+    /// If not enough data is available in the ring buffer,
+    /// no items are copied and a [`ChunkError`] with the available items is returned.
     ///
     /// To copy only the available slots, [`Consumer::pop_partial_slice_uninit()`] can be used.
     /// To copy into an initialized slice, [`Consumer::pop_entire_slice()`] can be used.
