@@ -39,8 +39,8 @@ pub(super) type RingBufferUnsized<T> = RingBufferInner<[MaybeUninit<T>]>;
 // SAFETY: If T can be moved between threads, RingBuffer can as well.
 unsafe impl<T: Send, const N: usize> Send for RingBuffer<T, N> {}
 
-// SAFETY: This can be shared, even if T is not Sync.
-unsafe impl<Container: ?Sized> Sync for RingBufferInner<Container> {}
+// SAFETY: This can be shared, even if T is not Sync (but it must be Send).
+unsafe impl<Container: ?Sized + Send> Sync for RingBufferInner<Container> {}
 
 impl<T, const N: usize> RingBuffer<T, N> {
     const fn construct() -> Self {
@@ -98,8 +98,8 @@ impl<T> RingBufferUnsized<T> {
 /// assert_sync::<rtrb::array_unpadded::RingBuffer<std::cell::Cell<u8>, 8>>();
 /// ```
 // SAFETY: RingBuffer is only mutated (using *interior mutablility*)
-// via Producer/Consumer (which are !Sync), all other access can be shared.
-unsafe impl<T, const N: usize> Sync for RingBuffer<T, N> {}
+// via Producer/Consumer (which are !Sync), all other access can be shared (if T is Send).
+unsafe impl<T: Send, const N: usize> Sync for RingBuffer<T, N> {}
 
 // NB: `Send` might be implemented by different storage backends,
 // but it is not necessary for correct behavior of the RingBuffer.

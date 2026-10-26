@@ -72,8 +72,8 @@ impl<T> Drop for RingBuffer<T> {
 /// assert_sync::<rtrb::arc::RingBuffer<std::cell::Cell<u8>>>();
 /// ```
 // SAFETY: RingBuffer is only mutated (using *interior mutablility*)
-// via Producer/Consumer (which are !Sync), all other access can be shared.
-unsafe impl<T> Sync for RingBuffer<T> {}
+// via Producer/Consumer (which are !Sync), all other access can be shared (if T is Send).
+unsafe impl<T: Send> Sync for RingBuffer<T> {}
 
 // NB: `Send` might be implemented by different storage backends,
 // but it is not necessary for correct behavior of the RingBuffer.
