@@ -1,0 +1,11 @@
+arc = false
+padded = true
+pow2 = false
+
+module_docstring = """
+//! TODO, no reference counting.
+//!
+//! In contrast to [`rtrb::im`](crate::im), this provides a [`RingBuffer`]
+//! that is *not* automatically dropped when both its [`Producer`] and its [`Consumer`]
+//! go out of scope.
+"""

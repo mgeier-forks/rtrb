@@ -1,7 +1,7 @@
 //! A collection of realtime-safe single-producer single-consumer (SPSC) ring buffers.
 //!
 //! *If you are looking for the ring buffer formerly plainly known as `rtrb::RingBuffer`,
-//! this is now available as [`rtrb::arc::RingBuffer`](arc::RingBuffer).
+//! this is now available as [`rtrb::im::RingBuffer`](im::RingBuffer).
 //! Use this if you can't decide!*
 //!
 //! The following table gives an overview about the available types of ring buffer.
@@ -9,20 +9,18 @@
 //!
 //! | module | storage | reference counted | cacheline padded | contiguous chunks |
 //! |-|-|-|-|-|
-//! | [`arc`]<br>[`arc2`] | heap | ✔️ | ✔️ ||
-//! | [`mod@slice`] | heap (or wherever) || ✔️ ||
-//! | [`mod@array`] | array || ✔️ ||
-//! | [`array_unpadded`]<br>[`array_unpadded2`] | array ||||
-//! | [`bip_arc`]<br>[`bip_arc2`] | heap | ✔️ | ✔️ | ✔️ |
-//! | [`bip_slice`] | heap (or wherever) || ✔️ | ✔️ |
-//! | [`bip_array`] | array || ✔️ | ✔️ |
-//! | [`bip_array_unpadded`]<br>[`bip_array_unpadded2`] | array ||| ✔️ |
-//! | [`vrb_arc2`] | virtual memory | ✔️ | ✔️ | ✔️ |
+//! | [`im`]<br>[`im2`] | heap | ✔️ | ✔️ ||
+//! | [`ex`]<br>[`ex2`] | stack, heap, wherever! || ✔️ ||
+//! | [`ex_lite`]<br>[`ex_lite2`] | stack, heap, wherever! ||||
+//! | [`bip_im`]<br>[`bip_im2`] | heap | ✔️ | ✔️ | ✔️ |
+//! | [`bip_ex`]<br>[`bip_ex2`] | stack, heap, wherever! || ✔️ | ✔️ |
+//! | [`bip_ex_lite`]<br>[`bip_ex_lite2`] | stack, heap, wherever! ||| ✔️ |
+//! | [`vrb_im2`] | virtual memory | ✔️ | ✔️ | ✔️ |
 //!
 //! Modules ending with `2` use capacities that are powers of two.
 //!
-//! Modules containing `arc` require the <span class="stab portability"><code>alloc</code></span>
-//! feature (which is enabled by default), [`rtrb::vrb_arc2`](vrb_arc2) requires the
+//! Modules containing `im` require the <span class="stab portability"><code>alloc</code></span>
+//! feature (which is enabled by default), [`rtrb::vrb_im2`](vrb_im2) requires the
 //! <span class="stab portability"><code>vrb</code></span> feature.
 //!
 //!
@@ -114,8 +112,9 @@
 //!
 //! # Storage
 //!
-//! The modules containing the word `array`
-//! are using the built-in
+//! `ex` ... `ArrayRingBuffer`
+//!
+//! ... the built-in
 //! [`prim@array`] type for storing ring buffer elements.
 //! This means that the capacity must be known at compile time.
 //! No dynamic memory is ever allocated.
@@ -124,12 +123,12 @@
 //!
 //! ... have the advantage that their ring buffers can be used as `static` variables.
 //!
-//! Here's an example using the [`rtrb::array`](mod@array) module:
+//! Here's an example using the [`rtrb::ex`](ex) module:
 //!
 //! ```
-//! use rtrb::array::{Consumer, Producer, RingBuffer};
+//! use rtrb::ex::{Consumer, Producer, ArrayRingBuffer};
 //!
-//! static RB: RingBuffer<i32, 64> = RingBuffer::new();
+//! static RB: ArrayRingBuffer<i32, 64> = ArrayRingBuffer::new();
 //!
 //! let mut producer: Producer<'static, i32> = RB.producer().unwrap();
 //!
@@ -158,28 +157,32 @@
 //!
 //! # Reference Counted
 //!
-//! All modules containing `arc` have a reference-counted producer and consumer.
+//! ... *implicit*
+//!
+//! All modules containing `im` have a reference-counted producer and consumer.
 //! Calling this "reference-counted" is probably a bit of a stretch,
 //! since the counters for producer and consumer can both at most reach `1`,
 //! which they immediately do upon ring buffer creation,
 //! which creates and returns a producer/consumer pair
-//! (see e.g. [`rtrb::arc::RingBuffer::new()`](arc::RingBuffer::new)).
+//! (see e.g. [`rtrb::im::RingBuffer::new()`](im::RingBuffer::new)).
 //! The `RingBuffer` object itself is not directly accessible.
 //! Once both the producer and the consumer are being dropped
 //! (i.e. both their reference counts reach `0`), the whole `RingBuffer` is dropped.
 //!
-//! All other modules (i.e. the ones *not* containing `arc`)
+//! ... *explicit*
+//!
+//! All other modules (i.e. the ones containing `ex`)
 //! do provide access to the `RingBuffer` in some form,
 //! which then provides methods to create a producer and a consumer
-//! (see e.g. [`rtrb::array::RingBuffer::producer()`](array::RingBuffer::producer)).
+//! (see e.g. [`rtrb::ex::RingBuffer::producer()`](ex::RingBuffer::producer)).
 //! In those modules, dropping producer and consumer does *not* automatically drop the `RingBuffer`.
-//! All non-`arc` producers and consumers have a lifetime argument that
+//! All `ex` producers and consumers have a lifetime argument that
 //! (unless `'static`) infects all data structures which contain them.
 //!
 //!
 //! # Cacheline Padded
 //!
-//! Unless their module name contains `unpadded`, all ring buffers use
+//! Unless their module name contains `lite`, all ring buffers use
 //! [`CachePadded`](https://docs.rs/crossbeam-utils/latest/crossbeam_utils/struct.CachePadded.html)
 //! (vendored from [crossbeam-utils](https://crates.io/crates/crossbeam-utils))
 //! around the internal atomic "read" and "write" indices.
@@ -188,7 +191,7 @@
 //!
 //! On (embedded) systems without coherent caches shared between cores
 //! (or with only one core) this is not relevant and the memory overhead can be avoided
-//! by using the `unpadded` variants, e.g. [`rtrb::array_unpadded`](array_unpadded).
+//! by using the `lite` variants, e.g. [`rtrb::ex_lite`](ex_lite).
 //!
 //!
 //! # Calculation of Indices
@@ -205,7 +208,7 @@
 //! # Usage with Shared Memory
 //!
 //! If you are willing to use some `unsafe` code,
-//! you can use the `*array*` and `*slice*` modules
+//! you can use the modules containing `ex`
 //! to communicate between processes via shared memory.
 //!
 //! Have a look at the [`shared-memory-array` example application](https://github.com/mgeier/rtrb/blob/main/examples/shared-memory-array.rs),
@@ -249,7 +252,7 @@
 //!
 //! ... the padded variants still work, but they will use more memory than necessary.
 //!
-//! Modules containing `arc` need `target_has_atomic`,
+//! Modules containing `im` need `target_has_atomic`,
 //! all others work on hardware without *read-modify-write* (RMW) support,
 //! e.g. `thumbv6m` (Cortex-M0/M0+) and `riscv32imc`.
 //! No critical sections are used anywhere, so everything is still wait-free.
@@ -291,36 +294,36 @@ mod atomic {
 #[macro_use]
 mod dst_instantiation;
 
+pub mod bip_ex;
+pub mod bip_ex2;
+pub mod bip_ex_lite;
+pub mod bip_ex_lite2;
 #[cfg(feature = "alloc")]
-pub mod arc;
+pub mod bip_im;
 #[cfg(feature = "alloc")]
-pub mod arc2;
-pub mod array;
-pub mod array_unpadded;
-pub mod array_unpadded2;
+pub mod bip_im2;
+pub mod ex;
+pub mod ex2;
+pub mod ex_lite;
+pub mod ex_lite2;
 #[cfg(feature = "alloc")]
-pub mod bip_arc;
+pub mod im;
 #[cfg(feature = "alloc")]
-pub mod bip_arc2;
-pub mod bip_array;
-pub mod bip_array_unpadded;
-pub mod bip_array_unpadded2;
-pub mod bip_slice;
-pub mod slice;
+pub mod im2;
 #[cfg(feature = "vrb")]
-pub mod vrb_arc2;
+pub mod vrb_im2;
 
 // For backwards compatibility. May be deprecated and removed in the future.
 #[cfg(feature = "alloc")]
 #[doc(hidden)]
-pub use arc::{Consumer, Producer, RingBuffer};
+pub use im::{Consumer, Producer, RingBuffer};
 
 // For backwards compatibility. May be deprecated and removed in the future.
 #[cfg(feature = "alloc")]
 #[doc(hidden)]
 pub mod chunks {
-    pub use super::arc::chunks::{ReadChunk, ReadChunkIntoIter, WriteChunk, WriteChunkUninit};
-    pub use super::arc::ChunkError;
+    pub use super::im::chunks::{ReadChunk, ReadChunkIntoIter, WriteChunk, WriteChunkUninit};
+    pub use super::im::ChunkError;
 }
 
 #[doc(hidden)]

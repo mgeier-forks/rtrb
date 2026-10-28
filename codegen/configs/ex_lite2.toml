@@ -1,0 +1,7 @@
+arc = false
+padded = false
+pow2 = true
+
+module_docstring = """
+//! Same as [`rtrb::ex_lite`](crate::ex_lite), but with a capacity that is a power of two.
+"""

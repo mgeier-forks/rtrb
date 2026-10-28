@@ -1,0 +1,13 @@
+arc = false
+contiguous = "bip"
+padded = false
+pow2 = false
+
+module_docstring = """
+//! Same as [`rtrb::bip_ex`](crate::bip_ex), but without cacheline padding.
+//!
+//! Same as [`rtrb::bip_ex_lite2`](crate::bip_ex_lite2),
+//! but with a capacity that is not restricted to a power of two.
+//!
+//! If cacheline padding is desired, use [`rtrb::bip_ex`](crate::bip_ex).
+"""

@@ -196,7 +196,7 @@ criterion_main!(benches);
 
 create_bip_benchmark! {
     "bip",
-    rtrb::bip_arc::RingBuffer::new,
+    rtrb::bip_im::RingBuffer::new,
     |p, s| p.write_chunk(s.len()).map(|mut chunk| {
         chunk.as_mut_slice().copy_from_slice(s);
         chunk.commit_all();
@@ -207,7 +207,7 @@ create_bip_benchmark! {
     }).is_ok(),
     ::
     "bip2",
-    rtrb::bip_arc2::RingBuffer::new,
+    rtrb::bip_im2::RingBuffer::new,
     |p, s| p.write_chunk(s.len()).map(|mut chunk| {
         chunk.as_mut_slice().copy_from_slice(s);
         chunk.commit_all();
@@ -218,7 +218,7 @@ create_bip_benchmark! {
     }).is_ok(),
     ::
     "bip-uninit",
-    rtrb::bip_arc::RingBuffer::new,
+    rtrb::bip_im::RingBuffer::new,
     |p, s| p.write_chunk_uninit(s.len()).map(|mut chunk| {
         use rtrb::CopyToUninit as _;
         s.copy_to_uninit(chunk.as_mut_slice());
@@ -231,7 +231,7 @@ create_bip_benchmark! {
     }).is_ok(),
     ::
     "bip-push-pop",
-    rtrb::bip_arc::RingBuffer::new,
+    rtrb::bip_im::RingBuffer::new,
     |p, s| {
         let (one, two) = p.slots_contiguous();
         if one + two < s.len() {

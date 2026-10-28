@@ -272,7 +272,7 @@ criterion_main!(benches);
 
 create_two_threads_benchmark!(
     "rtrb::arc",
-    rtrb::arc::RingBuffer::new,
+    rtrb::im::RingBuffer::new,
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::
@@ -282,7 +282,7 @@ create_two_threads_benchmark!(
     |q| q.pop().ok(),
     ::
     "rtrb::bip_arc",
-    rtrb::bip_arc::RingBuffer::new,
+    rtrb::bip_im::RingBuffer::new,
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::

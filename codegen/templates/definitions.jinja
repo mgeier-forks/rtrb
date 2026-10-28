@@ -1,24 +1,8 @@
-{% if bip is undefined %}{% set bip = false %}{% endif %}
-{% if bip and contiguous is undefined %}{% set contiguous = true %}{% endif %}
 {% if contiguous is undefined %}{% set contiguous = false %}{% endif %}
+{% if contiguous not in [false, "bip", "vrb"] %}
+compile_error!("Invalid contiguous = {{ contiguous }}")
+{% endif %}
 {% set module_path %}rtrb::{{ module_name }}{% endset %}
-{% if N is undefined %}
-  {% if storage == "array" %}
-    {% set N = true %}
-  {% else %}
-    {% set N = false %}
-  {% endif %}
-{% endif %}
-{##}
-{% if N %}
-  {% set N_param = ", const N: usize" %}
-  {% set N_arg = ", N" %}
-  {% set N_self = "self.0" %}
-{% else %}
-  {% set N_param = "" %}
-  {% set N_arg = "" %}
-  {% set N_self = "self" %}
-{% endif %}
 {% if arc %}
   {% set arc_tick_a = "" %}
   {% set arc_tick_blank = "" %}
@@ -36,17 +20,11 @@
 {% endmacro %}
 {##}
 {% macro doctest_create_ring_buffer(capacity, prefix="    ///") %}
-{% if N %}{% if arc %}
-{{ prefix }} let (mut producer, mut consumer) = RingBuffer::<_, {{ capacity }}>::new();
-{%- else %}
-{{ prefix }} let rb = RingBuffer::<_, {{ capacity }}>::new();
-{{ prefix }} let mut producer = rb.producer().unwrap();
-{{ prefix }} let mut consumer = rb.consumer().unwrap();
-{%- endif %}{% else %}{% if arc %}
+{% if arc %}
 {{ prefix }} let (mut producer, mut consumer) = RingBuffer::new({{ capacity }});
 {%- else %}
 {{ prefix }} let rb = RingBuffer::new({{ capacity }});
 {{ prefix }} let mut producer = rb.producer().unwrap();
 {{ prefix }} let mut consumer = rb.consumer().unwrap();
-{%- endif %}{% endif %}
+{%- endif %}
 {%- endmacro %}

@@ -10,18 +10,11 @@ use core::mem::MaybeUninit;
 {% if arc %}
 use super::arc_ring_buffer::ArcRingBuffer;
 {% endif %}
-{% if N %}
-use super::ring_buffer::RingBufferUnsized;
-{% endif %}
-use super::{chunks::ReadChunk, ChunkError, CopyToUninit as _, PeekError, PopError{% if not N %}, RingBuffer{% endif %}};
+use super::{chunks::ReadChunk, ChunkError, CopyToUninit as _, PeekError, PopError, RingBuffer};
 
 // Only used in documentation:
 #[allow(unused_imports)]
-{% if N %}
-use super::{Producer, RingBuffer};
-{% else %}
 use super::Producer;
-{% endif %}
 
 /// The consumer side of a [`RingBuffer`].
 ///
@@ -34,7 +27,7 @@ use super::Producer;
 /// [`Consumer::pop_partial_slice()`] and [`Consumer::pop_partial_slice_uninit()`].
 ///
 /// The number of slots currently available for reading can be obtained with
-{% if bip %}
+{% if contiguous == "bip" %}
 /// [`Consumer::slots_contiguous()`].
 {% else %}
 /// [`Consumer::slots()`].
@@ -72,7 +65,7 @@ pub struct Consumer<T> {
 /// A `Consumer` can only be created with [`RingBuffer::consumer()`].
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<'a, T> {
-    buffer: &'a RingBuffer{% if N %}Unsized{% endif %}<T>,
+    buffer: &'a RingBuffer<T>,
     cached_head: Cell<usize>,
     cached_tail: Cell<usize>,
 }
@@ -98,10 +91,10 @@ impl<T> Drop for Consumer<'_, T> {
 /// ```
 // SAFETY: After moving the consumer to another thread, there is still only a single thread
 // that can access the consumer side of the queue.
-unsafe impl<T: Send> Send for Consumer<{{ arc_tick_blank }}T> where RingBuffer{% if N %}Unsized{% endif %}<T>: Sync {}
+unsafe impl<T: Send> Send for Consumer<{{ arc_tick_blank }}T> where RingBuffer<T>: Sync {}
 
 impl<{{ arc_tick_a }}T> Consumer<{{ arc_tick_a }}T> {
-    pub(super) unsafe fn new(buffer: {% if arc %}ArcRingBuffer{% else %}&'a RingBuffer{% if N %}Unsized{% endif %}{% endif %}<T>, head: usize, tail: usize) -> Self {
+    pub(super) unsafe fn new(buffer: {% if arc %}ArcRingBuffer{% else %}&'a RingBuffer{% endif %}<T>, head: usize, tail: usize) -> Self {
         Self {
             buffer,
             cached_head: Cell::new(head),
@@ -200,7 +193,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
         }
     }
 
-{% if not bip %}
+{% if contiguous != "bip" %}
     /// Returns the number of slots available for reading.
     ///
     /// This number will also be reported via a [`ChunkError`] when calling
@@ -472,7 +465,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
 {% endif %}
 
     /// Copies as many items as possible from
-{% if bip %}
+{% if contiguous == "bip" %}
     /// a contiguous chunk of
 {% endif %}
     /// the ring buffer to the given `slice`.
@@ -526,7 +519,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     }
 
     /// Copies as many items as possible from
-{% if bip %}
+{% if contiguous == "bip" %}
     /// a contiguous chunk of
 {% endif %}
     /// the ring buffer to the given uninitialized `slice`.
@@ -609,7 +602,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     where
         T: Copy,
     {
-{% if bip %}
+{% if contiguous == "bip" %}
         let slots = slice.len().min(self.slots_contiguous_first());
 {% else %}
         let slots = if self.cached_slots() < slice.len() {
@@ -629,7 +622,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     }
 
     /// Copies as many items from
-{% if bip %}
+{% if contiguous == "bip" %}
     /// a contiguous chunk of
 {% endif %}
     /// the ring buffer as to fill the given `slice`.
@@ -638,7 +631,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     ///
     /// # Errors
     ///
-    /// If not enough data is available in {% if bip %}a contiguous chunk of {% endif %}the ring buffer,
+    /// If not enough data is available in {% if contiguous == "bip" %}a contiguous chunk of {% endif %}the ring buffer,
     /// no items are copied and a [`ChunkError`] with the available items is returned.
     ///
     /// To copy only the available slots, [`Consumer::pop_partial_slice()`] can be used.
@@ -655,7 +648,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     }
 
     /// Copies as many items from
-{% if bip %}
+{% if contiguous == "bip" %}
     /// a contiguous chunk of
 {% endif %}
     /// the ring buffer as to fill the given uninitialized `slice`.
@@ -666,7 +659,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     ///
     /// # Errors
     ///
-    /// If not enough data is available in {% if bip %}a contiguous chunk of {% endif %}the ring buffer,
+    /// If not enough data is available in {% if contiguous == "bip" %}a contiguous chunk of {% endif %}the ring buffer,
     /// no items are copied and a [`ChunkError`] with the available items is returned.
     ///
     /// To copy only the available slots, [`Consumer::pop_partial_slice_uninit()`] can be used.
@@ -697,7 +690,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     }
 
     /// Returns a read-only reference to the ring buffer.
-    pub(super) fn buffer(&self) -> &RingBuffer{% if N %}Unsized{% endif %}<T> {
+    pub(super) fn buffer(&self) -> &RingBuffer<T> {
         {%+ if arc %}&{% endif %}self.buffer
     }
 
@@ -723,7 +716,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
     /// Use
-{% if bip %}
+{% if contiguous == "bip" %}
     /// [`Consumer::slots_contiguous_first()`]
 {% else %}
     /// [`Consumer::slots()`]
@@ -733,7 +726,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](super::chunks#examples) module.
-{% if bip %}
+{% if contiguous == "bip" %}
     pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
         let b = &self.buffer;
         let (slots, _, _) = self.slots_contiguous_helper();
@@ -767,6 +760,23 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     }
 {% endif %}
 
+    /// Drops all items that are currently available for reading, returns number of dropped items.
+    ///
+    /// Since items can be concurrently produced on another thread,
+    /// new items can become available at any time.
+    pub fn drop_available_items(&mut self) -> usize {
+    {% if contiguous == "bip" %}
+        let (one, two) = self.slots_contiguous();
+        self.read_chunk(one).unwrap().commit_all();
+        self.read_chunk(two).unwrap().commit_all();
+        one + two
+    {% else %}
+        let n = self.slots();
+        self.read_chunk(n).unwrap().commit_all();
+        n
+    {% endif %}
+    }
+
     pub(super) unsafe fn advance(&self, n: usize) {
         let head = self.buffer.increment(self.cached_head.get(), n);
         // SAFETY: The user must make sure that `n` slots have been read.
@@ -777,7 +787,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     }
 
     /// Get the `head` position for reading the next slot, if available.
-{% if bip %}
+{% if contiguous == "bip" %}
     fn next_head(&self) -> Option<usize> {
         let (slots, _, _) = self.slots_contiguous_helper();
         if slots == 0 {

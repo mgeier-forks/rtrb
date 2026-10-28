@@ -1,4 +1,4 @@
-use rtrb::arc::{PopError, PushError, RingBuffer};
+use rtrb::im::{PopError, PushError, RingBuffer};
 
 fn main() {
     let (mut producer, mut consumer) = RingBuffer::new(4);

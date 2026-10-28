@@ -2,7 +2,7 @@
 
 // TODO: try to reuse this for power-of-2 tests with bip_arc2?
 
-use rtrb::bip_arc::{Consumer, Producer, RingBuffer};
+use rtrb::bip_im::{Consumer, Producer, RingBuffer};
 
 type C<'a> = &'a mut Consumer<i32>;
 type P<'a> = &'a mut Producer<i32>;

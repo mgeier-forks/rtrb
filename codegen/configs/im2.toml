@@ -1,0 +1,7 @@
+arc = true
+padded = true
+pow2 = true
+
+module_docstring = """
+//! Same as [`rtrb::im`](crate::im), but with a capacity that is a power of two.
+"""

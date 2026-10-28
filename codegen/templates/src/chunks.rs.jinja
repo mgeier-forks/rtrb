@@ -7,7 +7,7 @@
 //! Writing and reading multiple items at once into and from a [`RingBuffer`].
 //!
 //! Multiple items at once can be moved from an iterator into
-//! {% if bip %}a contiguous chunk of {% endif %}the ring buffer by using
+//! {% if contiguous == "bip" %}a contiguous chunk of {% endif %}the ring buffer by using
 //! [`Producer::write_chunk_uninit()`] followed by [`WriteChunkUninit::fill_from_iter()`].
 //! Alternatively, mutable access to the (uninitialized) slots of the chunk can be obtained with
 {% if contiguous %}
@@ -25,7 +25,7 @@
 //! [`WriteChunk::as_mut_slices()`].
 {% endif %}
 //!
-//! Multiple items at once can be moved out of {% if bip %}a contiguous chunk of {% endif %}the ring buffer by using
+//! Multiple items at once can be moved out of {% if contiguous == "bip" %}a contiguous chunk of {% endif %}the ring buffer by using
 //! [`Consumer::read_chunk()`] and iterating over the returned [`ReadChunk`]
 //! (or by explicitly calling [`ReadChunk::into_iter()`]).
 //! Immutable access to the slots of the chunk can be obtained with
@@ -43,7 +43,7 @@
 //! Those convenience functions simply call [`Producer::write_chunk_uninit()`] or
 //! [`Consumer::read_chunk()`], copy the appropriate items between the appropriate slices,
 //! and commit the appropriate slots.
-{% if bip %}
+{% if contiguous == "bip" %}
 //! Each function still uses a single contiguous chunk of the ring buffer, as always.
 {% endif %}
 //!
@@ -58,7 +58,7 @@
 //! ```
 //! use {{ module_path }}::RingBuffer;
 //!
-{% if storage == "vrb" %}
+{% if contiguous == "vrb" %}
 {{ doctest_create_ring_buffer(4096, prefix="//!") }}
 //!
 //! let source = vec![0.1; 4000];
@@ -96,7 +96,7 @@
 //! ```
 //! use {{ module_path }}::RingBuffer;
 //!
-{% if storage == "vrb" %}
+{% if contiguous == "vrb" %}
 {{ doctest_create_ring_buffer(4096, prefix="//!") }}
 //!
 //! if let Ok(chunk) = producer.write_chunk_uninit(3000) {
@@ -139,7 +139,7 @@
 //!     unreachable!();
 //! }
 //!
-{% if bip %}
+{% if contiguous == "bip" %}
 //! assert_eq!(producer.slots_contiguous(), (1, 0));
 //! // Note that all of those slots are available in a single contiguous chunk:
 //! assert_eq!(consumer.slots_contiguous(), (3, 0));
@@ -154,7 +154,7 @@
 //!     unreachable!();
 //! }
 //!
-{% if bip %}
+{% if contiguous == "bip" %}
 //! // Those free slots are available in two contiguous chunks:
 //! assert_eq!(producer.slots_contiguous(), (1, 2));
 {% else %}
@@ -166,7 +166,7 @@
 //! let data = vec![20, 21];
 //! // NB: write_chunk_uninit() could be used for possibly better performance:
 //! if let Ok(mut chunk) = producer.write_chunk(2) {
-{% if bip %}
+{% if contiguous == "bip" %}
 //!     // A chunk of 2 was not available at the end of the buffer,
 //!     // so one slot was skipped and we got a chunk at the beginning.
 //!     chunk.as_mut_slice().copy_from_slice(&data);
@@ -181,7 +181,7 @@
 //!     unreachable!();
 //! }
 //!
-{% if bip %}
+{% if contiguous == "bip" %}
 //! assert_eq!(consumer.slots_contiguous(), (1, 2));
 //! assert!(producer.is_full()); // The skipped slot is not available for writing (for now)!
 //! assert_eq!(consumer.pop(), Ok(12));
@@ -221,7 +221,7 @@
 //! assert!(consumer.is_empty());
 {% endif %}
 //! ```
-{% if not bip %}
+{% if contiguous != "bip" %}
 //!
 //! The iterator API can be used to move items from one ring buffer to another:
 //!
@@ -531,7 +531,7 @@ impl<T> WriteChunkUninit<'_, T> {
         let capped_n = n.min(self.len());
         // SAFETY: Delegated to the caller.
         unsafe {
-            self.producer.advance(capped_n{% if bip %}, self.ptr{% endif %});
+            self.producer.advance(capped_n{% if contiguous == "bip" %}, self.ptr{% endif %});
         }
     }
 
@@ -544,7 +544,7 @@ impl<T> WriteChunkUninit<'_, T> {
         let slots = self.len();
         // SAFETY: Delegated to the caller.
         unsafe {
-            self.producer.advance(slots{% if bip %}, self.ptr{% endif %});
+            self.producer.advance(slots{% if contiguous == "bip" %}, self.ptr{% endif %});
         }
     }
 
@@ -611,7 +611,7 @@ impl<T> WriteChunkUninit<'_, T> {
         }
         // SAFETY: iterated slots have been initialized above.
         unsafe {
-            self.producer.advance(iterated{% if bip %}, self.ptr{% endif %});
+            self.producer.advance(iterated{% if contiguous == "bip" %}, self.ptr{% endif %});
         }
         iterated
     }

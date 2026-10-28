@@ -1,9 +1,0 @@
-arc = true
-padded = true
-pow2 = false
-storage = "dst"
-
-module_docstring = """
-//! Heap storage, reference-counted producer and consumer.
-//! Use this if you can't decide!
-"""
