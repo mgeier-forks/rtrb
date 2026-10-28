@@ -26,11 +26,11 @@ pub struct RingBuffer<T> {
     head: CachePadded<AtomicUsize>,
     tail: CachePadded<AtomicUsize>,
     is_abandoned: AtomicBool,
-    /// Storage for the ring buffer elements (dynamically sized).
-    ///
-    /// This must be in an `UnsafeCell` because both producer and consumer
-    /// have a (non-mutable) reference to the ring buffer and they use
-    /// *interior mutability* to modify it.
+    // Storage for the ring buffer elements (dynamically sized).
+    //
+    // This must be in an `UnsafeCell` because both producer and consumer
+    // have a (non-mutable) reference to the ring buffer and they use
+    // *interior mutability* to modify it.
     slots: UnsafeCell<[MaybeUninit<T>]>,
 }
 }

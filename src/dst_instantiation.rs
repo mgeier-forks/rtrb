@@ -120,19 +120,19 @@ macro_rules! dst_ring_buffer_instantiation {
 
         impl<T> RingBuffer<T> {
             /// Calculate memory layout using the given `capacity`.
-            fn layout_helper(capacity: usize) -> core:alloc::Layout {
+            fn layout_helper(capacity: usize) -> core::alloc::Layout {
                 // Start with an empty layout ...
-                let layout = core:alloc::Layout::new::<()>();
+                let layout = core::alloc::Layout::new::<()>();
                 // ... and add all fields from RingBuffer,
                 // which must have #[repr(C)] (which we added above)!
                 $(
                     let (layout, _) = layout
-                        .extend(core:alloc::Layout::new::<$field_type>())
+                        .extend(core::alloc::Layout::new::<$field_type>())
                         .unwrap();
                 )*
                 // After the fixed-size fields, we need space for the slots.
                 let (layout, _) = layout
-                    .extend(core:alloc::Layout::array::<T>(capacity).unwrap())
+                    .extend(core::alloc::Layout::array::<T>(capacity).unwrap())
                     .unwrap();
                 layout.pad_to_align()
             }
@@ -150,7 +150,7 @@ macro_rules! dst_ring_buffer_instantiation {
             ///
             /// Pointer must be valid for writes and no reference exists.
             unsafe fn initialize(ptr: *mut Self, fields: Fields) {
-                let Fields { $($field_name)* } = fields;
+                let Fields { $($field_name,)* } = fields;
                 // SAFETY: Offsets and types of fields are correct.
                 unsafe {
                 $(

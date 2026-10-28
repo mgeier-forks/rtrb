@@ -4,6 +4,7 @@
 
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
+use core::alloc::Layout;
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 
@@ -31,11 +32,11 @@ pub struct RingBuffer<T> {
     skip: AtomicUsize,
     has_producer: AtomicBool,
     has_consumer: AtomicBool,
-    /// Storage for the ring buffer elements (dynamically sized).
-    ///
-    /// This must be in an `UnsafeCell` because both producer and consumer
-    /// have a (non-mutable) reference to the ring buffer and they use
-    /// *interior mutability* to modify it.
+    // Storage for the ring buffer elements (dynamically sized).
+    //
+    // This must be in an `UnsafeCell` because both producer and consumer
+    // have a (non-mutable) reference to the ring buffer and they use
+    // *interior mutability* to modify it.
     slots: UnsafeCell<[MaybeUninit<T>]>,
 }
 }
