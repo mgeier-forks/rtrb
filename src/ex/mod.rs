@@ -2,9 +2,9 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/ex.toml`.
 
-//! Storage on the heap or in user-provided memory, no reference counting.
+//! TODO, no reference counting.
 //!
-//! In contrast to [`rtrb::arc`](crate::arc), this provides a [`RingBuffer`]
+//! In contrast to [`rtrb::im`](crate::im), this provides a [`RingBuffer`]
 //! that is *not* automatically dropped when both its [`Producer`] and its [`Consumer`]
 //! go out of scope.
 //!

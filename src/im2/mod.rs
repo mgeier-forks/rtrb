@@ -2,7 +2,7 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/im2.toml`.
 
-//! Same as [`rtrb::arc`](crate::arc), but with a capacity that is a power of two.
+//! Same as [`rtrb::im`](crate::im), but with a capacity that is a power of two.
 //!
 //! *See the [crate-level documentation](crate) for information about the available options.*
 //!

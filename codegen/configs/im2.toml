@@ -4,5 +4,5 @@ pow2 = true
 storage = "dst"
 
 module_docstring = """
-//! Same as [`rtrb::arc`](crate::arc), but with a capacity that is a power of two.
+//! Same as [`rtrb::im`](crate::im), but with a capacity that is a power of two.
 """

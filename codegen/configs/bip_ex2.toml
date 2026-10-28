@@ -1,0 +1,9 @@
+arc = false
+bip = true
+padded = true
+pow2 = false
+storage = "dst"
+
+module_docstring = """
+//! Same as [`rtrb::bip_ex`](crate::bip_ex), but with a capacity that is a power of two.
+"""

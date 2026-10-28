@@ -5,7 +5,7 @@ pow2 = true
 storage = "dst"
 
 module_docstring = """
-//! Same as [`rtrb::bip_arc`](crate::bip_arc), but with a capacity that is a power of two.
+//! Same as [`rtrb::bip_im`](crate::bip_im), but with a capacity that is a power of two.
 //!
-//! If you need arbitrary capacities, use [`rtrb::bip_arc`](crate::bip_arc) instead.
+//! If you need arbitrary capacities, use [`rtrb::bip_im`](crate::bip_im) instead.
 """

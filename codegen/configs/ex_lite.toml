@@ -1,0 +1,13 @@
+arc = false
+padded = true
+pow2 = false
+storage = "dst"
+
+module_docstring = """
+//! Same as [`rtrb::ex`](crate::ex), but without cacheline padding.
+//!
+//! Same as [`rtrb::ex_lite2`](crate::ex_lite2),
+//! but with a capacity that is not restricted to a power of two.
+//!
+//! If cacheline padding is desired, use [`rtrb::ex`](crate::ex).
+"""
