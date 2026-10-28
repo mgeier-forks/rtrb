@@ -1,108 +1,171 @@
 macro_rules! dst_ring_buffer_instantiation {
-    // NB: The = character in =[ was added to avoid a parsing ambiguity.
-
-    // Fixed-size header fields are recursively moved into the brackets,
-    // only the last field (which is dynamically sized) remains outside.
+    // Fixed-size fields are recursively moved into the brackets,
+    // only the dynamically sized `slots` remain outside.
     (
         $(#[$struct_attr:meta])*
         pub struct RingBuffer<T> {
-            $(=[
+            $([
                 $($already_bracketed:tt)*
             ])?
-
-            $(#[$next_field_attr:meta])*
-            $next_field_vis:vis $next_field_name:ident: $next_field_type:ty,
-
+            $next_field_name:ident: $next_field_type:ty,
             $($remaining_fields:tt)+
         }
+
+        $($more_stuff:tt)*
     ) => {
         dst_ring_buffer_instantiation! {
             $(#[$struct_attr])*
             pub struct RingBuffer<T> {
-                =[
+                [
                     $($($already_bracketed)*)?
-
-                    $(#[$next_field_attr])*
-                    $next_field_vis $next_field_name: $next_field_type,
+                    $next_field_name: $next_field_type,
                 ]
-
                 $($remaining_fields)+
+            }
+
+            $($more_stuff)*
+        }
+    };
+
+    // All fixed-size fields are in the bracket, handling the ArrayRingBuffer, if given.
+    (
+        $(#[$struct_attr:meta])*
+        pub struct RingBuffer<T> {
+            [
+                $($field_name:ident: $field_type:ty,)*
+            ]
+            slots: UnsafeCell<[MaybeUninit<T>]>,
+        }
+
+        $(#[$array_struct_attr:meta])*
+        pub struct ArrayRingBuffer<T, const N: usize>;
+    ) => {
+        dst_ring_buffer_instantiation! {
+            $(#[$struct_attr])*
+            pub struct RingBuffer<T> {
+                [
+                    $($field_name: $field_type,)*
+                ]
+                slots: UnsafeCell<[MaybeUninit<T>]>,
+            }
+        }
+
+        $(#[$array_struct_attr])*
+        #[repr(C)]
+        pub struct ArrayRingBuffer<T, const N: usize> {
+            $($field_name: $field_type,)*
+            slots: UnsafeCell<[MaybeUninit<T>; N]>,
+        }
+
+        impl<T, const N: usize> ArrayRingBuffer<T, N> {
+            /// Creates an ArrayRingBuffer with the given fixed-size fields.
+            ///
+            /// The `slots` remain uninitialized.
+            const fn from_sized_fields(fields: Fields) -> Self {
+                let Fields { $($field_name,)* } = fields;
+                Self {
+                    $($field_name,)*
+                    slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
+                }
+            }
+
+            /// Returns a reference to the dynamically sized [`RingBuffer`].
+            ///
+            /// In most cases, calling this is not necessary,
+            /// because `ArrayRingBuffer` automatically dereferences to `RingBuffer`.
+            /// It might be useful in `const` contexts, though.
+            pub const fn as_unsized(&self) -> &RingBuffer<T> {
+                let ptr: *const Self = self;
+                // Turn the self-pointer into a (fat) pointer to a slice ...
+                let ptr: *const [T] = core::ptr::slice_from_raw_parts(ptr.cast(), N);
+                // ... and then into a pointer to the dynamically sized RingBuffer.
+                // SAFETY: Both structs are #[repr(C)] and have identical fields
+                // (both guaranteed by the macro), except for `slots`,
+                // which is an array or slice, respectively.
+                // The slice length is set to `N` here, so both have the same memory layout.
+                unsafe { &*(ptr as *const RingBuffer<T>) }
+            }
+
+            /// Like `as_unsized()`, but mutable.
+            const fn as_unsized_mut() -> &mut RingBuffer<T> {
+                let ptr: *mut Self = self;
+                let ptr: *mut [T] = core::ptr::slice_from_raw_parts_mut(ptr.cast(), N);
+                // SAFETY: See as_unsized().
+                unsafe { &mut *(ptr as *mut RingBuffer<T>) }
             }
         }
     };
 
-    // Base case: Only one field (the dynamically-sized one) remains outside the brackets.
+    // Base case: All fixed-size fields are in the bracket, no ArrayRingBuffer.
     (
         $(#[$struct_attr:meta])*
         pub struct RingBuffer<T> {
-            =[
-                $(
-                    $(#[$field_attr:meta])*
-                    $field_vis:vis $field_name:ident: $field_type:ty,
-                )*
+            [
+                $($field_name:ident: $field_type:ty,)*
             ]
-
-            $(#[$last_field_attr:meta])*
-            $last_field_name:ident: $last_field_type:ty,
+            slots: UnsafeCell<[MaybeUninit<T>]>,
         }
     ) => {
         $(#[$struct_attr])*
         #[repr(C)]
         pub struct RingBuffer<T> {
-            $(
-                $(#[$field_attr])*
-                $field_vis $field_name: $field_type,
-            )*
-
-            $(#[$last_field_attr])*
-            $last_field_name: $last_field_type,
+            $($field_name: $field_type,)*
+            slots: UnsafeCell<[MaybeUninit<T>]>,
         }
 
-        use core::alloc::Layout;
+        /// All fixed-size fields of RingBuffer, only used for initialization.
+        struct Fields {
+            $($field_name: $field_type,)*
+        }
 
         impl<T> RingBuffer<T> {
             /// Calculate memory layout using the given `capacity`.
-            fn layout_helper(capacity: usize) -> Layout {
+            fn layout_helper(capacity: usize) -> core:alloc::Layout {
                 // Start with an empty layout ...
-                let layout = Layout::new::<()>();
+                let layout = core:alloc::Layout::new::<()>();
                 // ... and add all fields from RingBuffer,
                 // which must have #[repr(C)] (which we added above)!
                 $(
                     let (layout, _) = layout
-                        .extend(Layout::new::<$field_type>())
+                        .extend(core:alloc::Layout::new::<$field_type>())
                         .unwrap();
                 )*
                 // After the fixed-size fields, we need space for the slots.
                 let (layout, _) = layout
-                    .extend(Layout::array::<T>(capacity).unwrap())
+                    .extend(core:alloc::Layout::array::<T>(capacity).unwrap())
                     .unwrap();
                 layout.pad_to_align()
             }
 
-            fn coerce(ptr: *mut u8, capacity: usize) -> *mut Self {
+            unsafe fn coerce(ptr: *mut u8, capacity: usize) -> *mut Self {
                 // Create a (fat) pointer to a slice ...
                 let ptr: *mut [T] = core::ptr::slice_from_raw_parts_mut(ptr.cast(), capacity);
                 // ... and coerce it into our own dynamically sized type:
                 ptr as *mut Self
             }
 
-            // SAFETY: Pointer must be valid and no reference exists.
-            unsafe fn default_initialize(ptr: *mut Self) {
+            /// Initializes the fixed-sized fields.
+            ///
+            /// # Safety
+            ///
+            /// Pointer must be valid for writes and no reference exists.
+            unsafe fn initialize(ptr: *mut Self, fields: Fields) {
+                let Fields { $($field_name)* } = fields;
                 // SAFETY: Offsets and types of fields are correct.
                 unsafe {
                 $(
-                    core::ptr::addr_of_mut!((*ptr).$field_name).write(Default::default());
+                    core::ptr::addr_of_mut!((*ptr).$field_name).write($field_name);
                     // With MSRV 1.82, this can be used instead:
-                    //(&raw mut (*ptr).$field_name).write(Default::default());
+                    //(&raw mut (*ptr).$field_name).write($field_name);
                 )*
                 }
             }
 
-            /// Allocates memory and Default-initializes the fixed-size fields.
+            /// Allocates memory and initializes the fixed-size fields.
             ///
             /// The dynamically-sized part remains uninitialized.
             #[cfg(feature = "alloc")]
-            fn instantiate(capacity: usize) -> Box<Self> {
+            fn instantiate(capacity: usize, fields: Fields) -> Box<Self> {
                 let layout = Self::layout_helper(capacity);
                 // SAFETY: `layout` has non-zero size.
                 let ptr = unsafe { alloc::alloc::alloc(layout) };
@@ -113,7 +176,7 @@ macro_rules! dst_ring_buffer_instantiation {
                 // SAFETY: The allocation has been created according to `layout()`
                 // it will live long enough and no other reference exists.
                 unsafe {
-                    Self::default_initialize(ptr);
+                    Self::initialize(ptr, fields);
                 }
                 // SAFETY: The memory has been allocated in a compatible way
                 // and this is the only time we create a `Box` from it.
