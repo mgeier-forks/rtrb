@@ -1,7 +1,7 @@
 use std::io::Write as _;
 use std::time::Duration;
 
-use rtrb::slice::{Consumer, Producer, RingBuffer};
+use rtrb::ex::{Consumer, Producer, RingBuffer};
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 
 type Buffer = RingBuffer<i32>;
@@ -47,8 +47,8 @@ impl Owner<'_> {
 impl Drop for Owner<'_> {
     fn drop(&mut self) {
         if let Some(mut c) = self.buffer().consumer() {
-            // All remaining elements are dropped here.
-            c.read_chunk(c.slots()).unwrap().commit_all();
+            // All remaining items are dropped here.
+            c.drop_available_items();
         } else {
             println!("Owner is dropped while consumer is still connected.");
         }
