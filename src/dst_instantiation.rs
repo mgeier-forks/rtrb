@@ -137,7 +137,8 @@ macro_rules! dst_ring_buffer_instantiation {
                 layout.pad_to_align()
             }
 
-            unsafe fn coerce(ptr: *mut u8, capacity: usize) -> *mut Self {
+            // This function is safe, but using the returned pointer is unsafe.
+            fn coerce(ptr: *mut u8, capacity: usize) -> *mut Self {
                 // Create a (fat) pointer to a slice ...
                 let ptr: *mut [T] = core::ptr::slice_from_raw_parts_mut(ptr.cast(), capacity);
                 // ... and coerce it into our own dynamically sized type:
