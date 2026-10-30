@@ -526,6 +526,16 @@ impl<T> Consumer<'_, T> {
         Ok(unsafe { ReadChunk::new(self, n, offset) })
     }
 
+    /// Drops all items that are currently available for reading, returns number of dropped items.
+    ///
+    /// Since items can be concurrently produced on another thread,
+    /// new items can become available at any time.
+    pub fn drop_available_items(&mut self) -> usize {
+        let n = self.slots();
+        self.read_chunk(n).unwrap().commit_all();
+        n
+    }
+
     pub(super) unsafe fn advance(&self, n: usize) {
         let head = self.buffer.increment(self.cached_head.get(), n);
         // SAFETY: The user must make sure that `n` slots have been read.
