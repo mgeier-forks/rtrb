@@ -26,6 +26,9 @@
 //! These functions allow usage with dynamic capacity in combination with shared memory
 //! (and pre-allocated memory in general), see the `shared-memory-slice` example.
 //!
+//! If the capacity is known at compile time, an [`ArrayRingBuffer`] can be used,
+//! which auto-dereferences to `RingBuffer` and therefore provides the same methods.
+//!
 //! # Examples
 //!
 //! Moving single elements into and out of a queue with
@@ -67,9 +70,33 @@
 //!   * [`Consumer::pop_partial_slice_uninit()`] (if `T: Copy`)
 //!   * [`Consumer::pop_entire_slice()`] (if `T: Copy`)
 //!   * [`Consumer::pop_entire_slice_uninit()`] (if `T: Copy`)
+//!
+//! ## Usage with `static`
+//!
+//! An [`ArrayRingBuffer`] can be defined as a `static` item
+//! ([`ArrayRingBuffer::new()`] is a `const` function to allow this usage):
+//!
+//! ```
+//! use rtrb::ex_lite::{ArrayRingBuffer, Consumer};
+//!
+//! // This can be used either as a global variable or at function scope:
+//! static RB: ArrayRingBuffer<i32, 64> = ArrayRingBuffer::new();
+//!
+//! // This can be called from any thread, and/or moved to any thread:
+//! let mut producer = RB.producer().unwrap();
+//! assert_eq!(producer.push(10), Ok(()));
+//!
+//! // It's possible to store producers/consumers in a lifetime-less `struct`,
+//! // because they have `'static` lifetime:
+//! struct MyStruct {
+//!     consumer: Consumer<'static, i32>,
+//! }
+//! let mut s = MyStruct { consumer: RB.consumer().unwrap() };
+//! assert_eq!(s.consumer.pop(), Ok(10));
+//! ```
 
 mod ring_buffer;
-pub use ring_buffer::RingBuffer;
+pub use ring_buffer::{ArrayRingBuffer, RingBuffer};
 mod producer;
 pub use producer::Producer;
 mod consumer;

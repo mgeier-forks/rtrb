@@ -22,7 +22,6 @@
 //! [`RingBuffer::producer()`],
 //! and a (single) [`Consumer`] for reading from the ring buffer can be created with
 //! [`RingBuffer::consumer()`].
-{% if storage == "dst" %}
 //!
 //! [`RingBuffer::new_at()`] and [`RingBuffer::new_at_unchecked()`] can be used
 //! to create a `RingBuffer` in pre-allocated memory.
@@ -30,9 +29,11 @@
 //! that has been created at a given memory address.
 //! These functions allow usage with dynamic capacity in combination with shared memory
 //! (and pre-allocated memory in general), see the `shared-memory-slice` example.
+//!
+//! If the capacity is known at compile time, an [`ArrayRingBuffer`] can be used,
+//! which auto-dereferences to `RingBuffer` and therefore provides the same methods.
 {% endif %}
-{% endif %}
-{% if storage != "vrb" %}
+{% if contiguous != "vrb" %}
 //!
 //! # Examples
 //!
@@ -73,18 +74,18 @@
 //!   * [`Consumer::pop_partial_slice_uninit()`] (if `T: Copy`)
 //!   * [`Consumer::pop_entire_slice()`] (if `T: Copy`)
 //!   * [`Consumer::pop_entire_slice_uninit()`] (if `T: Copy`)
-{% if storage == "array" and not arc %}
+{% if not arc %}
 //!
 //! ## Usage with `static`
 //!
-//! A [`RingBuffer`] can be defined as a `static` item
-//! ([`RingBuffer::new()`] is a `const` function to allow this usage):
+//! An [`ArrayRingBuffer`] can be defined as a `static` item
+//! ([`ArrayRingBuffer::new()`] is a `const` function to allow this usage):
 //!
 //! ```
-//! use {{ module_path }}::{Consumer, Producer, RingBuffer};
+//! use {{ module_path }}::{ArrayRingBuffer, Consumer};
 //!
 //! // This can be used either as a global variable or at function scope:
-//! static RB: RingBuffer<i32, 64> = RingBuffer::new();
+//! static RB: ArrayRingBuffer<i32, 64> = ArrayRingBuffer::new();
 //!
 //! // This can be called from any thread, and/or moved to any thread:
 //! let mut producer = RB.producer().unwrap();
@@ -101,11 +102,12 @@
 {% endif %}
 {% endif %}
 
-{% if bip and not contiguous %}
-compile_error!("bip implies contiguous");
-{% endif %}
 mod ring_buffer;
+{% if arc %}
 pub use ring_buffer::RingBuffer;
+{% else %}
+pub use ring_buffer::{ArrayRingBuffer, RingBuffer};
+{% endif %}
 mod producer;
 pub use producer::Producer;
 mod consumer;
@@ -137,7 +139,7 @@ pub use crate::PushError;
 ///
 /// To get the maximum number of available slots beforehand
 /// (and therefore avoid this error), use
-{% if bip %}
+{% if contiguous == "bip" %}
 /// [`Producer::slots_contiguous_max()`] and [`Consumer::slots_contiguous_first()`],
 {% else %}
 /// [`Producer::slots()`] and [`Consumer::slots()`],
