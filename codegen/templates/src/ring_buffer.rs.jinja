@@ -4,14 +4,7 @@
 // It has been auto-generated from `codegen/templates/src/ring_buffer.rs.jinja`
 // using the configuration file `codegen/configs/{{ module_name }}.toml`.
 
-{% if storage == "array" %}
-  {% if arc %}
-"ERROR: array storage and arc are not compatible"
-  {% endif %}
-use core::cell::UnsafeCell;
-use core::mem::MaybeUninit;
-
-{% elif storage == "dst" %}
+{% if contiguous != "vrb" %}
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 {% if not arc %}
@@ -32,7 +25,7 @@ use crate::cache_padded::CachePadded;
 
 use super::{Consumer, Producer};
 
-{% if storage == "dst" %}
+{% if contiguous != "vrb" %}
 dst_ring_buffer_instantiation! {
 {% endif %}
 /// A bounded single-producer single-consumer (SPSC) queue.
@@ -43,25 +36,22 @@ dst_ring_buffer_instantiation! {
 {% else %}
 /// which can be obtained with [`RingBuffer::producer()`]
 /// and [`RingBuffer::consumer()`], respectively.
-{% if storage == "dst" %}
 ///
 /// [`RingBuffer::new()`] automatically allocates memory on the heap.
 /// To work with pre-allocated memory, [`RingBuffer::new_at()`] and
 /// [`RingBuffer::new_at_unchecked()`] can be used.
-{% endif %}
+///
+/// If the desired capacity is known at compile time, an [`ArrayRingBuffer`] can be used,
+/// which auto-dereferences to `RingBuffer` and therefore provides the same methods.
 {% endif %}
 ///
 /// *See also the [module-level documentation](crate::{{ module_name }}).*
-{% if storage == "array" %}
-#[derive(Debug, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct RingBuffer<T, const N: usize>(RingBufferInner<[MaybeUninit<T>; N]>);
-
+{% if contiguous != "vrb" %}
 #[derive(Debug)]
-pub(super) struct RingBufferInner<Container: ?Sized> {
+pub struct RingBuffer<T> {
     head: {{ CachePadded("AtomicUsize") }},
     tail: {{ CachePadded("AtomicUsize") }},
-    {% if bip %}
+    {% if contiguous == "bip" %}
     // TODO: measure whether CachePadded helps
     skip: {{ CachePadded("AtomicUsize") }},
     {% endif %}
@@ -71,29 +61,37 @@ pub(super) struct RingBufferInner<Container: ?Sized> {
     has_producer: AtomicBool,
     has_consumer: AtomicBool,
     {% endif %}
-    /// The possibly unsized container holding slots.
-    ///
-    /// This must be in an `UnsafeCell` because both producer and consumer
-    /// have a (non-mutable) reference to the ring buffer and they use
-    /// *interior mutability* to modify it.
-    slots: UnsafeCell<Container>,
+    // Dynamically sized storage.
+    //
+    // This must be in an `UnsafeCell` because both producer and consumer
+    // have a (non-mutable) reference to the ring buffer and they use
+    // *interior mutability* to modify it.
+    slots: UnsafeCell<[MaybeUninit<T>]>,
+}
+{% if not arc %}
+
+/// A bounded SPSC queue with compile-time capacity.
+///
+/// It automatically dereferences to [`RingBuffer`] and therefore provides the same methods
+/// (in `const` contexts [`ArrayRingBuffer::as_unsized()`] can be used to get a `&RingBuffer`).
+///
+/// *See also the [module-level documentation](crate::{{ module_name }}).*
+#[derive(Debug)]
+pub struct ArrayRingBuffer<T, const N: usize>;
+{% endif %}
+{# This is the end of the macro invocation: #}
 }
 
-pub(super) type RingBufferUnsized<T> = RingBufferInner<[MaybeUninit<T>]>;
-
 // SAFETY: If T can be moved between threads, RingBuffer can as well.
-unsafe impl<T: Send, const N: usize> Send for RingBuffer<T, N> {}
+unsafe impl<T: Send> Send for RingBuffer<T> {}
 
-// SAFETY: This can be shared, even if T is not Sync (but it must be Send).
-unsafe impl<Container: ?Sized + Send> Sync for RingBufferInner<Container> {}
-
-impl<T, const N: usize> RingBuffer<T, N> {
-    const fn construct() -> Self {
-        RingBuffer(RingBufferInner {
+impl<T> RingBuffer<T> {
+    const fn initial_values({% if contiguous == "bip" %}capacity: usize{% endif %}) -> Fields {
+        Fields {
             head: {{ CachePadded_new("AtomicUsize::new(0)") }},
             tail: {{ CachePadded_new("AtomicUsize::new(0)") }},
-            {% if bip %}
-            skip: {{ CachePadded_new("AtomicUsize::new(N)") }},
+            {% if contiguous == "bip" %}
+            skip: {{ CachePadded_new("AtomicUsize::new(capacity)") }},
             {% endif %}
             {% if arc %}
             is_abandoned: AtomicBool::new(false),
@@ -101,8 +99,7 @@ impl<T, const N: usize> RingBuffer<T, N> {
             has_producer: AtomicBool::new(false),
             has_consumer: AtomicBool::new(false),
             {% endif %}
-            slots: UnsafeCell::new([const { MaybeUninit::uninit() }; N]),
-        })
+        }
     }
 }
 
@@ -148,7 +145,7 @@ impl<T> RingBufferUnsized<T> {
 pub struct RingBuffer<T> {
     head: {{ CachePadded("AtomicUsize") }},
     tail: {{ CachePadded("AtomicUsize") }},
-    {% if bip %}
+    {% if contiguous == "bip" %}
     // TODO: measure whether CachePadded helps
     skip: {{ CachePadded("AtomicUsize") }},
     {% endif %}
@@ -174,7 +171,7 @@ unsafe impl<T: Send> Send for RingBuffer<T> {}
 impl<T> RingBuffer<T> {
     #[cfg(feature = "alloc")]
     fn construct(capacity: usize) -> Box<Self> {
-        {% if bip %}
+        {% if contiguous == "bip" %}
         let rb = Self::instantiate(capacity);
         rb.skip.store(rb.capacity(), Ordering::Relaxed);
         rb
@@ -205,7 +202,7 @@ impl<T> Drop for RingBuffer<T> {
     }
 }
 {% elif storage == "vrb" %}
-  {% if bip %}
+  {% if contiguous == "bip" %}
 compile_error!("vrb and bip are mutually exclusive");
   {% endif %}
   {% if not contiguous %}
@@ -791,12 +788,12 @@ impl<T> RingBufferUnsized<T> {
         // before destruction.  Relaxed ordering is sufficient here.
         let mut head = self.head.load(Ordering::Relaxed);
         let tail = self.tail.load(Ordering::Relaxed);
-{% if bip %}
+{% if contiguous == "bip" %}
         let skip = self.skip.load(Ordering::Relaxed);
 {% endif %}
         // Loop over all slots that hold a value and drop them.
         while head != tail {
-{% if bip %}
+{% if contiguous == "bip" %}
             if self.collapse_position(head) == skip {
                 head = self.increment(head, self.capacity() - skip);
             }
@@ -906,7 +903,7 @@ impl<T> RingBufferUnsized<T> {
     pub(super) unsafe fn set_tail(&self, value: usize) {
         self.tail.store(value, Ordering::Release);
     }
-{% if bip %}
+{% if contiguous == "bip" %}
 
     pub(super) fn skip(&self) -> usize {
         self.skip.load(Ordering::Relaxed)
