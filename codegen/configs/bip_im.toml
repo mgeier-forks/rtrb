@@ -1,8 +1,7 @@
 arc = true
-bip = true
+contiguous = "bip"
 padded = true
 pow2 = false
-storage = "dst"
 
 module_docstring = """
 //! Bi-partite, heap storage, reference-counted producer and consumer.

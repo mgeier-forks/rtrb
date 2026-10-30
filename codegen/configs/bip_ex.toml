@@ -1,8 +1,7 @@
 arc = false
-bip = true
+contiguous = "bip"
 padded = true
 pow2 = false
-storage = "dst"
 
 module_docstring = """
 //! Bi-partite, storage on the heap or in user-provided memory, no reference counting.

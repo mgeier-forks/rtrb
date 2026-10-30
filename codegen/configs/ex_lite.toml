@@ -1,7 +1,6 @@
 arc = false
-padded = true
+padded = false
 pow2 = false
-storage = "dst"
 
 module_docstring = """
 //! Same as [`rtrb::ex`](crate::ex), but without cacheline padding.

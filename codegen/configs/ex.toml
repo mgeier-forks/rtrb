@@ -1,7 +1,6 @@
 arc = false
 padded = true
 pow2 = false
-storage = "dst"
 
 module_docstring = """
 //! TODO, no reference counting.
