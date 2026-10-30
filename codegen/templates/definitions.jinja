@@ -26,5 +26,5 @@ compile_error!("Invalid contiguous = {{ contiguous }}")
 {{ prefix }} let rb = RingBuffer::new({{ capacity }});
 {{ prefix }} let mut producer = rb.producer().unwrap();
 {{ prefix }} let mut consumer = rb.consumer().unwrap();
-{% endif %}
+{%- endif %}
 {%- endmacro %}
