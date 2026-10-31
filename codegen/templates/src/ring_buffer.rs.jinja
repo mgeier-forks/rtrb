@@ -47,101 +47,7 @@ dst_ring_buffer_instantiation! {
 {% endif %}
 ///
 /// *See also the [module-level documentation](crate::{{ module_name }}).*
-{% if contiguous != "vrb" %}
-#[derive(Debug)]
-pub struct RingBuffer<T> {
-    head: {{ CachePadded("AtomicUsize") }},
-    tail: {{ CachePadded("AtomicUsize") }},
-    {% if contiguous == "bip" %}
-    // TODO: measure whether CachePadded helps
-    skip: {{ CachePadded("AtomicUsize") }},
-    {% endif %}
-    {% if arc %}
-    is_abandoned: AtomicBool,
-    {% else %}
-    has_producer: AtomicBool,
-    has_consumer: AtomicBool,
-    {% endif %}
-    // Dynamically sized storage.
-    //
-    // This must be in an `UnsafeCell` because both producer and consumer
-    // have a (non-mutable) reference to the ring buffer and they use
-    // *interior mutability* to modify it.
-    slots: UnsafeCell<[MaybeUninit<T>]>,
-}
-{% if not arc %}
-
-/// A bounded SPSC queue with compile-time capacity.
-///
-/// It automatically dereferences to [`RingBuffer`] and therefore provides the same methods
-/// (in `const` contexts [`ArrayRingBuffer::as_unsized()`] can be used to get a `&RingBuffer`).
-///
-/// *See also the [module-level documentation](crate::{{ module_name }}).*
-#[derive(Debug)]
-pub struct ArrayRingBuffer<T, const N: usize>;
-{% endif %}
-{# This is the end of the macro invocation: #}
-}
-
-// SAFETY: If T can be moved between threads, RingBuffer can as well.
-unsafe impl<T: Send> Send for RingBuffer<T> {}
-
-impl<T> RingBuffer<T> {
-    const fn initial_values({% if contiguous == "bip" %}capacity: usize{% endif %}) -> Fields {
-        Fields {
-            head: {{ CachePadded_new("AtomicUsize::new(0)") }},
-            tail: {{ CachePadded_new("AtomicUsize::new(0)") }},
-            {% if contiguous == "bip" %}
-            skip: {{ CachePadded_new("AtomicUsize::new(capacity)") }},
-            {% endif %}
-            {% if arc %}
-            is_abandoned: AtomicBool::new(false),
-            {% else %}
-            has_producer: AtomicBool::new(false),
-            has_consumer: AtomicBool::new(false),
-            {% endif %}
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    fn new_boxed(capacity: usize) -> Box<Self> {
-        let layout = Self::layout_helper(capacity);
-        // SAFETY: `layout` has non-zero size.
-        let ptr = unsafe { alloc::alloc::alloc(layout) };
-        if ptr.is_null() {
-            alloc::alloc::handle_alloc_error(layout);
-        }
-        let fields = Self::initial_values({% if contiguous == "bip" %}capacity{% endif %});
-        // SAFETY: The allocation has been created according to `layout()`
-        // it will live long enough and no other reference exists.
-        let ptr = unsafe { Self::from_sized_fields(ptr, capacity, fields) };
-        // SAFETY: The memory has been allocated in a compatible way
-        // and this is the only time we create a `Box` from it.
-        unsafe { Box::from_raw(ptr) }
-    }
-
-    pub(super) fn capacity(&self) -> usize {
-        self.slots.get().len()
-    }
-
-    pub(super) fn data_ptr(&self) -> *mut T {
-        self.slots.get().cast()
-    }
-}
-
-impl<T> Drop for RingBuffer<T> {
-    /// Drops all non-empty slots.
-    fn drop(&mut self) {
-        // SAFETY: this is called exactly once, no references to any elements exist anymore.
-        unsafe { self.drop_all_elements() };
-        {% if arc %}
-        // The memory will be deallocated when the containing `ArcRingBuffer` is dropped.
-        {% else %}
-        // The memory will be deallocated if and when the containing `Box` is dropped.
-        {% endif %}
-    }
-}
-{% else %}
+{% if contiguous == "vrb" %}
 {% if not pow2 %}
 compile_error!("vrb must use powers of two");
 {% endif %}
@@ -260,6 +166,100 @@ impl<T> Drop for RingBuffer<T> {
             let r = libc::munmap(ptr_two, len);
             assert_eq!(r, 0); // TODO: check for errno?
         }
+    }
+}
+{% else %}
+#[derive(Debug)]
+pub struct RingBuffer<T> {
+    head: {{ CachePadded("AtomicUsize") }},
+    tail: {{ CachePadded("AtomicUsize") }},
+    {% if contiguous == "bip" %}
+    // TODO: measure whether CachePadded helps
+    skip: {{ CachePadded("AtomicUsize") }},
+    {% endif %}
+    {% if arc %}
+    is_abandoned: AtomicBool,
+    {% else %}
+    has_producer: AtomicBool,
+    has_consumer: AtomicBool,
+    {% endif %}
+    // Dynamically sized storage.
+    //
+    // This must be in an `UnsafeCell` because both producer and consumer
+    // have a (non-mutable) reference to the ring buffer and they use
+    // *interior mutability* to modify it.
+    slots: UnsafeCell<[MaybeUninit<T>]>,
+}
+{% if not arc %}
+
+/// A bounded SPSC queue with compile-time capacity.
+///
+/// It automatically dereferences to [`RingBuffer`] and therefore provides the same methods
+/// (in `const` contexts [`ArrayRingBuffer::as_unsized()`] can be used to get a `&RingBuffer`).
+///
+/// *See also the [module-level documentation](crate::{{ module_name }}).*
+#[derive(Debug)]
+pub struct ArrayRingBuffer<T, const N: usize>;
+{% endif %}
+{# This is the end of the macro invocation: #}
+}
+
+// SAFETY: If T can be moved between threads, RingBuffer can as well.
+unsafe impl<T: Send> Send for RingBuffer<T> {}
+
+impl<T> RingBuffer<T> {
+    const fn initial_values({% if contiguous == "bip" %}capacity: usize{% endif %}) -> Fields {
+        Fields {
+            head: {{ CachePadded_new("AtomicUsize::new(0)") }},
+            tail: {{ CachePadded_new("AtomicUsize::new(0)") }},
+            {% if contiguous == "bip" %}
+            skip: {{ CachePadded_new("AtomicUsize::new(capacity)") }},
+            {% endif %}
+            {% if arc %}
+            is_abandoned: AtomicBool::new(false),
+            {% else %}
+            has_producer: AtomicBool::new(false),
+            has_consumer: AtomicBool::new(false),
+            {% endif %}
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    fn new_boxed(capacity: usize) -> Box<Self> {
+        let layout = Self::layout_helper(capacity);
+        // SAFETY: `layout` has non-zero size.
+        let ptr = unsafe { alloc::alloc::alloc(layout) };
+        if ptr.is_null() {
+            alloc::alloc::handle_alloc_error(layout);
+        }
+        let fields = Self::initial_values({% if contiguous == "bip" %}capacity{% endif %});
+        // SAFETY: The allocation has been created according to `layout()`
+        // it will live long enough and no other reference exists.
+        let ptr = unsafe { Self::from_sized_fields(ptr, capacity, fields) };
+        // SAFETY: The memory has been allocated in a compatible way
+        // and this is the only time we create a `Box` from it.
+        unsafe { Box::from_raw(ptr) }
+    }
+
+    pub(super) fn capacity(&self) -> usize {
+        self.slots.get().len()
+    }
+
+    pub(super) fn data_ptr(&self) -> *mut T {
+        self.slots.get().cast()
+    }
+}
+
+impl<T> Drop for RingBuffer<T> {
+    /// Drops all non-empty slots.
+    fn drop(&mut self) {
+        // SAFETY: this is called exactly once, no references to any elements exist anymore.
+        unsafe { self.drop_all_elements() };
+        {% if arc %}
+        // The memory will be deallocated when the containing `ArcRingBuffer` is dropped.
+        {% else %}
+        // The memory will be deallocated if and when the containing `Box` is dropped.
+        {% endif %}
     }
 }
 {% endif %}
