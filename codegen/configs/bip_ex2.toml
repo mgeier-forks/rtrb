@@ -1,7 +1,7 @@
 arc = false
 contiguous = "bip"
 padded = true
-pow2 = false
+pow2 = true
 
 module_docstring = """
 //! Same as [`rtrb::bip_ex`](crate::bip_ex), but with a capacity that is a power of two.
