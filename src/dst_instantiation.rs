@@ -87,7 +87,7 @@ macro_rules! dst_ring_buffer_instantiation {
             }
 
             /// Like `as_unsized()`, but mutable.
-            const fn as_unsized_mut() -> &mut RingBuffer<T> {
+            const fn as_unsized_mut(&mut self) -> &mut RingBuffer<T> {
                 let ptr: *mut Self = self;
                 let ptr: *mut [T] = core::ptr::slice_from_raw_parts_mut(ptr.cast(), N);
                 // SAFETY: See as_unsized().
@@ -145,12 +145,14 @@ macro_rules! dst_ring_buffer_instantiation {
                 ptr as *mut Self
             }
 
-            /// Initializes the fixed-sized fields.
+            /// Initializes a RingBuffer at the given memory location.
             ///
             /// # Safety
             ///
-            /// Pointer must be valid for writes and no reference exists.
-            unsafe fn initialize(ptr: *mut Self, fields: Fields) {
+            /// Pointer must be valid for writes, have the size and alignment given by
+            /// `layout_helper()` (with the same `capacity`) and no reference may exist.
+            unsafe fn from_sized_fields(ptr: *mut u8, capacity: usize, fields: Fields) -> *mut Self {
+                let ptr = Self::coerce(ptr, capacity);
                 let Fields { $($field_name,)* } = fields;
                 // SAFETY: Offsets and types of fields are correct.
                 unsafe {
@@ -160,28 +162,7 @@ macro_rules! dst_ring_buffer_instantiation {
                     //(&raw mut (*ptr).$field_name).write($field_name);
                 )*
                 }
-            }
-
-            /// Allocates memory and initializes the fixed-size fields.
-            ///
-            /// The dynamically-sized part remains uninitialized.
-            #[cfg(feature = "alloc")]
-            fn instantiate(capacity: usize, fields: Fields) -> Box<Self> {
-                let layout = Self::layout_helper(capacity);
-                // SAFETY: `layout` has non-zero size.
-                let ptr = unsafe { alloc::alloc::alloc(layout) };
-                if ptr.is_null() {
-                    alloc::alloc::handle_alloc_error(layout);
-                }
-                let ptr = Self::coerce(ptr, capacity);
-                // SAFETY: The allocation has been created according to `layout()`
-                // it will live long enough and no other reference exists.
-                unsafe {
-                    Self::initialize(ptr, fields);
-                }
-                // SAFETY: The memory has been allocated in a compatible way
-                // and this is the only time we create a `Box` from it.
-                unsafe { Box::from_raw(ptr) }
+                ptr
             }
         }
     };

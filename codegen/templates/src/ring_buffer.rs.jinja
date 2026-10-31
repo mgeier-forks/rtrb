@@ -105,7 +105,7 @@ impl<T> RingBuffer<T> {
 
     #[cfg(feature = "alloc")]
     fn new_boxed(capacity: usize) -> Box<Self> {
-        let layout = self.layout_helper(capacity);
+        let layout = Self::layout_helper(capacity);
         // SAFETY: `layout` has non-zero size.
         let ptr = unsafe { alloc::alloc::alloc(layout) };
         if ptr.is_null() {
@@ -214,7 +214,7 @@ impl<T, const N: usize> core::ops::DerefMut for ArrayRingBuffer<T, N> {
     }
 }
 
-impl<T, const N: usize> Drop for RingBuffer<T, N> {
+impl<T, const N: usize> Drop for ArrayRingBuffer<T, N> {
     /// Drops all non-empty slots.
     fn drop(&mut self) {
         // SAFETY: this is called exactly once, no references to any elements exist anymore.
@@ -360,9 +360,11 @@ impl<T> Drop for RingBuffer<T> {
 // SAFETY: RingBuffer is only mutated (using *interior mutablility*)
 // via Producer/Consumer (which are !Sync), all other access can be shared (if T is Send).
 unsafe impl<T: Send> Sync for RingBuffer<T> {}
+{% if not arc %}
 
 // SAFETY: Same as RingBuffer.
 unsafe impl<T: Send, const N: usize> Sync for ArrayRingBuffer<T, N> {}
+{% endif %}
 
 // NB: `Send` might be implemented by different storage backends,
 // but it is not necessary for correct behavior of the RingBuffer.
@@ -755,13 +757,13 @@ impl<T> RingBuffer<T> {
 {% endif %}
 
     /// Asserts that capacity is not too large and applies `update_capacity()`.
-    const fn checked_capacity() -> usize {
+    const fn checked_capacity(capacity: usize) -> usize {
         assert!(
             {% if pow2 %}
-            /// Read/write indices use the whole range of `usize`,
-            /// half of that range can be used for slots.
+            // Read/write indices use the whole range of `usize`,
+            // half of that range can be used for slots.
             {% else %}
-            /// `2 * capacity` must not overflow.
+            // `2 * capacity` must not overflow.
             {% endif %}
             capacity <= {{ max_capacity }},
             "capacity exceeds {{ max_capacity }}"
