@@ -2,7 +2,7 @@
 
 use std::{io::Write as _, marker::PhantomData, ptr::NonNull, time::Duration};
 
-use rtrb::ex::{Consumer, Producer, ArrayRingBuffer};
+use rtrb::ex::{ArrayRingBuffer, Consumer, Producer};
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 
 type Buffer = ArrayRingBuffer<i32, 16>;
