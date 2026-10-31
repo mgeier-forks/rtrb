@@ -141,91 +141,10 @@ impl<T> Drop for RingBuffer<T> {
         {% endif %}
     }
 }
-{% if not arc %}
-
-// SAFETY: If T can be moved between threads, ArrayRingBuffer can as well.
-unsafe impl<T: Send, const N: usize> Send for ArrayRingBuffer<T, N> {}
-
-impl<T, const N: usize> ArrayRingBuffer<T, N> {
-    /// Creates a ring buffer with a capacity of `N`.
-    ///
-{% if pow2 %}
-    /// `N` must be a power of two.
-    ///
-{% endif %}
-    /// `N` cannot be larger than `{{ max_capacity }}`.
-    ///
-    /// A (single) [`Producer`] for writing into the ring buffer can be created with
-    /// [`RingBuffer::producer()`].
-    /// A (single) [`Consumer`] for reading from the ring buffer can be created with
-    /// [`RingBuffer::consumer()`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use {{ module_path }}::ArrayRingBuffer;
-    ///
-    /// let rb = ArrayRingBuffer::<f32, 128>::new();
-    /// ```
-    ///
-    /// Specifying an explicit type is is only necessary if it cannot be deduced by the compiler.
-    ///
-    /// ```
-    /// use {{ module_path }}::ArrayRingBuffer;
-    ///
-    /// let rb = ArrayRingBuffer::<_, 128>::new();
-    /// let mut producer = rb.producer().unwrap();
-    /// assert_eq!(producer.push(0.0f32), Ok(()));
-    /// ```
-    ///
-    /// See the [module-level documentation](crate::{{ module_name }}) for `static` usage.
-    pub const fn new() -> Self {
-        const {
-{% if pow2 %}
-            assert!(
-                RingBuffer::<T>::checked_capacity(N) == N,
-                "`N` must be a power of two"
-            );
 {% else %}
-            RingBuffer::<T>::checked_capacity(N);
-{% endif %}
-        }
-        Self::from_sized_fields(RingBuffer::<T>::initial_values({% if contiguous == "bip" %}N{% endif %}))
-    }
-}
-
-impl<T, const N: usize> Default for ArrayRingBuffer<T, N> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T, const N: usize> core::ops::Deref for ArrayRingBuffer<T, N> {
-    type Target = RingBuffer<T>;
-
-    fn deref(&self) -> &Self::Target {
-        self.as_unsized()
-    }
-}
-
-impl<T, const N: usize> core::ops::DerefMut for ArrayRingBuffer<T, N> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.as_unsized_mut()
-    }
-}
-
-impl<T, const N: usize> Drop for ArrayRingBuffer<T, N> {
-    /// Drops all non-empty slots.
-    fn drop(&mut self) {
-        // SAFETY: this is called exactly once, no references to any elements exist anymore.
-        unsafe { self.as_unsized_mut().drop_all_elements() };
-    }
-}
-{% endif %}
-{% else %}
-  {% if not pow2 %}
+{% if not pow2 %}
 compile_error!("vrb must use powers of two");
-  {% endif %}
+{% endif %}
 #[derive(Debug)]
 pub struct RingBuffer<T> {
     head: {{ CachePadded("AtomicUsize") }},
@@ -954,3 +873,84 @@ impl<T> RingBuffer<T> {
     }
 {% endif %}
 }
+{% if not arc %}
+
+// SAFETY: If T can be moved between threads, ArrayRingBuffer can as well.
+unsafe impl<T: Send, const N: usize> Send for ArrayRingBuffer<T, N> {}
+
+impl<T, const N: usize> ArrayRingBuffer<T, N> {
+    /// Creates a ring buffer with a capacity of `N`.
+    ///
+{% if pow2 %}
+    /// `N` must be a power of two.
+    ///
+{% endif %}
+    /// `N` cannot be larger than `{{ max_capacity }}`.
+    ///
+    /// A (single) [`Producer`] for writing into the ring buffer can be created with
+    /// [`RingBuffer::producer()`].
+    /// A (single) [`Consumer`] for reading from the ring buffer can be created with
+    /// [`RingBuffer::consumer()`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use {{ module_path }}::ArrayRingBuffer;
+    ///
+    /// let rb = ArrayRingBuffer::<f32, 128>::new();
+    /// ```
+    ///
+    /// Specifying an explicit type is is only necessary if it cannot be deduced by the compiler.
+    ///
+    /// ```
+    /// use {{ module_path }}::ArrayRingBuffer;
+    ///
+    /// let rb = ArrayRingBuffer::<_, 128>::new();
+    /// let mut producer = rb.producer().unwrap();
+    /// assert_eq!(producer.push(0.0f32), Ok(()));
+    /// ```
+    ///
+    /// See the [module-level documentation](crate::{{ module_name }}) for `static` usage.
+    pub const fn new() -> Self {
+        const {
+{% if pow2 %}
+            assert!(
+                RingBuffer::<T>::checked_capacity(N) == N,
+                "`N` must be a power of two"
+            );
+{% else %}
+            RingBuffer::<T>::checked_capacity(N);
+{% endif %}
+        }
+        Self::from_sized_fields(RingBuffer::<T>::initial_values({% if contiguous == "bip" %}N{% endif %}))
+    }
+}
+
+impl<T, const N: usize> Default for ArrayRingBuffer<T, N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T, const N: usize> core::ops::Deref for ArrayRingBuffer<T, N> {
+    type Target = RingBuffer<T>;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_unsized()
+    }
+}
+
+impl<T, const N: usize> core::ops::DerefMut for ArrayRingBuffer<T, N> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.as_unsized_mut()
+    }
+}
+
+impl<T, const N: usize> Drop for ArrayRingBuffer<T, N> {
+    /// Drops all non-empty slots.
+    fn drop(&mut self) {
+        // SAFETY: this is called exactly once, no references to any elements exist anymore.
+        unsafe { self.as_unsized_mut().drop_all_elements() };
+    }
+}
+{% endif %}
