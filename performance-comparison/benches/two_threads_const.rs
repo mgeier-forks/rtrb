@@ -5,18 +5,18 @@ mod two_threads_const;
 use ringbuf::traits::*;
 
 create_two_threads_const_benchmark!(
-    "rtrb::array",
+    "rtrb::ex::ArrayRingBuffer",
     { ($N:expr) => {{
-        use rtrb::array::RingBuffer;
-        let rb = Box::leak(Box::new(RingBuffer::<u8, $N>::new()));
+        use rtrb::ex::ArrayRingBuffer;
+        let rb = Box::leak(Box::new(ArrayRingBuffer::<u8, $N>::new()));
         (rb.producer().unwrap(), rb.consumer().unwrap())
     }}},
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::
-    "rtrb::arc",
+    "rtrb::im",
     { ($N:expr) => {
-        rtrb::arc::RingBuffer::<u8>::new($N)
+        rtrb::im::RingBuffer::<u8>::new($N)
     }},
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
