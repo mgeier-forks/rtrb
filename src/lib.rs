@@ -13,14 +13,14 @@
 //! | [`ex`]<br>[`ex2`] | wherever? || ✔️ ||
 //! | [`ex_lite`]<br>[`ex_lite2`] | wherever? ||||
 //! | [`bip_im`]<br>[`bip_im2`] | heap | ✔️ | ✔️ | ✔️ |
-//! | [`bip_ex`] | wherever? || ✔️ | ✔️ |
+//! | [`bip_ex`]<br>[`bip_ex2`] | wherever? || ✔️ | ✔️ |
 //! | [`bip_ex_lite`]<br>[`bip_ex_lite2`] | wherever? ||| ✔️ |
 //! | [`vrb_im2`] | virtual memory | ✔️ | ✔️ | ✔️ |
 //!
 //! Modules ending with `2` use capacities that are powers of two.
 //!
 //! Modules containing `im` require the <span class="stab portability"><code>alloc</code></span>
-//! feature (which is enabled by default), [`rtrb::vrb_im2`](vrb_arc2) requires the
+//! feature (which is enabled by default), [`rtrb::vrb_im2`](vrb_im2) requires the
 //! <span class="stab portability"><code>vrb</code></span> feature.
 //!
 //!
@@ -174,7 +174,7 @@
 //! All other modules (i.e. the ones containing `ex`)
 //! do provide access to the `RingBuffer` in some form,
 //! which then provides methods to create a producer and a consumer
-//! (see e.g. [`rtrb::array::RingBuffer::producer()`](array::RingBuffer::producer)).
+//! (see e.g. [`rtrb::ex::RingBuffer::producer()`](ex::RingBuffer::producer)).
 //! In those modules, dropping producer and consumer does *not* automatically drop the `RingBuffer`.
 //! All `ex` producers and consumers have a lifetime argument that
 //! (unless `'static`) infects all data structures which contain them.
