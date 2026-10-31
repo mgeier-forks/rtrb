@@ -10,11 +10,11 @@
 //! | module | storage | reference counted | cacheline padded | contiguous chunks |
 //! |-|-|-|-|-|
 //! | [`im`]<br>[`im2`] | heap | ✔️ | ✔️ ||
-//! | [`ex`]<br>[`ex2`] | wherever? || ✔️ ||
-//! | [`ex_lite`]<br>[`ex_lite2`] | wherever? ||||
+//! | [`ex`]<br>[`ex2`] | stack, heap, wherever! || ✔️ ||
+//! | [`ex_lite`]<br>[`ex_lite2`] | stack, heap, wherever! ||||
 //! | [`bip_im`]<br>[`bip_im2`] | heap | ✔️ | ✔️ | ✔️ |
-//! | [`bip_ex`]<br>[`bip_ex2`] | wherever? || ✔️ | ✔️ |
-//! | [`bip_ex_lite`]<br>[`bip_ex_lite2`] | wherever? ||| ✔️ |
+//! | [`bip_ex`]<br>[`bip_ex2`] | stack, heap, wherever! || ✔️ | ✔️ |
+//! | [`bip_ex_lite`]<br>[`bip_ex_lite2`] | stack, heap, wherever! ||| ✔️ |
 //! | [`vrb_im2`] | virtual memory | ✔️ | ✔️ | ✔️ |
 //!
 //! Modules ending with `2` use capacities that are powers of two.
