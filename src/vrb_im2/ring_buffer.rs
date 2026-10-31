@@ -26,7 +26,7 @@ pub struct RingBuffer<T> {
 }
 
 impl<T> RingBuffer<T> {
-    fn construct(capacity: usize) -> Box<Self> {
+    fn new_boxed(capacity: usize) -> Box<Self> {
         use core::mem;
         const {
             // NB: This also disallows zero-sized types,
@@ -36,7 +36,6 @@ impl<T> RingBuffer<T> {
                 "size of T must be a power of 2"
             );
         }
-        // TODO: what if capacity is 0?
         // SAFETY: If `libc` is not buggy, this should be safe.
         let pagesize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
         assert_ne!(pagesize, -1);
@@ -48,7 +47,7 @@ impl<T> RingBuffer<T> {
         let pages = capacity.div_ceil(elements_per_page);
         let capacity = pages * elements_per_page;
         assert_eq!(capacity, Self::update_capacity(capacity));
-        let len = capacity * mem::size_of::<T>();
+        let len = core::alloc::Layout::array::<T>(capacity).unwrap().size();
 
         // SAFETY:
         // - string is null-terminated
@@ -166,7 +165,7 @@ impl<T> RingBuffer<T> {
     ///
     /// # Panics
     ///
-    /// Panics if `capacity` is larger than `usize::MAX / 2`.
+    /// Panics if `capacity` is larger than `usize::MAX / 2 + 1`.
     ///
     /// # Examples
     ///
@@ -176,8 +175,7 @@ impl<T> RingBuffer<T> {
     /// let (producer, consumer) = RingBuffer::<f32>::new(100);
     /// ```
     ///
-    /// Specifying an explicit type
-    /// with the [turbofish](https://turbo.fish/)
+    /// Specifying an explicit type with the [turbofish](https://turbo.fish/)
     /// is is only necessary if it cannot be deduced by the compiler.
     ///
     /// ```
@@ -188,16 +186,22 @@ impl<T> RingBuffer<T> {
     /// ```
     #[allow(clippy::new_ret_no_self)]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
-        let capacity = Self::update_capacity(capacity);
-        assert!(
-            capacity.checked_mul(2).is_some(),
-            "capacity exceeds usize::MAX / 2"
-        );
-        ArcRingBuffer::new(Self::construct(capacity))
+        ArcRingBuffer::new(Self::new_boxed(Self::checked_capacity(capacity)))
     }
 
     const fn update_capacity(capacity: usize) -> usize {
         capacity.next_power_of_two()
+    }
+
+    /// Asserts that capacity is not too large and applies `update_capacity()`.
+    const fn checked_capacity(capacity: usize) -> usize {
+        assert!(
+            // Read/write indices use the whole range of `usize`,
+            // half of that range can be used for slots.
+            capacity <= usize::MAX / 2 + 1,
+            "capacity exceeds usize::MAX / 2 + 1"
+        );
+        Self::update_capacity(capacity)
     }
 
     /// Drop all elements that are still in the buffer.
@@ -225,7 +229,6 @@ impl<T> RingBuffer<T> {
 
     pub(super) fn collapse_position(&self, pos: usize) -> usize {
         // Wraps from any number to the range `0 .. capacity`.
-        // TODO: is capacity 0 supported?
         pos & (self.capacity() - 1)
     }
 

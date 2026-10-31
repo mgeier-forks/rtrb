@@ -23,6 +23,9 @@ dst_ring_buffer_instantiation! {
 /// To work with pre-allocated memory, [`RingBuffer::new_at()`] and
 /// [`RingBuffer::new_at_unchecked()`] can be used.
 ///
+/// If the desired capacity is known at compile time, an [`ArrayRingBuffer`] can be used,
+/// which auto-dereferences to `RingBuffer` and therefore provides the same methods.
+///
 /// *See also the [module-level documentation](crate::bip_ex_lite).*
 #[derive(Debug)]
 pub struct RingBuffer<T> {
@@ -32,24 +35,53 @@ pub struct RingBuffer<T> {
     skip: AtomicUsize,
     has_producer: AtomicBool,
     has_consumer: AtomicBool,
-    // Storage for the ring buffer elements (dynamically sized).
+    // Dynamically sized storage.
     //
     // This must be in an `UnsafeCell` because both producer and consumer
     // have a (non-mutable) reference to the ring buffer and they use
     // *interior mutability* to modify it.
     slots: UnsafeCell<[MaybeUninit<T>]>,
 }
+
+/// A bounded SPSC queue with compile-time capacity.
+///
+/// It automatically dereferences to [`RingBuffer`] and therefore provides the same methods
+/// (in `const` contexts [`ArrayRingBuffer::as_unsized()`] can be used to get a `&RingBuffer`).
+///
+/// *See also the [module-level documentation](crate::bip_ex_lite).*
+#[derive(Debug)]
+pub struct ArrayRingBuffer<T, const N: usize>;
 }
 
 // SAFETY: If T can be moved between threads, RingBuffer can as well.
 unsafe impl<T: Send> Send for RingBuffer<T> {}
 
 impl<T> RingBuffer<T> {
+    const fn initial_values(capacity: usize) -> Fields {
+        Fields {
+            head: AtomicUsize::new(0),
+            tail: AtomicUsize::new(0),
+            skip: AtomicUsize::new(capacity),
+            has_producer: AtomicBool::new(false),
+            has_consumer: AtomicBool::new(false),
+        }
+    }
+
     #[cfg(feature = "alloc")]
-    fn construct(capacity: usize) -> Box<Self> {
-        let rb = Self::instantiate(capacity);
-        rb.skip.store(rb.capacity(), Ordering::Relaxed);
-        rb
+    fn new_boxed(capacity: usize) -> Box<Self> {
+        let layout = Self::layout_helper(capacity);
+        // SAFETY: `layout` has non-zero size.
+        let ptr = unsafe { alloc::alloc::alloc(layout) };
+        if ptr.is_null() {
+            alloc::alloc::handle_alloc_error(layout);
+        }
+        let fields = Self::initial_values(capacity);
+        // SAFETY: The allocation has been created according to `layout()`
+        // it will live long enough and no other reference exists.
+        let ptr = unsafe { Self::from_sized_fields(ptr, capacity, fields) };
+        // SAFETY: The memory has been allocated in a compatible way
+        // and this is the only time we create a `Box` from it.
+        unsafe { Box::from_raw(ptr) }
     }
 
     pub(super) fn capacity(&self) -> usize {
@@ -78,10 +110,14 @@ impl<T> Drop for RingBuffer<T> {
 /// ```
 /// fn assert_sync<X: Sync + ?Sized>() {}
 /// assert_sync::<rtrb::bip_ex_lite::RingBuffer<std::cell::Cell<u8>>>();
+/// assert_sync::<rtrb::bip_ex_lite::ArrayRingBuffer<std::cell::Cell<u8>, 8>>();
 /// ```
 // SAFETY: RingBuffer is only mutated (using *interior mutablility*)
 // via Producer/Consumer (which are !Sync), all other access can be shared (if T is Send).
 unsafe impl<T: Send> Sync for RingBuffer<T> {}
+
+// SAFETY: Same as RingBuffer.
+unsafe impl<T: Send, const N: usize> Sync for ArrayRingBuffer<T, N> {}
 
 // NB: `Send` might be implemented by different storage backends,
 // but it is not necessary for correct behavior of the RingBuffer.
@@ -94,6 +130,14 @@ impl<T> PartialEq for RingBuffer<T> {
 
 impl<T> Eq for RingBuffer<T> {}
 
+impl<T, const N: usize> PartialEq for ArrayRingBuffer<T, N> {
+    fn eq(&self, other: &Self) -> bool {
+        core::ptr::eq(self, other)
+    }
+}
+
+impl<T, const N: usize> Eq for ArrayRingBuffer<T, N> {}
+
 impl<T> RingBuffer<T> {
     /// Creates a ring buffer with the given `capacity`.
     ///
@@ -101,6 +145,9 @@ impl<T> RingBuffer<T> {
     /// [`RingBuffer::producer()`].
     /// A (single) [`Consumer`] for reading from the ring buffer can be created with
     /// [`RingBuffer::consumer()`].
+    ///
+    /// If the desired capacity is known at compile time, an [`ArrayRingBuffer`] can be used,
+    /// which auto-dereferences to `RingBuffer` and therefore provides the same methods.
     ///
     /// # Panics
     ///
@@ -114,8 +161,7 @@ impl<T> RingBuffer<T> {
     /// let rb = RingBuffer::<f32>::new(100);
     /// ```
     ///
-    /// Specifying an explicit type
-    /// with the [turbofish](https://turbo.fish/)
+    /// Specifying an explicit type with the [turbofish](https://turbo.fish/)
     /// is is only necessary if it cannot be deduced by the compiler.
     ///
     /// ```
@@ -127,12 +173,7 @@ impl<T> RingBuffer<T> {
     /// ```
     #[cfg(feature = "alloc")]
     pub fn new(capacity: usize) -> Box<Self> {
-        let capacity = Self::update_capacity(capacity);
-        assert!(
-            capacity.checked_mul(2).is_some(),
-            "capacity exceeds usize::MAX / 2"
-        );
-        Self::construct(capacity)
+        Self::new_boxed(Self::checked_capacity(capacity))
     }
 
     /// Create a producer and a consumer, requiring exclusive access to the `RingBuffer`.
@@ -152,9 +193,12 @@ impl<T> RingBuffer<T> {
     /// the right amount of properly aligned memory to be used with [`RingBuffer::new_at()`]
     /// and [`RingBuffer::new_at_unchecked()`].
     /// It is *not* needed when using [`RingBuffer::new()`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `capacity` is larger than `usize::MAX / 2`.
     pub fn layout(capacity: usize) -> Layout {
-        let capacity = Self::update_capacity(capacity);
-        Self::layout_helper(capacity)
+        Self::layout_helper(Self::checked_capacity(capacity))
     }
 
     /// Creates a new `RingBuffer` in the given slice of memory, if size and alignment are correct.
@@ -168,9 +212,10 @@ impl<T> RingBuffer<T> {
     ///
     /// The created `RingBuffer` will not be dropped automatically!
     /// This means that if any `T`s remain in the buffer, they will be leaked
-    /// (which is only relevant if `T` implements `Drop`).
-    /// To avoid this, call [`std::ptr::drop_in_place()`],
-    /// but make sure that no other reference exists at that point.
+    /// (which is only relevant if `T` [needs to be dropped](std::mem::needs_drop)).
+    /// To avoid this, the remaining items can be dropped with
+    /// [`Consumer::drop_available_items()`] before deallocating the memory
+    /// (see the example below).
     ///
     /// If you don't need control over the memory location, you can simply use
     /// [`RingBuffer::new()`], which will automatically allocate the required memory
@@ -185,7 +230,7 @@ impl<T> RingBuffer<T> {
     /// ```
     /// use std::mem::MaybeUninit;
     ///
-    /// type RingBufferF32 = rtrb::slice::RingBuffer<f32>;
+    /// type RingBufferF32 = rtrb::ex::RingBuffer<f32>;
     ///
     /// fn somehow_create_storage(capacity: usize) -> &'static mut [MaybeUninit<u8>] {
     ///     let layout = RingBufferF32::layout(capacity);
@@ -208,17 +253,19 @@ impl<T> RingBuffer<T> {
     /// let mut producer = rb.producer().unwrap();
     /// assert!(producer.push(10.0f32).is_ok());
     ///
-    /// // NB: The ring buffer is not dropped, the memory is leaked.
+    /// // NB: The remaining items are not dropped automatically!
+    /// // This is not necessary for `f32`, but if `T` needs to be dropped,
+    /// // it can be done like this:
+    /// let mut consumer = rb.consumer().unwrap();
+    /// consumer.drop_available_items();
+    ///
+    /// // NB: The allocated memory is leaked in this example.
     /// # // Don't actually leak memory, so that Miri doesn't complain:
     /// # drop(producer);
+    /// # drop(consumer);
     /// # unsafe { std::alloc::dealloc(storage.as_mut_ptr().cast(), RingBufferF32::layout(128)); }
     /// ```
     pub fn new_at(storage: &mut [MaybeUninit<u8>], capacity: usize) -> Option<&Self> {
-        let capacity = Self::update_capacity(capacity);
-        assert!(
-            capacity.checked_mul(2).is_some(),
-            "capacity exceeds usize::MAX / 2"
-        );
         let layout = Self::layout(capacity);
         if storage.len() == layout.size() && (storage.as_ptr() as usize) % layout.align() == 0 {
             // SAFETY: Size and alignment match, lifetime and exclusivity are guaranteed by &mut.
@@ -233,6 +280,10 @@ impl<T> RingBuffer<T> {
     /// Same as [`RingBuffer::new_at()`], except without checking size and alignment,
     /// and without the lifetime and exclusivity guarantees provided by the type system.
     ///
+    /// # Panics
+    ///
+    /// Panics if `capacity` is larger than `usize::MAX / 2`.
+    ///
     /// # Safety
     ///
     /// The provided memory must be [valid] for writes,
@@ -244,12 +295,10 @@ impl<T> RingBuffer<T> {
     ///
     /// [valid]: std::ptr#safety
     pub unsafe fn new_at_unchecked<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {
-        let capacity = Self::update_capacity(capacity);
-        let ptr = Self::coerce(ptr, capacity);
+        let capacity = Self::checked_capacity(capacity);
+        let fields = Self::initial_values(capacity);
         // SAFETY: Pointer is valid and no other reference exists.
-        unsafe {
-            Self::default_initialize(ptr);
-        }
+        let ptr = unsafe { Self::from_sized_fields(ptr, capacity, fields) };
         // SAFETY: `ptr` is non-null and object is fully initialized.
         unsafe { &*ptr }
     }
@@ -261,6 +310,10 @@ impl<T> RingBuffer<T> {
     /// `RingBuffer::from_raw_parts()` provides access to an already
     /// existing `RingBuffer` at the given address. This is extremely unsafe!
     ///
+    /// # Panics
+    ///
+    /// Panics if `capacity` is larger than `usize::MAX / 2`.
+    ///
     /// # Safety
     ///
     /// The provided memory must have been initialized by [`RingBuffer::new_at()`]
@@ -268,7 +321,7 @@ impl<T> RingBuffer<T> {
     /// and the memory allocation must exist at least as long as the returned reference.
     /// There are no ABI stability guarantees.
     pub unsafe fn from_raw_parts<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {
-        let capacity = Self::update_capacity(capacity);
+        let capacity = Self::checked_capacity(capacity);
         let ptr = Self::coerce(ptr, capacity);
         // SAFETY: `ptr` must be non-null and object must be fully initialized.
         unsafe { &*ptr }
@@ -422,6 +475,16 @@ impl<T> RingBuffer<T> {
         capacity
     }
 
+    /// Asserts that capacity is not too large and applies `update_capacity()`.
+    const fn checked_capacity(capacity: usize) -> usize {
+        assert!(
+            // `2 * capacity` must not overflow.
+            capacity <= usize::MAX / 2,
+            "capacity exceeds usize::MAX / 2"
+        );
+        Self::update_capacity(capacity)
+    }
+
     /// Drop all elements that are still in the buffer.
     ///
     /// After this, head and tail indices are invalid.
@@ -535,5 +598,73 @@ impl<T> RingBuffer<T> {
 
     pub(super) fn drop_consumer(&self) {
         self.has_consumer.store(false, Ordering::Release);
+    }
+}
+
+// SAFETY: If T can be moved between threads, ArrayRingBuffer can as well.
+unsafe impl<T: Send, const N: usize> Send for ArrayRingBuffer<T, N> {}
+
+impl<T, const N: usize> ArrayRingBuffer<T, N> {
+    /// Creates a ring buffer with a capacity of `N`.
+    ///
+    /// `N` cannot be larger than `usize::MAX / 2`.
+    ///
+    /// A (single) [`Producer`] for writing into the ring buffer can be created with
+    /// [`RingBuffer::producer()`].
+    /// A (single) [`Consumer`] for reading from the ring buffer can be created with
+    /// [`RingBuffer::consumer()`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::bip_ex_lite::ArrayRingBuffer;
+    ///
+    /// let rb = ArrayRingBuffer::<f32, 128>::new();
+    /// ```
+    ///
+    /// Specifying an explicit type is is only necessary if it cannot be deduced by the compiler.
+    ///
+    /// ```
+    /// use rtrb::bip_ex_lite::ArrayRingBuffer;
+    ///
+    /// let rb = ArrayRingBuffer::<_, 128>::new();
+    /// let mut producer = rb.producer().unwrap();
+    /// assert_eq!(producer.push(0.0f32), Ok(()));
+    /// ```
+    ///
+    /// See the [module-level documentation](crate::bip_ex_lite) for `static` usage.
+    pub const fn new() -> Self {
+        const {
+            RingBuffer::<T>::checked_capacity(N);
+        }
+        Self::from_sized_fields(RingBuffer::<T>::initial_values(N))
+    }
+}
+
+impl<T, const N: usize> Default for ArrayRingBuffer<T, N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T, const N: usize> core::ops::Deref for ArrayRingBuffer<T, N> {
+    type Target = RingBuffer<T>;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_unsized()
+    }
+}
+
+impl<T, const N: usize> core::ops::DerefMut for ArrayRingBuffer<T, N> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.as_unsized_mut()
+    }
+}
+
+impl<T, const N: usize> Drop for ArrayRingBuffer<T, N> {
+    /// Drops all non-empty slots.
+    fn drop(&mut self) {
+        // SAFETY: this is called exactly once, no references to any elements exist anymore.
+        unsafe { self.as_unsized_mut().drop_all_elements() };
     }
 }

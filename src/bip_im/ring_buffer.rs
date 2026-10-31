@@ -28,7 +28,7 @@ pub struct RingBuffer<T> {
     // TODO: measure whether CachePadded helps
     skip: CachePadded<AtomicUsize>,
     is_abandoned: AtomicBool,
-    // Storage for the ring buffer elements (dynamically sized).
+    // Dynamically sized storage.
     //
     // This must be in an `UnsafeCell` because both producer and consumer
     // have a (non-mutable) reference to the ring buffer and they use
@@ -41,11 +41,30 @@ pub struct RingBuffer<T> {
 unsafe impl<T: Send> Send for RingBuffer<T> {}
 
 impl<T> RingBuffer<T> {
+    const fn initial_values(capacity: usize) -> Fields {
+        Fields {
+            head: CachePadded::new(AtomicUsize::new(0)),
+            tail: CachePadded::new(AtomicUsize::new(0)),
+            skip: CachePadded::new(AtomicUsize::new(capacity)),
+            is_abandoned: AtomicBool::new(false),
+        }
+    }
+
     #[cfg(feature = "alloc")]
-    fn construct(capacity: usize) -> Box<Self> {
-        let rb = Self::instantiate(capacity);
-        rb.skip.store(rb.capacity(), Ordering::Relaxed);
-        rb
+    fn new_boxed(capacity: usize) -> Box<Self> {
+        let layout = Self::layout_helper(capacity);
+        // SAFETY: `layout` has non-zero size.
+        let ptr = unsafe { alloc::alloc::alloc(layout) };
+        if ptr.is_null() {
+            alloc::alloc::handle_alloc_error(layout);
+        }
+        let fields = Self::initial_values(capacity);
+        // SAFETY: The allocation has been created according to `layout()`
+        // it will live long enough and no other reference exists.
+        let ptr = unsafe { Self::from_sized_fields(ptr, capacity, fields) };
+        // SAFETY: The memory has been allocated in a compatible way
+        // and this is the only time we create a `Box` from it.
+        unsafe { Box::from_raw(ptr) }
     }
 
     pub(super) fn capacity(&self) -> usize {
@@ -106,8 +125,7 @@ impl<T> RingBuffer<T> {
     /// let (producer, consumer) = RingBuffer::<f32>::new(100);
     /// ```
     ///
-    /// Specifying an explicit type
-    /// with the [turbofish](https://turbo.fish/)
+    /// Specifying an explicit type with the [turbofish](https://turbo.fish/)
     /// is is only necessary if it cannot be deduced by the compiler.
     ///
     /// ```
@@ -118,17 +136,22 @@ impl<T> RingBuffer<T> {
     /// ```
     #[allow(clippy::new_ret_no_self)]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
-        let capacity = Self::update_capacity(capacity);
-        assert!(
-            capacity.checked_mul(2).is_some(),
-            "capacity exceeds usize::MAX / 2"
-        );
-        ArcRingBuffer::new(Self::construct(capacity))
+        ArcRingBuffer::new(Self::new_boxed(Self::checked_capacity(capacity)))
     }
 
     const fn update_capacity(capacity: usize) -> usize {
         // No need to update, we are not relying on power-of-two sizes.
         capacity
+    }
+
+    /// Asserts that capacity is not too large and applies `update_capacity()`.
+    const fn checked_capacity(capacity: usize) -> usize {
+        assert!(
+            // `2 * capacity` must not overflow.
+            capacity <= usize::MAX / 2,
+            "capacity exceeds usize::MAX / 2"
+        );
+        Self::update_capacity(capacity)
     }
 
     /// Drop all elements that are still in the buffer.
