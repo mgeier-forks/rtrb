@@ -276,8 +276,8 @@ criterion_main!(benches);
 use std::io::{Read as _, Write as _};
 
 create_two_threads_with_chunks_benchmark!(
-    "arc-write-read",
-    rtrb::arc::RingBuffer::new,
+    "im-write-read",
+    rtrb::im::RingBuffer::new,
     |p, s| match p.write(s) {
         Ok(n) => &s[n..],
         _ => s,
@@ -287,8 +287,8 @@ create_two_threads_with_chunks_benchmark!(
         _ => &[],
     },
     ::
-    "bip_arc-write_chunk-read_chunk",
-    rtrb::bip_arc::RingBuffer::new,
+    "bip_im-write_chunk-read_chunk",
+    rtrb::bip_im::RingBuffer::new,
     |p, s| {
         // TODO: is it more efficient to call write_chunk() without slots_contiguous...() before?
         // TODO: write_chunk() uses slots_contiguous_helper() internally
@@ -317,7 +317,7 @@ create_two_threads_with_chunks_benchmark!(
     },
     ::
     "push_partial_slice-pop_partial_slice",
-    rtrb::arc::RingBuffer::new,
+    rtrb::im::RingBuffer::new,
     |p, s| p.push_partial_slice(s).1,
     |c, s| c.pop_partial_slice(s).0,
     ::

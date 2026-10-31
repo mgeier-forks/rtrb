@@ -171,9 +171,9 @@ impl<T, const N: usize> ArrayRingBuffer<T, N> {
     /// Specifying an explicit type is is only necessary if it cannot be deduced by the compiler.
     ///
     /// ```
-    /// use {{ module_path }}::RingBuffer;
+    /// use {{ module_path }}::ArrayRingBuffer;
     ///
-    /// let rb = RingBuffer::<_, 128>::new();
+    /// let rb = ArrayRingBuffer::<_, 128>::new();
     /// let mut producer = rb.producer().unwrap();
     /// assert_eq!(producer.push(0.0f32), Ok(()));
     /// ```

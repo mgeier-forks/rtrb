@@ -2,10 +2,10 @@
 
 use std::{io::Write as _, marker::PhantomData, ptr::NonNull, time::Duration};
 
-use rtrb::array::{Consumer, Producer, RingBuffer};
+use rtrb::ex::{Consumer, Producer, ArrayRingBuffer};
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 
-type Buffer = RingBuffer<i32, 16>;
+type Buffer = ArrayRingBuffer<i32, 16>;
 
 fn cast_ptr(shmem: &Shmem) -> NonNull<Buffer> {
     assert!(shmem.len() >= std::mem::size_of::<Buffer>());
@@ -154,7 +154,7 @@ fn main() -> Result<(), Error> {
             //
             // However, in this very case this is not strictly necessary
             // because the payload type `i32` does not need dropping.
-            // So even if the `RingBuffer` object is dropped, the numbers in it will remain
+            // So even if the `ArrayRingBuffer` object is dropped, the numbers in it will remain
             // in the shared memory, which will be available until the last process exits.
             //
             // Remove the remaining lines in this code block to try it out!
@@ -173,7 +173,7 @@ fn main() -> Result<(), Error> {
             let shmem = ShmemConf::new().flink(name).open()?;
             // SAFETY: memory has been initialized with Owner::new().
             // NB: There is a very short time span when the file already exists,
-            // but the RingBuffer is not fully initialized yet.
+            // but the ArrayRingBuffer is not fully initialized yet.
             let mut c = unsafe { get_consumer(&shmem) }.ok_or(Error::AlreadyConsuming)?;
             if !c.has_producer() {
                 // The other process has given up in the meantime.

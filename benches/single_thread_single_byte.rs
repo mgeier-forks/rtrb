@@ -33,13 +33,13 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         v.pop().unwrap()
     });
 
-    let (mut p, mut c) = rtrb::arc::RingBuffer::<u8>::new(1);
+    let (mut p, mut c) = rtrb::im::RingBuffer::<u8>::new(1);
     add_function(&mut group, "1-push-pop", |i| {
         p.push(i).unwrap();
         c.pop().unwrap()
     });
 
-    let (mut p, mut c) = rtrb::bip_arc::RingBuffer::<u8>::new(1);
+    let (mut p, mut c) = rtrb::bip_im::RingBuffer::<u8>::new(1);
     add_function(&mut group, "2-bip-push-pop", |i| {
         p.push(i).unwrap();
         c.pop().unwrap()

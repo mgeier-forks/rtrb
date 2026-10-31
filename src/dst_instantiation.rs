@@ -86,8 +86,8 @@ macro_rules! dst_ring_buffer_instantiation {
                 unsafe { &*(ptr as *const RingBuffer<T>) }
             }
 
-            /// Like `as_unsized()`, but mutable.
-            const fn as_unsized_mut(&mut self) -> &mut RingBuffer<T> {
+            /// Like `as_unsized()`, but mutable (and not public!).
+            fn as_unsized_mut(&mut self) -> &mut RingBuffer<T> {
                 let ptr: *mut Self = self;
                 let ptr: *mut [T] = core::ptr::slice_from_raw_parts_mut(ptr.cast(), N);
                 // SAFETY: See as_unsized().
