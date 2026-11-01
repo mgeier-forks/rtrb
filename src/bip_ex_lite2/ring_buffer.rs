@@ -31,7 +31,6 @@ dst_ring_buffer_instantiation! {
 pub struct RingBuffer<T> {
     head: AtomicUsize,
     tail: AtomicUsize,
-    // TODO: measure whether CachePadded helps
     skip: AtomicUsize,
     has_producer: AtomicBool,
     has_consumer: AtomicBool,

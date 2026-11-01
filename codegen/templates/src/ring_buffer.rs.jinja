@@ -174,8 +174,11 @@ pub struct RingBuffer<T> {
     head: {{ CachePadded("AtomicUsize") }},
     tail: {{ CachePadded("AtomicUsize") }},
     {% if contiguous == "bip" %}
-    // TODO: measure whether CachePadded helps
-    skip: {{ CachePadded("AtomicUsize") }},
+    {% if padded %}
+    // NB: `skip` is not using CachePadded because it is rarely written
+    // and measurements didn't show any benefit from padding.
+    {% endif %}
+    skip: AtomicUsize,
     {% endif %}
     {% if arc %}
     is_abandoned: AtomicBool,
@@ -213,7 +216,7 @@ impl<T> RingBuffer<T> {
             head: {{ CachePadded_new("AtomicUsize::new(0)") }},
             tail: {{ CachePadded_new("AtomicUsize::new(0)") }},
             {% if contiguous == "bip" %}
-            skip: {{ CachePadded_new("AtomicUsize::new(capacity)") }},
+            skip: AtomicUsize::new(capacity),
             {% endif %}
             {% if arc %}
             is_abandoned: AtomicBool::new(false),

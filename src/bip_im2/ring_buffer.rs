@@ -25,8 +25,9 @@ dst_ring_buffer_instantiation! {
 pub struct RingBuffer<T> {
     head: CachePadded<AtomicUsize>,
     tail: CachePadded<AtomicUsize>,
-    // TODO: measure whether CachePadded helps
-    skip: CachePadded<AtomicUsize>,
+    // NB: `skip` is not using CachePadded because it is rarely written
+    // and measurements didn't show any benefit from padding.
+    skip: AtomicUsize,
     is_abandoned: AtomicBool,
     // Dynamically sized storage.
     //
@@ -45,7 +46,7 @@ impl<T> RingBuffer<T> {
         Fields {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
-            skip: CachePadded::new(AtomicUsize::new(capacity)),
+            skip: AtomicUsize::new(capacity),
             is_abandoned: AtomicBool::new(false),
         }
     }
