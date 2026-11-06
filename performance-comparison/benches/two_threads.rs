@@ -19,12 +19,12 @@ create_two_threads_benchmark!(
     |q, i| q.push(i).is_ok(),
     |q| q.pop().ok(),
     ::
-    "3-rtrb::arc",
+    "3-rtrb::im",
     rtrb::im::RingBuffer::new,
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::
-    "3-rtrb::arc2",
+    "3-rtrb::im2",
     rtrb::im2::RingBuffer::new,
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),

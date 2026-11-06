@@ -271,7 +271,7 @@ criterion_main!(benches);
 }
 
 create_two_threads_benchmark!(
-    "rtrb::arc",
+    "rtrb::im",
     rtrb::im::RingBuffer::new,
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
@@ -281,7 +281,7 @@ create_two_threads_benchmark!(
     |q, i| q.push(i).is_ok(),
     |q| q.pop().ok(),
     ::
-    "rtrb::bip_arc",
+    "rtrb::bip_im",
     rtrb::bip_im::RingBuffer::new,
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
