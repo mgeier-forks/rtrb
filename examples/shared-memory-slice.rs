@@ -166,7 +166,13 @@ fn main() -> Result<(), Error> {
             println!("(remove the file `delete-me` if this is the only process)");
             let shmem = ShmemConf::new().flink(name).open()?;
             // SAFETY: memory has been initialized with Owner::new().
+            // NB: There is a very short time span when the file already exists,
+            // but the RingBuffer is not fully initialized yet.
             let mut c = unsafe { get_consumer(&shmem, capacity) }.ok_or(Error::AlreadyConsuming)?;
+            if !c.has_producer() {
+                // The other process has given up in the meantime.
+                return Err(Error::NoConnection);
+            }
             print_flush!("receiving data ...");
             loop {
                 if let Ok(value) = c.pop() {
