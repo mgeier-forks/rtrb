@@ -56,8 +56,8 @@ impl Owner<'_> {
 impl Drop for Owner<'_> {
     fn drop(&mut self) {
         if let Some(mut c) = self.buffer().consumer() {
-            // All remaining elements are dropped here.
-            c.read_chunk(c.slots()).unwrap().commit_all();
+            // All remaining items are dropped here.
+            c.drop_available_items();
         } else {
             println!("Owner is dropped while consumer is still connected.");
         }
