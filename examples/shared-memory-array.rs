@@ -7,13 +7,13 @@ use shared_memory::{Shmem, ShmemConf, ShmemError};
 
 type Buffer = ArrayRingBuffer<i32, 16>;
 
-fn cast_ptr(shmem: &Shmem) -> NonNull<Buffer> {
-    assert!(shmem.len() >= std::mem::size_of::<Buffer>());
-    let ptr = NonNull::new(shmem.as_ptr()).unwrap().cast();
-    // NB: ptr.align_offset() could be used to guarantee alignment,
-    //     but this would need some more careful considerations.
-    assert!(ptr.is_aligned());
-    ptr
+fn align_ptr(shmem: &Shmem) -> NonNull<Buffer> {
+    let ptr = shmem.as_ptr();
+    let offset = ptr.align_offset(std::mem::align_of::<Buffer>());
+    assert!(shmem.len() >= std::mem::size_of::<Buffer>() + offset);
+    // SAFETY: We just checked that the memory is large enough.
+    let ptr = unsafe { ptr.add(offset) };
+    NonNull::new(ptr).unwrap().cast()
 }
 
 struct Owner<'a> {
@@ -30,7 +30,7 @@ impl Owner<'_> {
     ///
     /// `shmem` must point to unused, writable memory.
     unsafe fn new(shmem: &Shmem) -> Self {
-        let ptr = cast_ptr(shmem);
+        let ptr = align_ptr(shmem);
         // SAFETY: see docstring.
         unsafe {
             ptr.write(Buffer::new());
@@ -72,7 +72,7 @@ impl Drop for Owner<'_> {
 ///
 /// `shmem` must point to correctly initialized memory.
 unsafe fn get_consumer(shmem: &Shmem) -> Option<Consumer<'_, i32>> {
-    let ptr = cast_ptr(shmem);
+    let ptr = align_ptr(shmem);
     // SAFETY: see docstring.
     unsafe { ptr.as_ref().consumer() }
 }

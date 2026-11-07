@@ -6,15 +6,13 @@ use shared_memory::{Shmem, ShmemConf, ShmemError};
 
 type Buffer = RingBuffer<i32>;
 
-fn validate_ptr(shmem: &Shmem, capacity: usize) -> *mut u8 {
+fn align_ptr(shmem: &Shmem, capacity: usize) -> *mut u8 {
     let layout = Buffer::layout(capacity);
-    assert!(shmem.len() >= layout.size());
     let ptr = shmem.as_ptr();
-    // NB: ptr.align_offset() could be used to guarantee alignment,
-    //     but this would need some more careful considerations.
-    // NB: ptr.is_aligned_to() is unstable, so we use this work-around:
-    assert!(ptr as usize & (layout.align() - 1) == 0);
-    ptr
+    let offset = ptr.align_offset(layout.align());
+    assert!(shmem.len() >= layout.size() + offset);
+    // SAFETY: We just checked that the memory is large enough.
+    unsafe { ptr.add(offset) }
 }
 
 struct Owner<'a>(&'a Buffer);
@@ -28,7 +26,7 @@ impl Owner<'_> {
     ///
     /// `shmem` must point to unused, writable memory.
     unsafe fn new(shmem: &Shmem, capacity: usize) -> Self {
-        let ptr = validate_ptr(shmem, capacity);
+        let ptr = align_ptr(shmem, capacity);
         // SAFETY: see docstring.
         Self(unsafe { Buffer::new_at_unchecked(ptr, capacity) })
     }
@@ -64,7 +62,7 @@ impl Drop for Owner<'_> {
 /// `shmem` must point to correctly initialized memory.
 /// `capacity` must be the same as the one used in Buffer::new_at_unchecked().
 unsafe fn get_consumer(shmem: &Shmem, capacity: usize) -> Option<Consumer<'_, i32>> {
-    let ptr = validate_ptr(shmem, capacity);
+    let ptr = align_ptr(shmem, capacity);
     // SAFETY: see docstring.
     let rb = unsafe { Buffer::from_raw_parts(ptr, capacity) };
     rb.consumer()
