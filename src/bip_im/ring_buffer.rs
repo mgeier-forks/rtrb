@@ -130,8 +130,7 @@ impl<T> RingBuffer<T> {
     /// is is only necessary if it cannot be deduced by the compiler.
     ///
     /// ```
-    /// use rtrb::bip_im::RingBuffer;
-    ///
+    /// # use rtrb::bip_im::RingBuffer;
     /// let (mut producer, consumer) = RingBuffer::new(100);
     /// assert_eq!(producer.push(0.0f32), Ok(()));
     /// ```

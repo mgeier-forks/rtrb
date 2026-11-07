@@ -2,3 +2,53 @@
 // It has been auto-generated from `codegen/templates/tests/array_ring_buffer.rs.jinja`
 // using the configuration file `codegen/configs/bip_ex2.toml`.
 
+use std::cell::Cell;
+
+use rtrb::bip_ex2::ArrayRingBuffer;
+
+struct DropCounter<'a>(&'a Cell<usize>);
+
+impl Drop for DropCounter<'_> {
+    fn drop(&mut self) {
+        self.0.set(self.0.get() + 1);
+    }
+}
+
+static ARRAY_RB: ArrayRingBuffer<i32, 4> = ArrayRingBuffer::new();
+
+#[test]
+fn static_and_unsized() {
+    let mut p = ARRAY_RB.producer().unwrap();
+    let rb: &'static _ = ARRAY_RB.as_unsized();
+    let mut c = rb.consumer().unwrap();
+    assert!(rb.producer().is_none());
+    assert_eq!(p.push(10), Ok(()));
+    assert_eq!(c.pop(), Ok(10));
+}
+
+#[test]
+fn split_via_deref_mut() {
+    let mut rb = ArrayRingBuffer::<_, 4>::new();
+    let (mut p, mut c) = rb.split();
+    assert_eq!(p.push(10), Ok(()));
+    assert_eq!(c.pop(), Ok(10));
+}
+
+#[test]
+fn automatically_drop_remaining_elements() {
+    let counter = Cell::new(0);
+    {
+        let rb = ArrayRingBuffer::<_, 4>::new();
+        {
+            let mut p = rb.producer().unwrap();
+            let mut c = rb.consumer().unwrap();
+            p.push(DropCounter(&counter)).unwrap();
+            p.push(DropCounter(&counter)).unwrap();
+            assert_eq!(counter.get(), 0);
+            let _ = c.pop().unwrap();
+            assert_eq!(counter.get(), 1);
+        }
+        assert_eq!(counter.get(), 1);
+    }
+    assert_eq!(counter.get(), 2);
+}

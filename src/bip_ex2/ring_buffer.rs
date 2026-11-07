@@ -170,8 +170,7 @@ impl<T> RingBuffer<T> {
     /// is is only necessary if it cannot be deduced by the compiler.
     ///
     /// ```
-    /// use rtrb::bip_ex2::RingBuffer;
-    ///
+    /// # use rtrb::bip_ex2::RingBuffer;
     /// let rb = RingBuffer::new(100);
     /// let mut producer = rb.producer().unwrap();
     /// assert_eq!(producer.push(0.0f32), Ok(()));
@@ -608,11 +607,22 @@ impl<T, const N: usize> ArrayRingBuffer<T, N> {
     /// Specifying an explicit type is is only necessary if it cannot be deduced by the compiler.
     ///
     /// ```
-    /// use rtrb::bip_ex2::ArrayRingBuffer;
-    ///
+    /// # use rtrb::bip_ex2::ArrayRingBuffer;
     /// let rb = ArrayRingBuffer::<_, 128>::new();
     /// let mut producer = rb.producer().unwrap();
     /// assert_eq!(producer.push(0.0f32), Ok(()));
+    /// ```
+    ///
+    /// Let's check the maximum supported capacity:
+    ///
+    /// ```
+    /// # use rtrb::bip_ex2::ArrayRingBuffer;
+    /// let rb = ArrayRingBuffer::<(), { usize::MAX / 2 + 1 }>::new();
+    /// ```
+    ///
+    /// ```compile_fail
+    /// # use rtrb::bip_ex2::ArrayRingBuffer;
+    /// let rb = ArrayRingBuffer::<(), { usize::MAX / 2 + 1 + 1 }>::new();
     /// ```
     ///
     /// See the [module-level documentation](crate::bip_ex2) for `static` usage.
