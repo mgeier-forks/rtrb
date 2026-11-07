@@ -3,4 +3,5 @@
 // using the configuration file `codegen/configs/bip_ex.toml`.
 
 mod array_ring_buffer;
+#[cfg(feature = "alloc")]
 mod ring_buffer;

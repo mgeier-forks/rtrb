@@ -7,4 +7,5 @@
 {% if not arc %}
 mod array_ring_buffer;
 {% endif %}
+#[cfg(feature = "alloc")]
 mod ring_buffer;

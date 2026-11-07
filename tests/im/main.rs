@@ -2,4 +2,5 @@
 // It has been auto-generated from `codegen/templates/tests/main.rs.jinja`
 // using the configuration file `codegen/configs/im.toml`.
 
+#[cfg(feature = "alloc")]
 mod ring_buffer;

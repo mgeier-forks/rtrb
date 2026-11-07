@@ -3,4 +3,5 @@
 // using the configuration file `codegen/configs/ex_lite2.toml`.
 
 mod array_ring_buffer;
+#[cfg(feature = "alloc")]
 mod ring_buffer;

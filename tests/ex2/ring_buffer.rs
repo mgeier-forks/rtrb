@@ -2,6 +2,8 @@
 // It has been auto-generated from `codegen/templates/tests/ring_buffer.rs.jinja`
 // using the configuration file `codegen/configs/ex2.toml`.
 
+#![cfg(feature = "alloc")]
+
 use rtrb::ex2::RingBuffer;
 
 #[test]

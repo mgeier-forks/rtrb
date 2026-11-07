@@ -5,6 +5,8 @@
 // using the configuration file `codegen/configs/{{ module_name }}.toml`.
 {% if contiguous != "vrb" %}
 
+#![cfg(feature = "alloc")]
+
 use {{ module_path }}::RingBuffer;
 
 #[test]
