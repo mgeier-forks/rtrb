@@ -226,22 +226,13 @@ impl<T> RingBuffer<T> {
     /// ```
     /// use std::mem::MaybeUninit;
     ///
-    /// type RingBufferF32 = rtrb::ex::RingBuffer<f32>;
+    /// type RingBufferF32 = rtrb::ex_lite::RingBuffer<f32>;
     ///
-    /// fn somehow_create_storage(capacity: usize) -> &'static mut [MaybeUninit<u8>] {
-    ///     let layout = RingBufferF32::layout(capacity);
-    ///     // SAFETY: `layout` has non-zero size
-    ///     let ptr = unsafe { std::alloc::alloc(layout) };
-    ///     if ptr.is_null() {
-    ///         std::alloc::handle_alloc_error(layout);
-    ///     }
-    ///     // SAFETY: The allocated memory is a valid (uninitialized) slice.
-    ///     unsafe { std::slice::from_raw_parts_mut(ptr.cast(), layout.size()) }
-    /// }
-    ///
-    /// let storage = somehow_create_storage(128);
-    ///
-    /// // From here on, no more `unsafe` in user code.
+    /// let layout = RingBufferF32::layout(128);
+    /// let mut storage: Vec<u8> = Vec::with_capacity(layout.size() + layout.align());
+    /// let offset = storage.as_ptr().align_offset(layout.align());
+    /// storage.resize(offset, 0);
+    /// let storage = &mut storage.spare_capacity_mut()[..layout.size()];
     ///
     /// assert!(RingBufferF32::new_at(storage, 64).is_none());
     ///
@@ -254,12 +245,6 @@ impl<T> RingBuffer<T> {
     /// // it can be done like this:
     /// let mut consumer = rb.consumer().unwrap();
     /// consumer.drop_available_items();
-    ///
-    /// // NB: The allocated memory is leaked in this example.
-    /// # // Don't actually leak memory, so that Miri doesn't complain:
-    /// # drop(producer);
-    /// # drop(consumer);
-    /// # unsafe { std::alloc::dealloc(storage.as_mut_ptr().cast(), RingBufferF32::layout(128)); }
     /// ```
     pub fn new_at(storage: &mut [MaybeUninit<u8>], capacity: usize) -> Option<&Self> {
         let layout = Self::layout(capacity);
