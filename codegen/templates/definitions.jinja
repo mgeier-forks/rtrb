@@ -1,3 +1,4 @@
+{% set max_capacity %}usize::MAX / 2{% if pow2 %} + 1{% endif %}{% endset %}
 {% if contiguous is undefined %}{% set contiguous = false %}{% endif %}
 {% if contiguous not in [false, "bip", "vrb"] %}
 compile_error!("Invalid contiguous = {{ contiguous }}")

@@ -3,3 +3,4 @@
 // using the configuration file `codegen/configs/bip_ex_lite.toml`.
 
 mod array_ring_buffer;
+mod ring_buffer;
