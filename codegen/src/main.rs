@@ -114,6 +114,7 @@ fn render(dir: &Path, name: &Path, contexts: &[(String, Value)]) {
             continue;
         }
         let path = dir.join(subdir).join(name).join(&rest);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, rendered)
             .unwrap_or_else(|err| panic!("unable to write {:?}: {}", path, err));
     }
