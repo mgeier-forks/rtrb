@@ -4,7 +4,44 @@
 
 #![cfg(feature = "alloc")]
 
+use std::cell::Cell;
+
 use rtrb::ex_lite2::RingBuffer;
+
+struct DropCounter<'a>(&'a Cell<usize>);
+
+impl Drop for DropCounter<'_> {
+    fn drop(&mut self) {
+        self.0.set(self.0.get() + 1);
+    }
+}
+
+#[test]
+fn split_via_box() {
+    let mut rb = RingBuffer::new(4);
+    let (mut producer, mut consumer) = rb.split();
+    assert_eq!(producer.push(10), Ok(()));
+    assert_eq!(consumer.pop(), Ok(10));
+}
+
+#[test]
+fn automatically_drop_remaining_elements() {
+    let counter = Cell::new(0);
+    {
+        let rb = RingBuffer::new(4);
+        {
+            let mut producer = rb.producer().unwrap();
+            let mut consumer = rb.consumer().unwrap();
+            producer.push(DropCounter(&counter)).unwrap();
+            producer.push(DropCounter(&counter)).unwrap();
+            assert_eq!(counter.get(), 0);
+            let _ = consumer.pop().unwrap();
+            assert_eq!(counter.get(), 1);
+        }
+        assert_eq!(counter.get(), 1);
+    }
+    assert_eq!(counter.get(), 2);
+}
 
 #[test]
 fn largest_capacity() {
