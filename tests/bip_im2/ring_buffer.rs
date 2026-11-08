@@ -32,6 +32,14 @@ fn automatically_drop_remaining_elements() {
 }
 
 #[test]
+fn pow2_rounding_up_to_max() {
+    let (mut producer, mut consumer) = RingBuffer::new(usize::MAX / 4 + 1 + 1);
+    producer.push(()).unwrap();
+    assert_eq!(consumer.pop(), Ok(()));
+    assert_eq!(producer.capacity(), usize::MAX / 2 + 1);
+}
+
+#[test]
 fn largest_capacity() {
     let (mut producer, mut consumer) = RingBuffer::new(usize::MAX / 2 + 1);
     producer.push(()).unwrap();
@@ -42,13 +50,11 @@ fn largest_capacity() {
 #[test]
 #[should_panic(expected = "capacity exceeds")]
 fn too_large_capacity() {
-    let _ = RingBuffer::<()>::new(usize::MAX / 2 + 1 + 1);
+    let _ = RingBuffer::<u8>::new(usize::MAX / 2 + 1 + 1);
 }
 
 #[test]
-fn pow2_rounding_up_to_max() {
-    let (mut producer, mut consumer) = RingBuffer::new(usize::MAX / 4 + 1 + 1);
-    producer.push(()).unwrap();
-    assert_eq!(consumer.pop(), Ok(()));
-    assert_eq!(producer.capacity(), usize::MAX / 2 + 1);
+#[should_panic(expected = "LayoutError")]
+fn too_large_allocation_size() {
+    let _ = RingBuffer::<u64>::new(usize::MAX / 4);
 }
