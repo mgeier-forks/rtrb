@@ -305,6 +305,9 @@ impl<T> RingBuffer<T> {
     /// or [`RingBuffer::new_at_unchecked()`] (using the same `capacity`)
     /// and the memory allocation must exist at least as long as the returned reference.
     /// There are no ABI stability guarantees.
+    ///
+    /// If this is called from a different process than where the `RingBuffer` was created,
+    /// both must use the same memory layout and `T` must be safe to be dropped in either one.
     pub unsafe fn from_raw_parts<'a>(ptr: *mut u8, capacity: usize) -> &'a Self {
         let capacity = Self::checked_capacity(capacity);
         let ptr = Self::coerce(ptr, capacity);
