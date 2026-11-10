@@ -30,8 +30,10 @@
 //! These functions allow usage with dynamic capacity in combination with shared memory
 //! (and pre-allocated memory in general), see the `shared-memory-slice` example.
 //!
-//! If the capacity is known at compile time, an [`ArrayRingBuffer`] can be used,
-//! which auto-dereferences to `RingBuffer` and therefore provides the same methods.
+//! If the capacity is known at compile time, an [`ArrayRingBuffer`] can be used instead.
+//! It doesn't need any dynamically allocated memory and it can be used as a `static` item
+//! (see [below](#usage-with-static)).
+//! It auto-dereferences to `RingBuffer` and therefore provides the same methods.
 {% endif %}
 {% if contiguous != "vrb" %}
 //!
@@ -91,8 +93,8 @@
 //! let mut producer = RB.producer().unwrap();
 //! assert_eq!(producer.push(10), Ok(()));
 //!
-//! // It's possible to store producers/consumers in a lifetime-less `struct`,
-//! // because they have `'static` lifetime:
+//! // It's possible to store producers/consumers in a lifetime-less struct,
+//! // because they have 'static lifetime:
 //! struct MyStruct {
 //!     consumer: Consumer<'static, i32>,
 //! }
