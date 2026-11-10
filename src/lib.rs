@@ -112,12 +112,13 @@
 //!
 //! # Storage
 //!
-//! `ex` ... `ArrayRingBuffer`
-//!
-//! ... the built-in
-//! [`prim@array`] type for storing ring buffer elements.
+//! Modules containing `ex` provide an `ArrayRingBuffer`
+//! (e.g. [`rtrb::ex::ArrayRingBuffer`](ex::ArrayRingBuffer)),
+//! which uses the built-in [`prim@array`] type for storing ring buffer elements.
 //! This means that the capacity must be known at compile time.
-//! No dynamic memory is ever allocated.
+//! It also means that no dynamic memory is ever allocated.
+//! An `ArrayRingBuffer` auto-dereferences to the dynamically sized `RingBuffer`
+//! and therefore provides the same methods.
 //!
 //! TODO: example with and without N
 //!
@@ -126,7 +127,7 @@
 //! Here's an example using the [`rtrb::ex`](ex) module:
 //!
 //! ```
-//! use rtrb::ex::{Consumer, Producer, ArrayRingBuffer};
+//! use rtrb::ex::{ArrayRingBuffer, Consumer, Producer};
 //!
 //! static RB: ArrayRingBuffer<i32, 64> = ArrayRingBuffer::new();
 //!
