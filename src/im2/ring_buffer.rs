@@ -125,7 +125,7 @@ impl<T> RingBuffer<T> {
     /// ```
     ///
     /// Specifying an explicit type with the [turbofish](https://turbo.fish/)
-    /// is is only necessary if it cannot be deduced by the compiler.
+    /// is only necessary if it cannot be deduced by the compiler.
     ///
     /// ```
     /// # use rtrb::im2::RingBuffer;

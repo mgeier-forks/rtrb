@@ -159,7 +159,7 @@ impl<T> RingBuffer<T> {
     /// ```
     ///
     /// Specifying an explicit type with the [turbofish](https://turbo.fish/)
-    /// is is only necessary if it cannot be deduced by the compiler.
+    /// is only necessary if it cannot be deduced by the compiler.
     ///
     /// ```
     /// # use rtrb::ex_lite::RingBuffer;
@@ -594,7 +594,7 @@ impl<T, const N: usize> ArrayRingBuffer<T, N> {
     /// let rb = ArrayRingBuffer::<f32, 128>::new();
     /// ```
     ///
-    /// Specifying an explicit type is is only necessary if it cannot be deduced by the compiler.
+    /// Specifying an explicit type is only necessary if it cannot be deduced by the compiler.
     ///
     /// ```
     /// # use rtrb::ex_lite::ArrayRingBuffer;
