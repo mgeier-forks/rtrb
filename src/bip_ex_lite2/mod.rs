@@ -4,6 +4,8 @@
 
 //! Same as [`rtrb::bip_ex_lite`](crate::bip_ex_lite), but with a capacity that is a power of two.
 //!
+//! If cacheline-padded indices are desired, use [`rtrb::bip_ex2`](crate::bip_ex2).
+//!
 //! *See the [crate-level documentation](crate) for information about the available options.*
 //!
 //! # Usage

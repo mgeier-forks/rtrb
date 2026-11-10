@@ -9,4 +9,7 @@ module_docstring = """
 //! In contrast to [`rtrb::bip_im`](crate::bip_im), this provides a [`RingBuffer`]
 //! that is *not* automatically dropped when both its [`Producer`] and its [`Consumer`]
 //! go out of scope.
+//!
+//! If cacheline padding of read/write indices is not desired,
+//! use [`rtrb::bip_ex_lite`](crate::bip_ex_lite).
 """

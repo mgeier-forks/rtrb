@@ -9,5 +9,5 @@ module_docstring = """
 //! Same as [`rtrb::bip_ex_lite2`](crate::bip_ex_lite2),
 //! but with a capacity that is not restricted to a power of two.
 //!
-//! If cacheline padding is desired, use [`rtrb::bip_ex`](crate::bip_ex).
+//! If cacheline-padded indices are desired, use [`rtrb::bip_ex`](crate::bip_ex).
 """

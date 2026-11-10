@@ -190,8 +190,9 @@
 //! between the producer and the consumer thread.
 //!
 //! On (embedded) systems without coherent caches shared between cores
-//! (or with only one core) this is not relevant and the memory overhead can be avoided
-//! by using the `lite` variants, e.g. [`rtrb::ex_lite`](ex_lite).
+//! (e.g. on a STM32H7 microcontroller) or on MCUs with only one core this is not relevant
+//! and the memory overhead can be avoided by using the `lite` variants,
+//! e.g. [`rtrb::ex_lite`](ex_lite).
 //!
 //!
 //! # Calculation of Indices

@@ -2,11 +2,14 @@
 // It has been auto-generated from `codegen/templates/src/mod.rs.jinja`
 // using the configuration file `codegen/configs/ex.toml`.
 
-//! TODO, no reference counting.
+//! Storage on the heap, in an array or in user-provided memory, no reference counting.
 //!
 //! In contrast to [`rtrb::im`](crate::im), this provides a [`RingBuffer`]
 //! that is *not* automatically dropped when both its [`Producer`] and its [`Consumer`]
 //! go out of scope.
+//!
+//! If cacheline padding of read/write indices is not desired,
+//! use [`rtrb::ex_lite`](crate::ex_lite).
 //!
 //! *See the [crate-level documentation](crate) for information about the available options.*
 //!

@@ -4,6 +4,9 @@
 
 //! Same as [`rtrb::ex`](crate::ex), but with a capacity that is a power of two.
 //!
+//! If cacheline padding of read/write indices is not desired,
+//! use [`rtrb::ex_lite2`](crate::ex_lite2).
+//!
 //! *See the [crate-level documentation](crate) for information about the available options.*
 //!
 //! # Usage

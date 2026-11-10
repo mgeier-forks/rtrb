@@ -4,8 +4,6 @@
 
 //! Same as [`rtrb::bip_im`](crate::bip_im), but with a capacity that is a power of two.
 //!
-//! If you need arbitrary capacities, use [`rtrb::bip_im`](crate::bip_im) instead.
-//!
 //! *See the [crate-level documentation](crate) for information about the available options.*
 //!
 //! # Usage

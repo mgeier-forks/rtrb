@@ -8,6 +8,9 @@
 //! that is *not* automatically dropped when both its [`Producer`] and its [`Consumer`]
 //! go out of scope.
 //!
+//! If cacheline padding of read/write indices is not desired,
+//! use [`rtrb::bip_ex_lite`](crate::bip_ex_lite).
+//!
 //! *See the [crate-level documentation](crate) for information about the available options.*
 //!
 //! # Usage
