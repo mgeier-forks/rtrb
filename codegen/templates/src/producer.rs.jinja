@@ -128,6 +128,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     /// assert_eq!(producer.push(20), Err(PushError::Full(20)));
     /// ```
 {% endif %}
+    #[inline]
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
         if let Some(tail) = self.next_tail() {
             let b = &self.buffer;
@@ -167,6 +168,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     ///
     /// assert_eq!(producer.slots(), 4095);
     /// ```
+    #[inline]
     pub fn slots(&self) -> usize {
         let b = &self.buffer;
         let head = b.head();
@@ -179,6 +181,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     /// In many cases, this will not provide all available slots,
     /// but it might be marginally faster than [`Producer::slots()`]
     /// because it doesn't access the atomic read index.
+    #[inline]
     pub fn cached_slots(&self) -> usize {
         let b = &self.buffer;
         let head = self.cached_head.get();
@@ -237,6 +240,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     /// Since items can be concurrently consumed on another thread, the actual number
     /// of available slots may increase at any time
     /// (up to the [`Producer::capacity()`]).
+    #[inline]
     pub fn slots_contiguous(&self) -> (usize, usize) {
         let (slots, refreshed_head, try_at_beginning) = self.slots_contiguous_helper();
         if !try_at_beginning {
@@ -260,6 +264,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     ///
     /// If you want to avoid skipping any slots, you should use this method instead of
     /// [`Producer::slots_contiguous_max()`].
+    #[inline]
     pub fn slots_contiguous_first(&self) -> usize {
         self.slots_contiguous_helper().0
     }
@@ -273,6 +278,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     ///
     /// If you want to avoid skipping any slots, you should use
     /// [`Producer::slots_contiguous_first()`] instead.
+    #[inline]
     pub fn slots_contiguous_max(&self) -> usize {
         let (one, two) = self.slots_contiguous();
         one.max(two)
@@ -343,6 +349,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     /// assert_eq!(consumer.slots_contiguous(), (1, 4));
     /// ```
 {% endif %}
+    #[inline]
     pub fn is_full(&self) -> bool {
         self.next_tail().is_none()
     }
@@ -482,6 +489,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
+    #[inline]
     #[must_use]
     pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T])
     where
@@ -520,6 +528,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     ///
     /// If not enough free space is available in the ring buffer,
     /// a [`ChunkError`] with the available slots is returned.
+    #[inline]
     pub fn push_entire_slice(&mut self, slice: &[T]) -> Result<(), ChunkError>
     where
         T: Copy,
@@ -579,6 +588,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
+    #[inline]
     pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T>, ChunkError>
     where
         T: Default,
@@ -638,8 +648,9 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](super::chunks#examples) module.
-{% if contiguous == "bip" %}
+    #[inline]
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
+{% if contiguous == "bip" %}
         let b = &self.buffer;
         let (mut slots, refreshed_head, try_at_beginning) = self.slots_contiguous_helper();
         if slots >= n {
@@ -665,9 +676,7 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
             slots = slots.max(collapsed_head);
         }
         Err(ChunkError::TooFewSlots(slots))
-    }
 {% else %}
-    pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
         let mut head = self.cached_head.get();
         let tail = self.cached_tail.get();
         let b = &self.buffer;
@@ -685,8 +694,8 @@ impl<T> Producer<{{ arc_tick_blank }}T> {
         let offset = b.collapse_position(tail);
         // SAFETY: `offset` has been set to a valid position.
         Ok(unsafe { WriteChunkUninit::new(self, n, offset) })
-    }
 {% endif %}
+    }
 
     /// Returns a read-only reference to the ring buffer.
     pub(super) fn buffer(&self) -> &RingBuffer<T> {

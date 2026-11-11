@@ -133,6 +133,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// assert_eq!(producer.push(20), Ok(()));
     /// assert_eq!(consumer.pop().ok(), Some(20));
     /// ```
+    #[inline]
     pub fn pop(&mut self) -> Result<T, PopError> {
         if let Some(head) = self.next_head() {
             let b = &self.buffer;
@@ -184,6 +185,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// let value = consumer.pop().unwrap();
     /// assert_eq!(shared_ref, &10);
     /// ```
+    #[inline]
     pub fn peek(&self) -> Result<&T, PeekError> {
         if let Some(head) = self.next_head() {
             // SAFETY: head points to an initialized slot.
@@ -217,6 +219,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// assert_eq!(producer.push(0.0), Ok(()));
     /// assert_eq!(consumer.slots(), 1);
     /// ```
+    #[inline]
     pub fn slots(&self) -> usize {
         let b = &self.buffer;
         let tail = b.tail();
@@ -229,6 +232,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// In many cases, this will not provide all available slots,
     /// but it might be marginally faster than [`Consumer::slots()`]
     /// because it doesn't access the atomic write index.
+    #[inline]
     pub fn cached_slots(&self) -> usize {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
@@ -329,6 +333,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// whether and how many slots have been skipped using
     /// [`Producer::write_chunk()`] or [`Producer::write_chunk_uninit()`],
     /// but at most up to the [`capacity()`](Consumer::capacity)).
+    #[inline]
     pub fn slots_contiguous(&self) -> (usize, usize) {
         let (slots, refreshed_tail, try_at_beginning) = self.slots_contiguous_helper();
         if !try_at_beginning {
@@ -348,6 +353,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     ///
     /// This is the same as the first number returned by
     /// [`slots_contiguous()`](Consumer::slots_contiguous), but slightly more efficient.
+    #[inline]
     pub fn slots_contiguous_first(&self) -> usize {
         self.slots_contiguous_helper().0
     }
@@ -393,6 +399,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     ///     // At least one slot is guaranteed to be available for reading.
     /// }
     /// ```
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.next_head().is_none()
     }
@@ -503,6 +510,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
+    #[inline]
     #[must_use]
     pub fn pop_partial_slice<'a>(&mut self, slice: &'a mut [T]) -> (&'a mut [T], &'a mut [T])
     where
@@ -636,6 +644,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     ///
     /// To copy only the available slots, [`Consumer::pop_partial_slice()`] can be used.
     /// To copy into an uninitialized slice, [`Consumer::pop_entire_slice_uninit()`] can be used.
+    #[inline]
     pub fn pop_entire_slice(&mut self, slice: &mut [T]) -> Result<(), ChunkError>
     where
         T: Copy,
@@ -664,6 +673,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     ///
     /// To copy only the available slots, [`Consumer::pop_partial_slice_uninit()`] can be used.
     /// To copy into an initialized slice, [`Consumer::pop_entire_slice()`] can be used.
+    #[inline]
     pub fn pop_entire_slice_uninit<'a>(
         &mut self,
         slice: &'a mut [MaybeUninit<T>],
@@ -726,8 +736,9 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](super::chunks#examples) module.
-{% if contiguous == "bip" %}
+    #[inline]
     pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
+{% if contiguous == "bip" %}
         let b = &self.buffer;
         let (slots, _, _) = self.slots_contiguous_helper();
         if slots >= n {
@@ -737,9 +748,7 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
         } else {
             Err(ChunkError::TooFewSlots(slots))
         }
-    }
 {% else %}
-    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
         let head = self.cached_head.get();
         let tail = self.cached_tail.get();
         let b = &self.buffer;
@@ -757,8 +766,8 @@ impl<T> Consumer<{{ arc_tick_blank }}T> {
         let offset = b.collapse_position(head);
         // SAFETY: `offset` has been set to a valid position.
         Ok(unsafe { ReadChunk::new(self, n, offset) })
-    }
 {% endif %}
+    }
 
     /// Drops all items that are currently available for reading, returns number of dropped items.
     ///

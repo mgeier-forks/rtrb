@@ -365,6 +365,7 @@ impl<'a, T> WriteChunk<'a, T> {
     ///
     /// Panics in debug mode if `n` is greater than the number of slots in the chunk.
     /// In release mode, `n` is capped to the number of slots and no panic happens.
+    #[inline]
     pub fn commit(self, n: usize) {
         // NB: The `Drop` impl of `self` is *not* run here.
         let mut chunk = self.into_inner();
@@ -378,6 +379,7 @@ impl<'a, T> WriteChunk<'a, T> {
     }
 
     /// Makes the whole chunk available for reading.
+    #[inline]
     pub fn commit_all(self) {
         // NB: The `Drop` impl of `self` is *not* run here.
         let chunk = self.into_inner();
@@ -526,6 +528,7 @@ impl<T> WriteChunkUninit<'_, T> {
     /// # Safety
     ///
     /// The caller must make sure that the first `n` elements have been initialized.
+    #[inline]
     pub unsafe fn commit(self, n: usize) {
         debug_assert!(n <= self.len(), "cannot commit more than chunk size");
         let capped_n = n.min(self.len());
@@ -540,6 +543,7 @@ impl<T> WriteChunkUninit<'_, T> {
     /// # Safety
     ///
     /// The caller must make sure that all elements have been initialized.
+    #[inline]
     pub unsafe fn commit_all(self) {
         let slots = self.len();
         // SAFETY: Delegated to the caller.
@@ -882,6 +886,7 @@ impl<T> ReadChunk<'_, T> {
     /// // ... and it is dropped when the ring buffer goes out of scope:
     /// assert_eq!(unsafe { DROP_COUNT }, 3);
     /// ```
+    #[inline]
     pub fn commit(self, n: usize) {
         debug_assert!(n <= self.len(), "cannot commit more than chunk size");
         let capped_n = n.min(self.len());
@@ -892,6 +897,7 @@ impl<T> ReadChunk<'_, T> {
     }
 
     /// Drops all slots of the chunk, making the space available for writing again.
+    #[inline]
     pub fn commit_all(self) {
         let slots = self.len();
         // SAFETY: self.len() initialized elements have been obtained in read_chunk().
