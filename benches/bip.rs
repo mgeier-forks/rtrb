@@ -230,6 +230,11 @@ create_bip_benchmark! {
         chunk.commit_all();
     }).is_ok(),
     ::
+    "bip-slice",
+    rtrb::bip_im::RingBuffer::new,
+    |p, s| p.push_entire_slice(s).is_ok(),
+    |c, s| c.pop_entire_slice(s).is_ok(),
+    ::
     "bip-push-pop",
     rtrb::bip_im::RingBuffer::new,
     |p, s| {
@@ -254,7 +259,7 @@ create_bip_benchmark! {
     },
     ::
     "mop-push-pop",
-    rtrb::RingBuffer::new,
+    rtrb::im::RingBuffer::new,
     |p, s| {
         if p.slots() < s.len() {
             return false;
