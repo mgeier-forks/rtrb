@@ -195,6 +195,10 @@
 //! and the memory overhead can be avoided by using the `lite` variants,
 //! e.g. [`rtrb::ex_lite`](ex_lite).
 //!
+//! ... `Producer` and `Consumer` structs are not cache padded, so you should make sure not to store
+//! them in the same cache line.
+//! This is normally not a problem since they are typically moved to different threads anyway.
+//!
 //!
 //! # Calculation of Indices
 //!

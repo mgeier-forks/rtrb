@@ -374,7 +374,7 @@ impl<T> RingBuffer<T> {
     /// The exclusive access requirement can be very restrictive;
     /// alternatively you can use [`RingBuffer::producer()`] and [`RingBuffer::consumer()`],
     /// or, if you are adventurous, [`RingBuffer::producer_unchecked()`] and
-    /// [`RingBuffer::producer_unchecked()`].
+    /// [`RingBuffer::consumer_unchecked()`].
     pub fn split(&mut self) -> (Producer<'_, T>, Consumer<'_, T>) {
         // SAFETY: `&mut self` guarantees that there are no other producers/consumers.
         unsafe { (self.producer_unchecked(), self.consumer_unchecked()) }
@@ -497,8 +497,9 @@ impl<T> RingBuffer<T> {
     /// # Safety
     ///
     /// The provided memory must have been initialized by [`RingBuffer::new_at()`]
-    /// or [`RingBuffer::new_at_unchecked()`] (using the same `capacity`)
+    /// or [`RingBuffer::new_at_unchecked()`] (using the same type `T` and `capacity`)
     /// and the memory allocation must exist at least as long as the returned reference.
+    /// The memory must not be accessed other than via the returned `&RingBuffer`.
     /// There are no ABI stability guarantees.
     ///
     /// If this is called from a different process than where the `RingBuffer` was created,
